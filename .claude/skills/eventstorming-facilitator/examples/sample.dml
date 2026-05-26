@@ -1,0 +1,150 @@
+# ============================================================
+# サンプル DML：コミュニティイベント参加ドメイン
+# ============================================================
+# 規約:
+#   - BC（CONTEXT）名は lowercase-with-hyphen、略さない
+#   - 識別子・キーワードはすべて英語
+#   - SCENARIO名 / POLICY TRIGGER に # で日本語補足
+#   - RULE / ERR にも # で日本語補足
+#   - EVT / CMD / AGG は英語のみ
+# ============================================================
+
+CONTEXT community-events
+  LANGUAGE  Event    = "コミュニティが主催する集会・勉強会"
+  LANGUAGE  Capacity = "イベントの定員（最大参加者数）"
+  MODULE    community-events
+
+CONTEXT participation
+  LANGUAGE  Event    = "参加申込の対象となるエントリー"
+  LANGUAGE  Capacity = "参加ステータスの枠（pending含む）"  [?] capacityの責務はどちらのBCが持つ？
+  MODULE    participation
+
+CONTEXT notifications
+  MODULE    notifications
+
+# ================================
+# community-events モジュール
+# ================================
+
+SCENARIO CreateCommunity          # コミュニティを作成する
+  EVT   (CommunityCreated)
+  CMD   CreateCommunity(name, description, ownerId)
+  AGG   <<Community>>
+  RULE  communityName must be unique system-wide   # コミュニティ名はシステム全体でユニーク
+  RULE  name and description must not be empty     # 名前と説明文は必須
+  RULE  owner must always exist                    # オーナーは必ず1人
+  ERR   duplicateName → DuplicateCommunityNameError    # 名前重複
+  ERR   emptyName → InvalidCommunityDataError          # 名前が空
+  ERR   emptyDescription → InvalidCommunityDataError   # 説明文が空
+
+SCENARIO CreateEvent              # イベントを作成する
+  EVT   (EventCreated)
+  CMD   CreateEvent(communityId, title, schedule, venueId, capacity)
+  AGG   <<Event>>
+  RULE  event must belong to an existing community  # 存在するコミュニティに紐づく
+  RULE  capacity must be positive integer           # 定員は正の整数
+  ERR   communityNotFound → CommunityNotFoundError  # コミュニティが存在しない
+  ERR   invalidCapacity → InvalidCapacityError      # 定員が不正
+
+SCENARIO PublishEvent             # イベントを公開する
+  EVT   (EventPublished)
+  CMD   PublishEvent(eventId)
+  AGG   <<Event>>
+  RULE  event must be in DRAFT status               # DRAFTのときだけ公開可
+  ERR   alreadyPublished → EventAlreadyPublishedError  # 既に公開済み
+
+SCENARIO ChangeParticipationPolicy  # 参加ポリシーを変更する（AUTO / MANUAL）
+  EVT   (ParticipationPolicyChanged)
+  CMD   ChangeParticipationPolicy(eventId, policy)
+  AGG   <<Event>>
+  RULE  event must be published                     # 公開済みイベントのみ変更可
+  POL   ParticipationPolicyChangedPolicy
+
+SCENARIO CancelEvent              # イベントをキャンセルする
+  EVT   (EventCancelled)
+  CMD   CancelEvent(eventId, reason)
+  AGG   <<Event>>
+  RULE  event must not have already occurred        # 開催済みは取消不可
+  ERR   eventAlreadyOccurred → EventAlreadyOccurredError  # 開催済みのためキャンセル不可
+  POL   NotifyEventCancelled
+
+# ================================
+# participation モジュール
+# ================================
+
+SCENARIO ApplyForEvent            # イベントに参加申込する
+  EVT   (ParticipationApplied)
+  CMD   ApplyForEvent(eventId, userId)
+  AGG   <<Participation>>
+  RULE  event must be published                          # 公開済みイベントのみ申込可
+  RULE  user must not have existing participation        # 同一イベントへの重複申込不可
+  RULE  capacity must not be exceeded                    # 定員超過時はキャンセル待ち  [?] Event集約とParticipation集約どちらが行う？
+  ERR   eventNotPublished → EventNotAvailableError       # イベントが公開されていない
+  ERR   duplicateParticipation → AlreadyAppliedError     # 既に申込済み
+  ERR   capacityFull → CapacityExceededError             # 定員超過
+  POL   AutoApproveOrWaitlist
+
+SCENARIO ApproveParticipation     # 参加を承認する
+  EVT   (ParticipationApproved)
+  CMD   ApproveParticipation(participationId)
+  AGG   <<Participation>>
+  RULE  participation must be in PENDING or WAITLISTED   # PENDING か WAITLISTED のみ承認可
+  ERR   invalidStatus → InvalidStatusTransitionError     # 不正なステータス遷移
+
+SCENARIO RejectParticipation      # 参加を却下する
+  EVT   (ParticipationRejected)
+  CMD   RejectParticipation(participationId, reason)
+  AGG   <<Participation>>
+  RULE  participation must be in PENDING or WAITLISTED   # PENDING か WAITLISTED のみ却下可
+  ERR   invalidStatus → InvalidStatusTransitionError     # 不正なステータス遷移
+
+SCENARIO CancelParticipation      # 参加をキャンセルする
+  EVT   (ParticipationCancelled)
+  CMD   CancelParticipation(participationId)
+  AGG   <<Participation>>
+  RULE  participation must be in PENDING or APPROVED     # PENDING か APPROVED のみキャンセル可
+  ERR   invalidStatus → InvalidStatusTransitionError     # 不正なステータス遷移
+  POL   WaitlistPromotion
+
+SCENARIO MarkAttendance           # 出席を記録する
+  EVT   (AttendanceMarked)
+  CMD   MarkAttendance(participationId, attended)
+  AGG   <<Participation>>
+  RULE  event must have already occurred                 # 開催後のみ記録可
+  ERR   eventNotOccurred → EventNotOccurredYetError      # まだ開催されていない
+
+# ================================
+# ポリシー定義
+# ================================
+
+POLICY AutoApproveOrWaitlist
+  TRIGGER  (ParticipationApplied)       # 参加申込時に自動判定
+  QRY      GetRemainingCapacity
+  CMD      ApproveParticipation
+  TX       SAME
+  EVT      (ParticipationApproved)
+
+POLICY WaitlistPromotion
+  TRIGGER  (ParticipationCancelled)     # キャンセル時にキャンセル待ちを繰り上げ
+  QRY      NextWaitlistedParticipation
+  CMD      ApproveParticipation
+  BULK     true
+  TX       EVENTUAL
+  EVT      (ParticipationApproved)
+
+POLICY ParticipationPolicyChangedPolicy
+  TRIGGER  (ParticipationPolicyChanged) # AUTO変更時に既存PENDINGを一括承認
+  WHEN     newPolicy == AUTO
+  QRY      AllPendingParticipations
+  CMD      ApproveParticipation
+  BULK     true
+  TX       EVENTUAL
+  EVT      (ParticipationApproved)
+
+POLICY NotifyEventCancelled
+  TRIGGER  (EventCancelled)             # イベントキャンセル時に参加者全員へ通知
+  QRY      AllApprovedParticipations
+  CMD      SendCancellationNotification
+  BULK     true
+  TX       EVENTUAL
+  EVT      (CancellationNotificationSent)

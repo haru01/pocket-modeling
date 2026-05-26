@@ -1,0 +1,11 @@
+.claude/worktrees/
+
+# EventStorming HTML は MD から自動生成される派生物
+dist/
+
+# Python のキャッシュ
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store

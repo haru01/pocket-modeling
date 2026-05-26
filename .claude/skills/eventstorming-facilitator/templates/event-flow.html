@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<!--
+  EventStorming セッション表示用テンプレート
+
+  使い方:
+  - {{...}} のプレースホルダーを実セッション情報で置き換える
+  - 各セクションは MD ファイル (docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md) の
+    対応セクションを HTML 化したもの
+  - フェーズ未到達のセクションは <div class="todo-placeholder">...</div> のままにする
+
+  生成タイミング:
+  - フェーズ2完了で Write 新規作成 → Bash `open` で初回起動
+  - 以降のフェーズ完了で Edit で該当セクション更新
+  - 詳細は references/html-render-spec.md を参照
+-->
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>EventStorming — {{ドメイン名}}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', system-ui, sans-serif;
+      margin: 0; padding: 24px;
+      background: #fafafa; color: #263238;
+      line-height: 1.6; max-width: 1400px;
+    }
+    h1 { font-size: 26px; margin: 0 0 4px 0; color: #263238; }
+    h2 {
+      font-size: 18px; margin: 32px 0 12px 0;
+      padding: 6px 12px; border-left: 5px solid #37474F;
+      color: #37474F; background: #ECEFF1;
+      border-radius: 0 4px 4px 0;
+    }
+    h3 { font-size: 14px; margin: 16px 0 6px 0; color: #455A64; }
+    .meta { color: #607D8B; font-size: 15px; margin-bottom: 8px; }
+    code { background: #ECEFF1; padding: 1px 5px; border-radius: 3px; font-size: 0.92em; }
+
+    /* === 進捗バー === */
+    .progress {
+      display: flex; gap: 4px; margin: 16px 0 24px 0;
+      padding: 12px; background: #FFFFFF;
+      border: 1px solid #CFD8DC; border-radius: 6px;
+    }
+    .phase {
+      flex: 1; padding: 8px 10px;
+      font-size: 13px; font-weight: 700; text-align: center;
+      background: #ECEFF1; color: #90A4AE; border-radius: 4px;
+    }
+    .phase.done { background: #C8E6C9; color: #1B5E20; }
+    .phase.current { background: #FFE082; color: #6D4C41; box-shadow: 0 0 0 2px #FF8F00; }
+
+    /* === ストーリー === */
+    .story {
+      padding: 16px 20px; background: #FFFDE7;
+      border-left: 4px solid #F9A825; border-radius: 0 4px 4px 0;
+      margin: 8px 0 16px 0; font-size: 14px;
+    }
+    .story p { margin: 0 0 8px 0; }
+    .story p:last-child { margin-bottom: 0; }
+
+    .scenario-card {
+      padding: 12px 16px; background: #FFFFFF;
+      border: 1px solid #FFD54F; border-radius: 4px;
+      margin: 8px 0; font-size: 15px;
+    }
+    .scenario-card h3 { margin: 0 0 6px 0; color: #E65100; }
+
+    /* === 凡例 === */
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 12px; background: #ECEFF1; border-radius: 6px;
+      margin: 12px 0 16px 0; font-size: 14px;
+    }
+    .legend .note-mini {
+      padding: 4px 10px; border-radius: 3px; border: 2px solid;
+      font-size: 12px; font-weight: 600;
+    }
+    .legend .note-mini.actor    { background: #FFF59D; border-color: #F9A825; color: #4E342E; }
+    .legend .note-mini.command  { background: #90CAF9; border-color: #1565C0; color: #0D47A1; }
+    .legend .note-mini.event    { background: #FFAB40; border-color: #E65100; color: #7f2700; }
+    .legend .note-mini.policy   { background: #CE93D8; border-color: #7B1FA2; color: #4A148C; }
+    .legend .note-mini.readmodel{ background: #A5D6A7; border-color: #2E7D32; color: #1B5E20; }
+
+    /* === Flow コンテナ ===
+       テーブルヘッダー風 2-カラム構造:
+         .flow-body
+           ├ .lane-header    ← 横スクロール対象外。BC レーン名を縦に並べる白いカラム
+           └ .flow-scroll    ← 横スクロール対象。中の .grid には notes のみ
+       両カラムは grid-auto-rows: 80px で同じ行高さを共有し、縦位置を揃える。 */
+    .flow {
+      margin-bottom: 20px; border: 1px solid #CFD8DC; border-radius: 6px;
+      background: #FFFFFF; overflow: hidden;
+    }
+    .flow-title {
+      font-size: 14px; font-weight: 700; color: #FFF;
+      background: #37474F; padding: 10px 14px;
+    }
+    /* .flow-body 自身を Grid にして、両子要素を subgrid で行高さを共有させる。
+       重要: 上下 padding は親 .flow-body に集約する。.lane-header / .flow-scroll
+       それぞれに上下 padding を入れると、subgrid 内の行起点がズレ縦位置が崩れる。
+       padding-bottom は fanout の box-shadow（最大 8px 下に延びる）と
+       fanout 用 margin-bottom (14px) を吸収するため広めに取る。 */
+    .flow-body {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      padding: 16px 0 24px;       /* 下は fanout 余白吸収のため 24px */
+      row-gap: 8px;               /* row-gap も親に集約(subgrid は親の gap を継承) */
+      /* grid-template-rows は render_flow() がインライン style で動的指定 */
+    }
+    .lane-header {
+      grid-column: 1; grid-row: 1 / -1;
+      display: grid;
+      grid-template-rows: subgrid;   /* 親 .flow-body の行高さ・gap を共有 */
+      background: #FFFFFF;
+      padding: 0 12px;            /* 横方向のみ。縦は親に任せる */
+      align-items: center;
+      z-index: 5;
+      box-shadow: 4px 0 6px -2px rgba(0,0,0,0.15);
+    }
+    /* 横スクロールのみ許可、縦スクロールは禁止。
+       overflow-x: auto を指定すると CSS 仕様により overflow-y は visible にならず
+       auto/scroll に強制されるため、明示的に hidden を指定する。
+       下方にはみ出る fanout 影は .flow-body の padding-bottom と .flow の
+       overflow: hidden で安全にクリップされる。
+
+       padding-bottom: 14px を入れているのは、macOS のオーバーレイ式横スクロール
+       バーが最下段の付箋に重ならないよう、内側に余白を確保するため。
+       scrollbar-gutter: stable は classic scrollbar 環境への保険。 */
+    .flow-scroll {
+      grid-column: 2; grid-row: 1 / -1;
+      min-width: 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-gutter: stable;
+      padding: 0 16px 14px;       /* 下に 14px、スクロールバー専用の余白 */
+      display: grid;
+      grid-template-rows: subgrid;   /* 親 .flow-body の行高さ・gap を共有 */
+      grid-auto-columns: max-content;
+      grid-auto-flow: column;
+      column-gap: 6px;
+      align-items: center;
+    }
+    /* 右端スペーサー: スクロール末尾に確実に余白を残す */
+    .end-spacer { width: 48px; height: 1px; }
+
+    .lane-name {
+      padding: 12px 10px;
+      color: #FFF; font-size: 13px; font-weight: 700;
+      text-align: center;
+      border-radius: 4px;
+      white-space: nowrap;
+      align-self: center;
+      width: 100%;             /* lane-header の固定幅 160px に合わせる */
+      box-sizing: border-box;
+    }
+    /* BC ごとに色を割り当て (lowercase-with-hyphen) */
+    .lane-name.bc-default-1 { background: #37474F; }
+    .lane-name.bc-default-2 { background: #455A64; }
+    .lane-name.bc-default-3 { background: #546E7A; }
+    .lane-name.bc-default-4 { background: #607D8B; }
+    .lane-name.bc-default-5 { background: #78909C; }
+
+    .note {
+      padding: 8px 10px; border-radius: 4px; border: 2px solid;
+      font-weight: 600; font-size: 14px;
+      min-width: 96px; max-width: 130px; text-align: center;
+      box-shadow: 1px 1px 2px rgba(0,0,0,0.08);
+      align-self: center;
+      white-space: normal; line-height: 1.3;
+    }
+    .note .kind {
+      display: block; font-size: 10px; font-weight: 700;
+      opacity: 0.75; margin-bottom: 2px; letter-spacing: 0.5px;
+    }
+    .note.actor    { background: #FFF59D; border-color: #F9A825; color: #4E342E; }
+    .note.event    { background: #FFAB40; border-color: #E65100; color: #7f2700; }
+    .note.policy   { background: #CE93D8; border-color: #7B1FA2; color: #4A148C; }
+    .note.command  { background: #90CAF9; border-color: #1565C0; color: #0D47A1; }
+    .note.readmodel{ background: #A5D6A7; border-color: #2E7D32; color: #1B5E20; }
+
+    .arrow-h {
+      align-self: center;
+      width: 14px; height: 3px; background: #546E7A;
+      position: relative; margin: 0 1px;
+    }
+    .arrow-h::after {
+      content: ''; position: absolute;
+      right: -1px; top: 50%; transform: translateY(-50%);
+      border-left: 7px solid #546E7A;
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
+    }
+    .arrow-v {
+      align-self: stretch; justify-self: center;
+      width: 4px; background: #7B1FA2;
+      position: relative; margin: 0 20px; min-height: 60px;
+    }
+    .arrow-v.down::after {
+      content: ''; position: absolute;
+      bottom: -1px; left: 50%; transform: translateX(-50%);
+      border-top: 10px solid #7B1FA2;
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+    }
+    .arrow-v.up::after {
+      content: ''; position: absolute;
+      top: -1px; left: 50%; transform: translateX(-50%);
+      border-bottom: 10px solid #7B1FA2;
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+    }
+    .arrow-v .async-label {
+      position: absolute;
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: #F3E5F5; color: #7B1FA2;
+      font-size: 11px; font-style: italic;
+      padding: 2px 4px; border-radius: 2px;
+      white-space: nowrap;
+    }
+
+    /* === Fanout: BULK POLICY 起点の ×N スタック表示 ===
+       1 ステップの背後に半透明カード 2 枚を 4px / 8px オフセットで描画。
+       右上に紫の "× N" バッジ。色は kind 別に CSS 変数で切替。 */
+    .note.fanout {
+      margin-right: 14px;       /* スタック分の右余白 */
+      margin-bottom: 14px;      /* スタック分の下余白 */
+      position: relative;
+      box-shadow:
+        1px 1px 2px rgba(0,0,0,0.08),
+        4px 4px 0 -1px #FFF, 4px 4px 0 0 var(--fanout-border, #455A64),
+        8px 8px 0 -1px #FFF, 8px 8px 0 0 var(--fanout-border, #455A64);
+    }
+    .note.fanout.command  { --fanout-border: #1565C0; }
+    .note.fanout.event    { --fanout-border: #E65100; }
+    .note.fanout.policy   { --fanout-border: #7B1FA2; }
+    .note.fanout.actor    { --fanout-border: #F9A825; }
+    .note.fanout.readmodel{ --fanout-border: #2E7D32; }
+    .note.fanout::after {
+      content: "× N";
+      position: absolute;
+      top: -8px; right: -16px;
+      background: #F3E5F5; color: #7B1FA2;
+      font-size: 11px; font-weight: 700;
+      padding: 2px 6px; border-radius: 10px;
+      border: 1px solid #7B1FA2;
+      white-space: nowrap;
+      z-index: 2;
+    }
+
+    /* === Fork 矢印: 1本 → 3本に分岐（BULK fanout 入口） === */
+    .arrow-h.fork {
+      width: 26px; height: 22px;
+      background: none;
+      position: relative;
+      align-self: center;
+      margin: 0 1px;
+    }
+    .arrow-h.fork::before {
+      /* 入力単線（左半分） */
+      content: '';
+      position: absolute;
+      left: 0; top: 50%; transform: translateY(-50%);
+      width: 11px; height: 3px;
+      background: #7B1FA2;
+    }
+    .arrow-h.fork::after {
+      /* 分岐後の 3 本（CSS gradient で擬似化） */
+      content: '';
+      position: absolute;
+      left: 11px; right: 0; top: 0; bottom: 0;
+      background:
+        linear-gradient(180deg,
+          transparent 18%, #7B1FA2 18% 30%,
+          transparent 30% 46%, #7B1FA2 46% 54%,
+          transparent 54% 70%, #7B1FA2 70% 82%,
+          transparent 82%);
+    }
+
+    /* === BPMN シンクバー: N → 1 Join（並列完了待ち） === */
+    .sync-bar {
+      align-self: stretch; justify-self: center;
+      position: relative;
+      min-height: 60px; width: 30px;
+      margin: 0 16px;
+    }
+    .sync-bar::before {
+      /* 縦の黒太線（同期バー本体） */
+      content: '';
+      position: absolute;
+      left: 50%; top: 8px; bottom: 8px;
+      width: 6px;
+      background: #263238;
+      border-radius: 1px;
+      transform: translateX(-50%);
+    }
+    .sync-bar.down::after {
+      /* バーから下への矢印先 */
+      content: '';
+      position: absolute;
+      bottom: -2px; left: 50%; transform: translateX(-50%);
+      border-top: 10px solid #263238;
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+    }
+    .sync-bar.up::after {
+      content: '';
+      position: absolute;
+      top: -2px; left: 50%; transform: translateX(-50%);
+      border-bottom: 10px solid #263238;
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+    }
+    .sync-bar .async-label {
+      position: absolute;
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: #ECEFF1; color: #263238;
+      font-size: 11px; font-weight: 700;
+      padding: 2px 6px; border-radius: 2px;
+      white-space: nowrap;
+    }
+
+    /* === 凡例 (拡張) === */
+    .legend-divider {
+      width: 1px; height: 22px;
+      background: #B0BEC5;
+      margin: 0 4px;
+    }
+    .legend .note-mini.fanout-mini {
+      position: relative;
+      margin-right: 14px;
+      box-shadow:
+        3px 3px 0 -1px #FFF, 3px 3px 0 0 #E65100,
+        6px 6px 0 -1px #FFF, 6px 6px 0 0 #E65100;
+    }
+    .legend-sync {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 3px;
+      background: #ECEFF1;
+      color: #263238;
+      font-size: 12px;
+      font-weight: 700;
+      border: 2px solid #263238;
+    }
+
+    /* === ホットスポット / 未確認 === */
+    .hotspot {
+      background: #FFEBEE; border-left: 4px solid #C62828;
+      padding: 10px 14px; margin: 8px 0; font-size: 15px; border-radius: 0 4px 4px 0;
+    }
+    .question {
+      background: #E3F2FD; border-left: 4px solid #1565C0;
+      padding: 10px 14px; margin: 8px 0; font-size: 15px; border-radius: 0 4px 4px 0;
+    }
+    .hotspot strong, .question strong { display: inline-block; min-width: 38px; }
+
+    /* === TODO プレースホルダー === */
+    .todo-placeholder {
+      padding: 16px; background: #F5F5F5;
+      border: 2px dashed #B0BEC5; border-radius: 6px;
+      color: #78909C; font-style: italic; font-size: 15px;
+      text-align: center;
+    }
+
+    /* === 集約サブセクション (不変条件 / エラーケース / その他) === */
+    .agg-subsection,
+    .inv-section,
+    .err-section {
+      padding: 8px 12px;
+      border-left: 3px solid transparent;
+      border-radius: 0 4px 4px 0;
+      margin: 8px 0;
+      font-size: 14px;
+      color: #455A64;
+    }
+    .agg-subsection > ul,
+    .inv-section > ul,
+    .err-section > ul { margin: 4px 0; padding-left: 22px; }
+
+    .agg-subsection > strong { color: #37474F; }
+    .inv-section { background: #E8F5E9; border-left-color: #2E7D32; }
+    .inv-section > strong { color: #2E7D32; }
+    .err-section { background: #FFEBEE; border-left-color: #C62828; }
+    .err-section > strong { color: #C62828; }
+
+    /* === 目的・背景・制約サブセクション (AGG/BC カード) === */
+    .purpose-section,
+    .background-section,
+    .constraints-section {
+      padding: 8px 12px;
+      border-left: 3px solid transparent;
+      border-radius: 0 4px 4px 0;
+      margin: 8px 0;
+      font-size: 14px;
+      color: #455A64;
+    }
+    .constraints-section > ul { margin: 4px 0; padding-left: 22px; }
+    .purpose-section { background: #FFF3E0; border-left-color: #EF6C00; }
+    .purpose-section > strong { color: #EF6C00; }
+    .background-section { background: #E3F2FD; border-left-color: #1565C0; }
+    .background-section > strong { color: #1565C0; }
+    .constraints-section { background: #F3E5F5; border-left-color: #6A1B9A; }
+    .constraints-section > strong { color: #6A1B9A; }
+
+    .err-code {
+      background: #FFCDD2;
+      color: #B71C1C;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-family: 'SF Mono', Menlo, monospace;
+      font-weight: 600;
+      font-size: 0.92em;
+    }
+
+    /* === コードブロック (DML / Zod) === */
+    pre.code {
+      background: #263238; color: #ECEFF1;
+      padding: 16px; border-radius: 6px;
+      font-family: 'SF Mono', Menlo, monospace;
+      font-size: 14px; line-height: 1.5;
+      overflow-x: auto;
+    }
+    pre.code .kw { color: #80CBC4; font-weight: 700; }
+    pre.code .id { color: #FFCC80; }
+    pre.code .cm { color: #78909C; font-style: italic; }
+
+    /* === 用語集テーブル === */
+    table.glossary {
+      width: 100%; border-collapse: collapse; margin: 8px 0 16px 0;
+      font-size: 15px; background: #FFFFFF;
+      border: 1px solid #CFD8DC; border-radius: 4px; overflow: hidden;
+    }
+    table.glossary th {
+      background: #455A64; color: #FFF; padding: 8px 12px;
+      text-align: left; font-size: 14px;
+    }
+    table.glossary td {
+      padding: 6px 12px; border-top: 1px solid #ECEFF1;
+    }
+    table.glossary td.code-cell {
+      font-family: 'SF Mono', Menlo, monospace; color: #1565C0;
+    }
+    .glossary-section { margin: 12px 0; }
+    .glossary-section h3 { color: #455A64; }
+
+    /* === 次のアクション === */
+    .next-actions {
+      padding: 12px 16px; background: #E8F5E9;
+      border-left: 4px solid #2E7D32; border-radius: 0 4px 4px 0;
+      margin: 8px 0;
+    }
+    .next-actions ul { margin: 0; padding-left: 20px; }
+
+    /* === コンテキスト / 集約カード === */
+    .bc-card {
+      padding: 12px 16px; background: #FFFFFF;
+      border: 1px solid #CFD8DC; border-radius: 4px;
+      margin: 8px 0; font-size: 14px;
+    }
+    .bc-card h3 { margin: 0 0 6px 0; color: #1565C0; font-family: 'SF Mono', Menlo, monospace; }
+    .bc-card .dep { font-size: 13px; color: #607D8B; }
+  </style>
+</head>
+<body>
+
+  <h1>EventStorming — {{ドメイン名}}</h1>
+  <div class="meta">
+    Session: <code>{{eventstorming-YYYYMMDD-HHMM}}</code> ·
+    Goal: {{ゴール}}
+  </div>
+
+  <!-- =====================
+       進捗バー
+       現在のフェーズに class="current" を付ける
+       完了済フェーズに class="done" を付ける
+       ===================== -->
+  <div class="progress">
+    <div class="phase">1. スコープ</div>
+    <div class="phase">2. ストーリー</div>
+    <div class="phase">3. イベント発見</div>
+    <div class="phase">4. CMD-EVT-POLICY</div>
+    <div class="phase">4.5. BC 境界</div>
+    <div class="phase">5. RULE-ERR</div>
+    <div class="phase">6. 整合性チェック</div>
+  </div>
+
+  <!-- =====================
+       1. ハッピーパスストーリー
+       ===================== -->
+  <h2>1. ハッピーパスストーリー</h2>
+  <div class="story">
+    <p>{{ハッピーパスストーリー本文（400〜600字、複数 <p> に分割）}}</p>
+  </div>
+
+  <!-- =====================
+       2. 代替シナリオ
+       ===================== -->
+  <h2>2. 代替シナリオ</h2>
+
+  <div class="scenario-card">
+    <h3>{{代替シナリオ名}}</h3>
+    <p>{{散文 100〜200字}}</p>
+  </div>
+  <!-- ... 代替シナリオを繰り返す ... -->
+
+  <!-- =====================
+       3. Event Walkthrough
+       ===================== -->
+  <h2>3. Event Walkthrough</h2>
+
+  <div class="legend">
+    <span class="note-mini actor">Actor</span>
+    <span class="note-mini command">Command</span>
+    <span class="note-mini event">Event</span>
+    <span class="note-mini policy">Policy</span>
+    <span class="note-mini readmodel">Read Model</span>
+  </div>
+
+  <!--
+    Flow 1枚あたりの構造:
+    - .flow-title でタイトル
+    - .grid 内に lane-name (列1) と note/arrow-h/arrow-v を配置
+    - grid-row = BC レーン (1, 2, 3...)
+    - grid-column = 時系列ステップ (2, 3, 4... 列1 はレーン名予約)
+    - 同じ BC が複数回登場しても 同じ grid-row に統合
+    - 付箋ラベルから DSL 記号 (@!$[]) を削除する
+    - 非同期遷移は arrow-v down/up で 2 行を跨ぐ
+  -->
+  <div class="flow">
+    <div class="flow-title">{{フロータイトル}}</div>
+    <div class="flow-scroll">
+      <div class="grid" style="grid-template-rows: auto auto;">
+        <!-- レーン名 -->
+        <div class="lane-name bc-default-1" style="grid-row: 1; grid-column: 1;">{{BC名1}}</div>
+        <div class="lane-name bc-default-2" style="grid-row: 2; grid-column: 1;">{{BC名2}}</div>
+
+        <!-- 付箋と矢印を時系列で配置 -->
+        <div class="note actor"   style="grid-row: 1; grid-column: 2;"><span class="kind">Actor</span>{{ラベル}}</div>
+        <div class="arrow-h"      style="grid-row: 1; grid-column: 3;"></div>
+        <div class="note command" style="grid-row: 1; grid-column: 4;"><span class="kind">Command</span>{{ラベル}}</div>
+        <div class="arrow-h"      style="grid-row: 1; grid-column: 5;"></div>
+        <div class="note event"   style="grid-row: 1; grid-column: 6;"><span class="kind">Event</span>{{ラベル}}</div>
+
+        <!-- 非同期遷移 (上→下) -->
+        <div class="arrow-v down" style="grid-row: 1 / 3; grid-column: 7;"><span class="async-label">⚡ async</span></div>
+
+        <!-- BC2 の付箋 -->
+        <div class="note policy"  style="grid-row: 2; grid-column: 8;"><span class="kind">Policy</span>{{ラベル}}</div>
+        <!-- ... -->
+      </div>
+    </div>
+  </div>
+  <!-- ... 代替シナリオごとに .flow を繰り返す ... -->
+
+  <!-- =====================
+       4. コンテキスト候補
+       ===================== -->
+  <h2>4. コンテキスト候補</h2>
+  <div class="bc-card">
+    <h3>{{context-slug}}</h3>
+    <p>{{コンテキストの説明}}</p>
+    <div class="dep"><strong>UPSTREAM:</strong> {{依存元 or (none)}} · <strong>DOWNSTREAM:</strong> {{依存先 or (none)}}</div>
+  </div>
+  <!-- ... -->
+
+  <!-- =====================
+       5. 集約候補（Zod スキーマ必須）
+       ===================== -->
+  <h2>5. 集約候補</h2>
+  <div class="bc-card">
+    <h3>{{AggregateName}}</h3>
+    <div class="dep"><strong>コンテキスト:</strong> {{context-slug}} · <strong>関連シナリオ:</strong> {{シナリオ}}</div>
+    <p style="margin: 6px 0;">{{集約の役割説明}}</p>
+<pre class="code"><span class="kw">export const</span> {{AggregateName}}Schema = z.object({
+  id: {{AggregateName}}IdSchema,
+  status: z.enum([<span class="cm">'STATE_A'</span>, <span class="cm">'STATE_B'</span>]),
+  // ...
+});
+<span class="kw">export type</span> {{AggregateName}} = z.infer&lt;<span class="kw">typeof</span> {{AggregateName}}Schema&gt;;</pre>
+    <p style="font-size: 14px; color: #607D8B; margin: 4px 0;"><strong>不変条件 (案):</strong> {{...}}</p>
+    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>状態遷移:</strong> STATE_A → STATE_B</p>
+  </div>
+  <!-- ... -->
+
+  <!-- =====================
+       6. リードモデル候補
+       ===================== -->
+  <h2>6. リードモデル候補</h2>
+  <div class="bc-card" style="border-left: 4px solid #2E7D32;">
+    <h3 style="color: #2E7D32;">{{QRYName}}（{{日本語名}}）</h3>
+    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>利用者:</strong> {{アクター or ポリシー}}</p>
+    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>目的:</strong> {{何を確認して何を決めるか}}</p>
+    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>ソース:</strong> {{どの集約・BC からデータを取るか}}</p>
+    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>算出:</strong> {{計算式・取得条件・ソート順}}</p>
+  </div>
+  <!-- ... -->
+
+  <!-- =====================
+       7. オープンクエスチョン / ホットスポット
+       ===================== -->
+  <h2>7. オープンクエスチョン</h2>
+  <div class="question"><strong>Q1.</strong> {{質問}} — 決まると: {{影響}}</div>
+
+  <h3 style="margin-top:16px;">ホットスポット</h3>
+  <div class="hotspot"><strong>H1.</strong> {{設計判断の論点}}</div>
+
+  <!-- =====================
+       8. 次のアクション
+       ===================== -->
+  <h2>8. 次のアクション</h2>
+  <div class="next-actions">
+    <ul>
+      <li>{{次のフェーズへの導線}}</li>
+    </ul>
+  </div>
+
+  <!-- =====================
+       9. DML
+       ===================== -->
+  <h2>9. DML</h2>
+  <pre class="code"><span class="kw">CONTEXT</span> <span class="id">{{context-slug}}</span> {
+  <span class="cm"># {{description}}</span>
+  <span class="kw">UPSTREAM</span> (none)
+  <span class="kw">DOWNSTREAM</span> <span class="id">{{other-context}}</span>
+}</pre>
+
+  <!-- =====================
+       10. 用語集
+       ===================== -->
+  <h2>10. 用語集</h2>
+
+  <div class="glossary-section">
+    <h3>アクター</h3>
+    <table class="glossary">
+      <thead><tr><th>日本語</th><th>英語</th><th>備考</th></tr></thead>
+      <tbody>
+        <tr><td>{{日本語}}</td><td class="code-cell">{{English}}</td><td>{{備考}}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="glossary-section">
+    <h3>コマンド</h3>
+    <table class="glossary">
+      <thead><tr><th>日本語</th><th>英語</th><th>備考</th></tr></thead>
+      <tbody>
+        <!-- 各 CMD -->
+      </tbody>
+    </table>
+  </div>
+
+  <div class="glossary-section">
+    <h3>イベント</h3>
+    <table class="glossary">
+      <thead><tr><th>日本語</th><th>英語</th><th>備考</th></tr></thead>
+      <tbody>
+        <!-- 各 EVT -->
+      </tbody>
+    </table>
+  </div>
+
+  <div class="glossary-section">
+    <h3>ポリシー</h3>
+    <table class="glossary">
+      <thead><tr><th>日本語</th><th>英語</th><th>備考</th></tr></thead>
+      <tbody>
+        <!-- 各 POLICY -->
+      </tbody>
+    </table>
+  </div>
+
+  <div class="glossary-section">
+    <h3>リードモデル</h3>
+    <table class="glossary">
+      <thead><tr><th>日本語</th><th>英語</th><th>備考</th></tr></thead>
+      <tbody>
+        <!-- 各 QRY -->
+      </tbody>
+    </table>
+  </div>
+
+</body>
+</html>

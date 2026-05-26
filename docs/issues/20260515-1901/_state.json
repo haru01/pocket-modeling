@@ -1,0 +1,12 @@
+{
+  "bc/community/agg/Community": 3,
+  "bc/event-planning/agg/Event": 4,
+  "bc/registration/agg/Application": 5,
+  "bc/ticketing/agg/Ticket": 8,
+  "bc/ticketing/agg/Payment": 6,
+  "bc/ticketing/agg/Refund": 7,
+  "bc/attendance/agg/Attendance": 2,
+  "bc/ticketing/scenario/システムが返金を実行する": 9,
+  "bc/attendance+ticketing/scenario/参加者が会場で受付する": 11,
+  "bc/attendance+ticketing/scenario/参加者がオンラインで参加する": 10
+}
