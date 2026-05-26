@@ -5,9 +5,9 @@ description: Facilitate DDD domain modeling sessions via EventStorming conversat
 
 # EventStorming + DDD モデリング ファシリテーター
 
-会話でドメインイベントを発見しながら DML（Domain Modeling Language）として情報圧縮する。MD ファイルが Single Source of Truth。AI は MD のみ `Write` / `Edit` し、PostToolUse hook が `.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py` を起動して `dist/eventstorming/<session>.html` を自動再生成する（**AI は HTML を直接編集しない**）。チャットには DML 全文を流さず、構造化テーブル＋HTML パス案内に留める（Claude Code の CLI/PC/スマホアプリではチャット本文の SVG/Mermaid が描画されないため）。
+会話でドメインイベントを発見し DML（Domain Modeling Language）に情報圧縮する。MD ファイルが Single Source of Truth。AI は MD のみ `Write`/`Edit` し、PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/eventstorming/<session>.html` を自動再生成する（**AI は HTML を直接編集しない**）。チャットには DML 全文を流さず、構造化テーブル＋HTML パス案内に留める（Claude Code のチャット本文では SVG/Mermaid が描画されないため）。
 
-> **ヒント（ユーザーへ）**: 質問に迷ったら **`？`** と送ってください。判断の軸を提示して一緒に考えます（半角 `?` でも可、全角 `？` 推奨）。
+> **ヒント（ユーザーへ）**: 質問に迷ったら **`？`** と送ってください（半角 `?` でも可）。判断の軸を提示して一緒に考えます。
 
 ---
 
@@ -16,15 +16,15 @@ description: Facilitate DDD domain modeling sessions via EventStorming conversat
 | フェーズ | 内容 |
 |---------|------|
 | 1. スコープ確認 | 対象ドメイン・ゴール・制約を3問で確認 |
-| **2. ストーリー確認** | **ハッピーパスストーリー（400〜600字）＋代替シナリオ（2〜3本）を提示してユーザー確認。確認後に MD/HTML を生成し、`Bash open` で HTML をブラウザ表示** |
-| 3. イベント発見 | `references/domain-starters.md` から候補提示。追加・削除を確認して合意 |
-| 4. CMD→EVT→POLICY チェーン | フロー全体のつながりを1本ずつ確認。AGG・BC 境界も同時に拾う |
-| 4.5. BC 境界 | 同じ言葉が文脈で意味が変わるサインを `LANGUAGE` として記録 |
-| **4.6. 目的・背景・制約** | **各 AGG の `#### 目的`（必須・30字以上）／`#### 背景` ／`#### 制約` を 3 つの問いで言語化。RULE/ERR を引き出す前に意図を固める。BC レベルは任意。詳細は `references/session-guide.md` §「80〜85分」** |
-| 5. RULE・ERR | 各 AGG の不変条件・エラーケースを掘る。`RULE` 直下に `WHY "..."`、`ERR` 直下に `WHEN "..."` を併記（推奨） |
-| 6. 整合性チェック → 出力 | DML 整合性を確認してから Markdown レポートを最終更新 |
+| **2. ストーリー確認** | **ハッピーパス（400〜600字）＋代替シナリオ（2〜3本）を提示しユーザー確認。確認後に MD を `Write` → `Bash open <session>.html`** |
+| 3. イベント発見 | `references/domain-starters.md` から候補提示。追加・削除を確認 |
+| 4. CMD→EVT→POLICY チェーン | フロー全体を1本ずつ確認。AGG・BC 境界も同時に拾う |
+| 4.5. BC 境界 | 文脈で意味が変わる言葉を `LANGUAGE` として記録 |
+| **4.6. 目的・背景・制約** | **各 AGG の `#### 目的`（必須・30字以上）／`#### 背景`／`#### 制約` を 3 つの問いで言語化。RULE/ERR の前に意図を固める。BC レベルは任意。詳細: `references/session-guide.md`** |
+| 5. RULE・ERR | 各 AGG の不変条件・エラーケースを掘る。`RULE` 直下 `WHY "..."`、`ERR` 直下 `WHEN "..."` 併記（推奨） |
+| 6. 整合性チェック → 出力 | DML 整合性を確認し Markdown レポートを最終更新 |
 
-フェーズ2完了直後に MD ファイル `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md` を `Write` で生成（hook が HTML を自動生成）。初回のみ `Bash open dist/eventstorming/<session>.html` でブラウザ表示。以降の MD 編集で HTML は再生成されるが、**ブラウザの自動リロードは行わない**（必要に応じて手動で再読み込み）。
+MD 編集ごとに HTML は自動再生成されるが、**ブラウザの自動リロードはしない**（必要に応じて手動）。
 
 ---
 
@@ -32,17 +32,17 @@ description: Facilitate DDD domain modeling sessions via EventStorming conversat
 
 ### ① 会話プロトコル
 
-- **質問は1回に1つ** — 複数投げると思考が拡散する
-- **疑問文・促し文は全角 `？`** — 半角 `?` は DML 記号（`?ReadModel`）や `[?]` マーカーなど機能的な記号としてのみ残す
-- **EVT 拾い** — 「〜された」「〜完了した」を `EventName` で拾い DML に仮追加
-- **`[?]` を残す** — 迷い・矛盾・未確認はすべてマーク。推測で埋めない（マーカーは半角 `?` 固定）
-- **`？` シグナル** — ユーザーが `？`（半角 `?` 含む）を送ったら判断の軸を2〜3点提示（答えを押しつけない）
+- **質問は1回に1つ**
+- **疑問文・促し文は全角 `？`** — 半角 `?` は DML 記号（`?ReadModel`）や `[?]` マーカーなど機能的な用途のみ
+- **EVT 拾い** — 「〜された」「〜完了した」を `EventName` で仮追加
+- **`[?]` を残す** — 迷い・矛盾・未確認はすべてマーク。推測で埋めない
+- **`？` シグナル** — ユーザーが `？` を送ったら判断の軸を2〜3点提示（押しつけない）
 - **「おまかせ」シグナル** — 合理的なデフォルトを判断理由1行付きで選んで進める
-- **毎ターン末尾** に `> 迷ったら \`？\` を送ってください` を添える
+- **毎ターン末尾** に `> 迷ったら \`？\` を送ってください`
 
 ### ② チャット出力フォーマット
 
-ターンごとに2モードを使い分ける。詳細は `references/chat-output-format.md`。
+ターンごとに2モードを使い分け。完全テンプレ: `references/chat-output-format.md`。
 
 **(a) フェーズ内往復** — Markdown のみ：
 
@@ -58,7 +58,7 @@ description: Facilitate DDD domain modeling sessions via EventStorming conversat
 
 HTML 更新・DML 抜粋・用語集は出さない。本文末尾は問い 1 つで終わる。
 
-**(b) フェーズ完了** — Markdown + 構造化テーブル + DML 抜粋 + 用語集差分 + HTMLパス案内：
+**(b) フェーズ完了** — Markdown + 構造化テーブル + DML 抜粋 + 用語集差分 + HTML パス案内：
 
 ```
 **フェーズ{N} 完了: <フェーズ名>** ✅
@@ -71,13 +71,12 @@ HTML 更新・DML 抜粋・用語集は出さない。本文末尾は問い 1 �
 |---|---|---|---|---|
 | **store-front** | 客 | 注文する | — | 注文が入った ⚡ |
 | **kitchen** | — | 盛り付ける | 調理開始 | 料理ができた ⚡ |
-| **store-front** | 客 | 会計する | — | 会計が完了した |
 
 ⚡ = 次レーンへの非同期遷移
 
-> 詳細描画: [eventstorming-YYYYMMDD-HHMM.html](dist/eventstorming/eventstorming-YYYYMMDD-HHMM.html) （ブラウザで自動更新）
+> 詳細描画: [<session>.html](dist/eventstorming/<session>.html)
 >
-> 📱 スマホアプリでご覧の場合は HTML ファイルをダウンロードしてブラウザで開いてください（claude.ai 上で Artifact 化したい場合は「Artifact 化」と送ってください）
+> 📱 スマホアプリの場合は HTML をダウンロードしてブラウザで開く（Artifact 化希望は「Artifact 化」と送信）
 
 ### 追加された DML
 ```dml
@@ -103,95 +102,75 @@ HTML 更新・DML 抜粋・用語集は出さない。本文末尾は問い 1 �
 ```
 
 - H・Q 番号はセッション通じて通し（解決済みは欠番、再利用しない）
-- DML 抜粋の粒度はフェーズごと（`chat-output-format.md` §5）。**DML 全文はチャットに流さない**
-- 初回 DML 出力時に記法凡例を1回だけ添える（DML: `CONTEXT` `LANGUAGE` `UPSTREAM` `DOWNSTREAM` `EVT` `CMD` `AGG` `QRY` `POLICY` `TRIGGER` `WHEN` / フロー図: `|BC|` `@Actor` `?ReadModel` `!Command` `[Event]` `$Policy` `>` `>>` `*>`（BULK fanout） `&>>`（Join 遷移））
-- 表内の付箋ラベルは **DSL 記号（`@!$[]`）を削除して書く**。種別は表ヘッダーの絵文字＋カラム名で識別
-- `POLICY` ブロックは EVENTUAL-TX 専用。SAME-TX の分岐は発行元 SCENARIO の `WHEN` としてインライン記述（`references/dml-spec.md` 参照）
+- 表内の付箋ラベルは **DSL 記号（`@!$[]`）を削除**。種別は表ヘッダーの絵文字＋カラム名で識別
+- **DML 全文はチャットに流さない**。フェーズごとの抜粋粒度: `chat-output-format.md` §5
+- 初回 DML 出力時に記法凡例を1回だけ添える（後述「DSL 記号」「DML キーワード」）
 
-### ③ HTML 出力ルール（AI は触らない）
+### ③ HTML 出力（AI は触らない）
 
-HTML は `scripts/eventstorming_build.py` が MD から自動生成する派生物。AI は HTML を Write/Edit しない。
-
-- **トリガー**: `docs/eventstorming/*.md` を Write/Edit すると PostToolUse hook が起動 → `dist/eventstorming/<session>.html` を再生成
-- **出力先**: `dist/eventstorming/`（MD は `docs/`、HTML は `dist/` で責務分離）
-- **描画内容**: CSS 付箋風 div + Big Picture グリッド（時系列=横、BC=縦）、Zod スキーマシンタックスハイライト、コンテキストマップ自動生成、進捗バー
-- **付箋ラベル**: DSL 記号（`@!$[]`）は HTML 表示時に自動削除
-- **手動ビルド / 全件 / 監視**: `python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <session>.md` / `--all` / `--watch`
-- **Artifact 化（スマホ閲覧）**: `--artifact --copy` で `<session>-artifact.html` を生成しクリップボードへコピー。詳細は「Artifact 化」セクション
-- **テンプレート**: `templates/event-flow.html`、詳細仕様: `references/html-render-spec.md`
-- **フェーズ2完了時のみ** `Bash open dist/eventstorming/<session>.html` で外部ブラウザを起動。自動リロードはしない（meta refresh / AppleScript リロードは撤去済み）
+- **トリガー**: MD を Write/Edit → PostToolUse hook → `dist/eventstorming/<session>.html` 再生成
+- **出力先**: `dist/eventstorming/`（MD は `docs/`、HTML は `dist/`）
+- **手動ビルド/全件/監視**: `python3 scripts/eventstorming_build.py <session>.md` / `--all` / `--watch`
+- **フェーズ2完了時のみ** `Bash open dist/eventstorming/<session>.html`。自動リロードはしない
 - **Claude Code preview panel への反映** — フェーズ完了テンプレ末尾で `Read dist/eventstorming/<session>.html` を必ず呼ぶ
-- **スマホアプリ版への案内** — HTML を新規/再生成したフェーズ完了時、テンプレに「📱 スマホアプリでご覧の場合は HTML ファイルをダウンロードしてブラウザで開いてください」を必ず添える。Artifact 化希望は後述セクションへ誘導
+- **スマホアプリ案内** — HTML 新規/再生成のフェーズ完了テンプレに「📱 HTML をダウンロードしてブラウザで」を必ず添える
+- **描画仕様詳細**: `references/html-render-spec.md`、テンプレ: `templates/event-flow.html`
 
 ### ④ MD ファイル管理
 
-- アクティブファイル: `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md`（DML/フロー DSL の Single Source of Truth）
-- HTML ファイル: `dist/eventstorming/eventstorming-YYYYMMDD-HHMM.html`（MD から派生）
-- フェーズ2完了で `Write`（新規作成）、以降のフェーズ完了ごとに `Edit`（該当セクションのみ差分更新）
-- 書き出し後は **必ず** 品質チェックサブエージェントを起動（`references/quality-check-agent.md`。HTML は派生物なのでチェック不要）
-- **ユーザーが MD ファイルを直接編集した場合**: 次ターン応答前に `Read` で再読み込みし §3（フロー DSL）と §9（DML）を照合。差分があれば DML を `Edit` で同期し、品質チェック起動
+- アクティブ: `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md`（Single Source of Truth）
+- フェーズ2で `Write`、以降は `Edit` で該当セクションのみ差分更新
+- 書き出し後は **必ず** Agent tool で品質チェックを起動（`references/quality-check-agent.md`）。HTML は派生物なのでチェック不要
+- **ユーザーが MD を直接編集した場合**: 次ターン応答前に `Read` で再読み込みし §3（フロー DSL）と §9（DML）を照合。差分があれば `Edit` で同期し品質チェック起動
 
 | フロー DSL の変化 | DML への対応 |
 |---|---|
-| `@アクター > !コマンド > [イベント]` 追加 | 対応 SCENARIO を追加 |
-| `?リードモデル名` 追加 | 対応 SCENARIO に `QRY QueryName` を追加 |
-| `$ポリシー名` 追加 | 対応 POLICY を追加 |
-| フロー項目削除 | SCENARIO/POLICY を削除（迷う場合は `[?]` でマーク） |
+| `@アクター > !コマンド > [イベント]` 追加 | 対応 SCENARIO 追加 |
+| `?リードモデル名` 追加 | SCENARIO に `QRY QueryName` 追加 |
+| `$ポリシー名` 追加 | 対応 POLICY 追加 |
+| フロー項目削除 | SCENARIO/POLICY 削除（迷う場合 `[?]`） |
 | レーン名（BC 名）変更 | CONTEXT 宣言と SCENARIO のモジュール名を更新 |
 
-フロー図は日本語ラベル、DML は英語識別子（例：`!コミュニティを作成` ↔ `CMD CreateCommunity`）。新しい日本語ラベルが現れたらセクション10（用語集）にも対応英語識別子を追記。
+フロー図は日本語ラベル、DML は英語識別子（例：`!コミュニティを作成` ↔ `CMD CreateCommunity`）。新しい日本語ラベルが現れたら §10（用語集）に英語識別子を追記。
 
 ---
 
-## Event Flow 記法（DSL — Single Source of Truth）
+## Event Flow 記法（DSL）
 
-ハッピーパスと各代替シナリオをそれぞれ `` ```event-flow-svg `` フェンスで MD ファイル §3 に保存（散文のみは不可）。フェンス名が `svg` でも内容は中立 DSL で HTML レンダラーが解釈。
+ハッピーパスと各代替シナリオを `` ```event-flow-svg `` フェンスで MD §3 に保存（散文のみ不可）。
 
 ````markdown
 ```event-flow-svg
 title: <タイトル>
 flow:
-|BC名|: <フロー起点の文脈説明（アクター・起動条件など）>
+|BC名|: <フロー起点の文脈説明>
   @アクター > ?リードモデル > !コマンド > [イベント]
   > !コマンド > [イベント] >>
-|BC名|: <遷移の境界説明（何をきっかけに次のレーンへ移るか）>
+|BC名|: <遷移の境界説明>
   $ポリシー > !コマンド > [イベント]
 ```
 ````
 
-**改行ルール**: フロー行は `[イベント]` 直後で改行し、次行は `  > ` で始める（インデント 2 スペース）。
+**改行ルール**: フロー行は `[イベント]` 直後で改行、次行は `  > ` で始める（インデント 2 スペース）。
 
-| 記号 | 意味 | 付箋色 | HTML での扱い |
-|------|------|--------|----|
-| `\|BC名\|: 説明` | レーン（swim lane）ヘッダー行。説明必須 | グレートーン | `.lane-name.bc-{slug}` |
-| `@アクター名` | アクター付箋 | 黄 | `.note.actor` |
-| `?クエリ名` | Read Model 付箋。「これを見なければコマンドを発行できない」情報のみ | 緑 | `.note.readmodel` |
-| `!コマンド名` | コマンド付箋（`!` 省略可） | 青 | `.note.command` |
-| `[イベント名]` | イベント付箋（過去形） | 橙 | `.note.event` |
-| `$ポリシー名` | ポリシー付箋 | 紫 | `.note.policy` |
-| `>` | 同期フロー（直接連鎖） | — | `.arrow-h` |
-| `>>` | 非同期遷移（レーン切り替え）— 前レーン最後の行末 | — | `.arrow-v down/up` |
-| `*>` | **BULK Fork**。直後の CMD/EVT が N 個並列インスタンスのうちの 1 つ | — | `.note.fanout` (3 枚スタック + ×N) / `.arrow-h.fork` |
-| `&>>` | **Join + 非同期遷移**。N→1 合流の `>>` 版 — 前レーン最後の行末 | — | `.sync-bar down/up` (BPMN 黒太線 + Σ N) |
+**DSL 記号**: `|BC|:` レーンヘッダー（説明必須）／`@Actor`／`?ReadModel`（コマンド発行判断に必要な情報のみ）／`!Command`（`!` 省略可）／`[Event]`（過去形）／`$Policy`／`>` 同期連鎖／`>>` 非同期遷移（前レーン行末）／`*>` BULK Fork（N 個並列の 1 つ）／`&>>` Join+非同期遷移（N→1 合流の `>>` 版・前レーン行末）。色・HTML マッピング詳細: `references/html-render-spec.md` §6-3。
 
-**ラベルの日本語化方針：** コマンド=動詞句、イベント=過去形、ポリシー=目的名詞句、アクター=役割名、BC 名=英語のまま。DML コードブロック（§9）は英語維持。HTML 表示時は DSL 記号（`@!$[]`）を削除。
+**ラベル日本語化方針**: コマンド=動詞句、イベント=過去形、ポリシー=目的名詞句、アクター=役割名、BC 名=英語。DML コードブロック（§9）は英語維持。HTML 表示時は DSL 記号（`@!$[]`）を削除。
 
 ---
 
-## DML 記述ルール
+## DML 記述ルール（要点）
 
-- **SCENARIO 名は日本語**でアクター＋行為（例：`SCENARIO 主催者がコミュニティを作成する`）
-- **SCENARIO 内フィールド順序は `ACTOR → QRY → CMD → EVT → AGG → RULE → ERR → POL`** を厳守
-- **ACTOR は必須**。SCENARIO 先頭に `ACTOR <アクター名>`（典型値：`Organizer` `Member` `System`）
-- **CONTEXT 宣言に `UPSTREAM` / `DOWNSTREAM` を必須記載**（依存なしは `(none)` 明示、関係タイプを行末コメント）
-- **POLICY ブロックは EVENTUAL-TX 専用** — SAME-TX の分岐は発行元 SCENARIO の `WHEN` インライン記述
-- **POLICY は対応 SCENARIO 直後・CONTEXT 内に配置** — ファイル末尾にまとめない。`SCENARIO` 内の `POL` はポリシー名参照、`POLICY` ブロックが定義
-- **RULE / ERR / POLICY の日本語補足は上行に `#` コメントで分離**
-- **ポリシー後の Command は原則必須** — `$Policy > !Command > [Event]`。**例外:** 副作用専用 POLICY（外部通知/メール送信 等、AGG 更新を伴わない infrastructure 呼び出し）に限り `$Policy > [Event]` を許容（対応 SCENARIO を書かず、POLICY ブロックの `CMD` フィールドも省略。TRIGGER / QRY / BULK / EVT のみ）。例: `$会場変更時の通知 *> [変更が通知された]`
-- **EVT / CMD / AGG / QRY は英語のみ**（`EVT OrderPlaced`、`AGG Order`、`QRY GetEventDetails` — `()` や `<<>>` は不要）
-- **QRY は判断に必要なデータのみ** — アクター（「このコマンドを発行するか」）またはポリシー（「どのコマンドを発行するか・誰に対して」）の判断材料のみ。コマンド実装内部で必要なデータ（BULK の実行対象リスト等）はコマンドの責務（詳細は `references/dml-spec.md`）
-- **BC（CONTEXT）名は `lowercase-with-hyphen`** で略さず
-- **インフラ系ドメイン（通知・スケジューラ・決済等）は「BC 昇格 vs POLICY 留置」を判定** — データモデルがあるのに CONTEXT 宣言がない「宙吊り」状態を禁止（判定基準は `references/dml-spec.md`）
+完全仕様: `references/dml-spec.md`。
+
+- **SCENARIO 名は日本語**でアクター＋行為（例：`SCENARIO 主催者がコミュニティを作成する`）。先頭に `ACTOR <名前>` 必須（典型値: `Organizer` `Member` `System`）
+- **SCENARIO 内フィールド順序 `ACTOR → QRY → CMD → EVT → AGG → RULE → ERR → POL`** 厳守
+- **`EVT/CMD/AGG/QRY` は英語識別子**（`EVT OrderPlaced` 等。`()` や `<<>>` 不要）。RULE/ERR/POLICY の日本語補足は上行に `#` コメント
+- **CONTEXT 宣言に `UPSTREAM`/`DOWNSTREAM` 必須**（依存なしは `(none)` 明示、関係タイプを行末コメント）。BC 名は `lowercase-with-hyphen`
+- **POLICY ブロックは EVENTUAL-TX 専用** — 対応 SCENARIO 直後・CONTEXT 内に配置。SAME-TX 分岐は発行元 SCENARIO の `WHEN` インライン
+- **ポリシー後の Command は原則必須**（`$Policy > !Command > [Event]`）。**例外**: 副作用専用 POLICY（外部通知/メール送信など AGG 更新を伴わない）は `$Policy > [Event]` 許容、対応 SCENARIO 省略、POLICY ブロックの `CMD` も省略（TRIGGER/QRY/BULK/EVT のみ）
+- **QRY は判断材料のみ** — アクターまたはポリシーの判断（どのコマンドを誰に発行するか）に必要なデータ。コマンド実装内部のデータ（BULK の対象リスト等）は含めない
+- **インフラ系ドメイン（通知・スケジューラ・決済等）は「BC 昇格 vs POLICY 留置」を判定** — データモデルがあるのに CONTEXT がない「宙吊り」禁止
 
 ---
 
@@ -199,110 +178,81 @@ flow:
 
 | タイミング | 操作 |
 |-----------|------|
-| フェーズ2完了 | MD を `Write` 新規作成 → `Bash open <file>.html` で初回起動 |
-| フェーズ3完了 | `Edit` で §3（フロー DSL）・§9（DML）・§10（用語集）更新 |
-| フェーズ4完了 | `Edit` で §3・§4（コンテキスト）・§9・§10 更新 |
-| フェーズ4.5完了 | `Edit` で §4（コンテキスト名・LANGUAGE）と §9 更新 |
-| **フェーズ4.6完了** | **`Edit` で §4（BC カードの `#### 目的/背景/制約` 任意）と §5（AGG カードの `#### 目的`（必須）/`#### 背景`/`#### 制約`）更新** |
-| フェーズ5完了 | `Edit` で §5（集約・Zod スキーマ・RULE/ERR）・§6（リードモデル）・§9（RULE 直下 `WHY` / ERR 直下 `WHEN` 併記）更新 |
-| フェーズ6（最終） | `Edit` で全セクション完成版を保存 |
+| フェーズ2完了 | `Write` 新規作成 → `Bash open <session>.html` 初回起動 |
+| フェーズ3完了 | `Edit` で §3・§9・§10 |
+| フェーズ4完了 | `Edit` で §3・§4・§9・§10 |
+| フェーズ4.5完了 | `Edit` で §4（LANGUAGE）・§9 |
+| **フェーズ4.6完了** | **`Edit` で §4（BC `#### 目的/背景/制約` 任意）・§5（AGG `#### 目的`必須/`#### 背景`/`#### 制約`）** |
+| フェーズ5完了 | `Edit` で §5（Zod・RULE/ERR）・§6・§9（`WHY`/`WHEN` 併記） |
+| フェーズ6（最終） | `Edit` で全セクション完成版 |
 | ユーザーが「保存して」 | 即座に MD を書き出す |
 
-**書き出し後の品質チェック（必須）：** MD を Write/Edit したら **必ず** Agent tool で品質チェックサブエージェントを起動（`references/quality-check-agent.md`）。HTML は派生物なのでチェック不要。
+**書き出し後の品質チェック（必須）**: Agent tool で `references/quality-check-agent.md` を起動。
+- **表記チェック (D/F/S 系)**: 形式違反は自動修正
+- **モデリング意味チェック (M 系)**: CMD/EVT 命名・CRUD 検出・Saga 完了状態など、命名と業務概念の整合。意味判断のため自動修正せず `[?] M_N` ホットスポット候補として列挙し、ユーザーと協議
 
-品質チェックは 2 段階:
-- **表記チェック (D / F / S 系)**: 形式違反は自動修正
-- **モデリング意味チェック (M 系)**: CMD/EVT 名の業務概念整合性・CRUD 命名検出・Saga 完了状態など、命名と業務概念の整合をチェック。意味判断を伴うため自動修正せず、`[?] M_N` ホットスポット候補として列挙。ユーザーと協議して採否決定。
+**途中保存と再開**: MD に `## 再開ポイント` セクションを追加。再開時は読み込んで継続、H・Q 番号は引き継ぐ。
 
-**途中保存と再開：** `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md` に `## 再開ポイント` セクションを付けて保存。再開時は読み込んで継続、H・Q 番号は前回から引き継ぐ。
+### MD セクション構成
 
-### MD ファイル出力形式
+完全テンプレ（見出しレベル・サブセクション形式）: `references/template.md`。
 
-- 見出し1: `# EventStorming 風味のドメインモデリング - <ドメイン名>`
-
-| # | セクション | 記載タイミング |
-|---|-----------|--------------|
+| # | セクション | タイミング |
+|---|-----------|-----------|
 | 1 | ハッピーパスストーリー（400〜600字） | フェーズ2 |
-| 2 | 代替シナリオ（散文のみ、図はセクション3に集約） | フェーズ2 |
-| 3 | Event Walkthrough（`` ```event-flow-svg `` 図） | フェーズ2以降 |
-| 4 | コンテキスト候補（**`### english-slug（日本語名）` 形式必須**、`UPSTREAM`/`DOWNSTREAM` 依存方向必須、任意で `#### 目的`/`#### 背景`/`#### 制約` サブセクション） | フェーズ4完了後（背景系はフェーズ4.6） |
-| 5 | 集約候補（**`### EnglishName（日本語名）` 形式必須**、`#### 目的`（必須・30字以上）/`#### 背景`/`#### 制約` サブセクション、属性を Zod スキーマで記述・不変条件・状態遷移必須） | `#### 目的/背景/制約` はフェーズ4.6完了後、Zod・不変条件はフェーズ5完了後 |
-| 6 | リードモデル候補（**`### QRYName（日本語名）` 形式必須**） | フェーズ4〜5完了後 |
+| 2 | 代替シナリオ（散文のみ、図は §3） | フェーズ2 |
+| 3 | Event Walkthrough（`` ```event-flow-svg `` 図） | フェーズ2〜 |
+| 4 | コンテキスト候補（`### english-slug（日本語名）`、`UPSTREAM`/`DOWNSTREAM` 必須、任意で `#### 目的/背景/制約`） | フェーズ4〜（4.6 で背景） |
+| 5 | 集約候補（`### EnglishName（日本語名）`、`#### 目的`（必須・30字以上）/`#### 背景`/`#### 制約`、Zod スキーマ・不変条件・状態遷移） | 4.6 で目的系、5 で Zod |
+| 6 | リードモデル候補（`### QRYName（日本語名）`） | フェーズ4〜5 |
 | 7 | オープンクエスチョン | 随時 |
 | 8 | 次のアクション | 随時 |
-| 9 | DML（` ```dml ` コードブロック全文） | 随時 |
-| 10 | 用語集（日本語フロー図ラベル ↔ 英語 DML 識別子の対応表） | フェーズ3以降・随時 |
+| 9 | DML（` ```dml ` 全文） | 随時 |
+| 10 | 用語集（日本語ラベル ↔ 英語 DML 識別子） | フェーズ3〜 |
 
-**セクション6 リードモデル候補の書き方：**
+**§6 リードモデル候補**: 単一集約への単純ルックアップは省略し、(a) 計算値を含む / (b) 複数集約・複数 BC を横断 / (c) BULK クエリ（一覧取得）のいずれかのみ記載。各エントリは `利用者`／`目的`／`ソース`／`算出` を1行ずつ。
 
-フロー図（§3）と DML の `QRY` から収集。ただし**単一集約への単純ルックアップは省略**し、以下のいずれかに該当するもののみ記載：
-
-- 計算値を含む（例：定員 − 承認数 = 残席数）
-- 複数集約・複数 BC を横断する
-- BULK クエリ（一覧取得）
-
-各エントリの形式：
-
-```markdown
-### QRY名（日本語名）
-- **利用者**: アクター名 または ポリシー名（対応 SCENARIO/POLICY への参照）
-- **目的**: 何を確認して何を決めるか（1行）
-- **ソース**: どの集約・BC からデータを取るか
-- **算出**: 計算式・取得条件・ソート順など（単純ルックアップなら省略可）
-```
-
-未完成セクションは `<!-- TODO: フェーズN完了後に追記 -->` プレースホルダーで保持（HTML 側では `.todo-placeholder` クラスで表示）。
+未完成セクションは `<!-- TODO: フェーズN完了後に追記 -->` で保持（HTML 側 `.todo-placeholder` 表示）。
 
 ---
 
 ## サブコマンド
 
-| キーワード例 | 参照ファイル |
-|------------|------|
-| 「フロー整合性チェック」「因果チェーンチェック」「整合性チェック」「causal check」 | `references/causal-check-agent.md` |
+| キーワード例 | 参照 |
+|---|---|
+| 「フロー整合性チェック」「因果チェーンチェック」「causal check」 | `references/causal-check-agent.md` |
 | 「表記チェック」「品質チェック」「quality check」 | `references/quality-check-agent.md` |
 
-サブエージェントの結果を受け取ったら、内容をユーザーに1行で報告する。
+サブエージェントの結果は1行でユーザー報告。
 
 ---
 
-## Artifact 化（スマホで HTML を閲覧する）
-
-`dist/eventstorming/<session>.html` はローカルファイルなのでそのままではスマホから見られない。**claude.ai の Artifact 機能**でスマホ（Web/アプリ）から確認可能。
+## Artifact 化（スマホで HTML を閲覧）
 
 ユーザーが「Artifact 化」「スマホで見たい」と言ったら：
 
-1. **Artifact 互換 HTML を生成**:
-   ```bash
-   python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py \
-       docs/eventstorming/<session>.md --artifact --copy
-   ```
-   - `--artifact`: meta-refresh / リロード案内を除去した `<session>-artifact.html` を出力
-   - `--copy`: 生成内容を `pbcopy` でクリップボードへ（macOS 限定）
-2. **貼り付け先案内**: claude.ai の **新しいチャット** を開き、クリップボードの HTML を貼り付け「**これを Artifact として表示して**」と依頼
-3. **チャットに 1 行報告**: `📋 dist/eventstorming/<session>-artifact.html を生成 / クリップボードへコピー済み。claude.ai に貼り付けて Artifact 化してください`
+1. `python3 scripts/eventstorming_build.py docs/eventstorming/<session>.md --artifact --copy`
+   - `--artifact`: meta-refresh 等を除去した `<session>-artifact.html` を出力
+   - `--copy`: 内容を `pbcopy` でクリップボードへ（macOS 限定）
+2. claude.ai の **新しいチャット** に貼り付け「**これを Artifact として表示して**」と依頼
+3. 1行報告: `📋 <session>-artifact.html を生成 / クリップボードへコピー済み。claude.ai で Artifact 化してください`
 
-制約：単一 HTML のみ（外部 CSS/JS/画像なし） / 自動更新は機能しない（再ビルド後は再貼り付け必要） / `--copy` は macOS 限定（Linux/Windows は手動で `pbpaste`/ファイル参照）。
-
-| 用途 | パス |
-|---|---|
-| ローカルブラウザ閲覧（手動リロード） | `dist/eventstorming/<session>.html` |
-| Artifact 用（claude.ai 貼り付け用） | `dist/eventstorming/<session>-artifact.html` |
+制約: 単一 HTML のみ／自動更新なし（再ビルド後は再貼り付け）／`--copy` は macOS 限定。
 
 ---
 
 ## 参照ファイル
 
 | ファイル | 用途 |
-|---------|------|
-| `references/dml-spec.md` | DML 記法仕様（SCENARIO・POLICY・QRY 完全仕様） |
+|---|---|
+| `references/dml-spec.md` | DML 完全仕様（SCENARIO・POLICY・QRY・DSL 記号・記述ルール・フル例） |
 | `references/session-guide.md` | ファシリテーション質問パターン |
 | `references/domain-starters.md` | よくあるドメインの候補イベントリスト |
-| `references/template.md` | Markdown レポートテンプレート |
-| `references/quality-check.md` | DDD/EventStorming 品質チェックルール（D1〜D10 表記 / F1〜F6 フロー記法 / S1〜S7 セクション完全性 / M1〜M5 モデリング意味） |
+| `references/template.md` | MD レポート完全テンプレート（§1〜§10 詳細） |
+| `references/quality-check.md` | 品質チェックルール（D/F/S/M 系） |
 | `references/causal-check.md` | DML 因果チェーンチェックルール |
-| `references/quality-check-agent.md` | 品質チェックサブエージェント起動プロンプト |
-| `references/causal-check-agent.md` | フロー整合性サブエージェント起動プロンプト |
-| `references/html-render-spec.md` | Event Flow HTML レンダリング仕様（CSS 付箋風 div + Big Picture グリッド、DSL→HTML 変換ルール） |
-| `references/chat-output-format.md` | チャット出力テンプレート（フェーズ完了／往復モード、編集指示語彙、フォールバックモード） |
+| `references/quality-check-agent.md` | 品質チェック起動プロンプト |
+| `references/causal-check-agent.md` | フロー整合性起動プロンプト |
+| `references/html-render-spec.md` | HTML レンダリング仕様（色・DSL→HTML 変換） |
+| `references/chat-output-format.md` | チャット出力テンプレート完全版 |
 | `templates/event-flow.html` | HTML 出力の汎用テンプレート |
