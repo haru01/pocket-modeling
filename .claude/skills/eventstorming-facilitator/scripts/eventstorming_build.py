@@ -1097,20 +1097,20 @@ DML_VALUE_CLASS_BY_KEY = {
     "agg": "v-actor",
     "cmd": "v-cmd",
     "evt": "v-evt",
-    "trigger": "v-evt",
+    "trg": "v-evt",
     "emits": "v-evt",
-    "events": "v-evt",      # v2: triggers の join イベント
+    "evts": "v-evt",        # v2: trgs の join イベント
     "qry": "v-qry",
     "pol": "v-pol",
-    "error": "v-err",
+    "err": "v-err",
     # v2 メタ（CML 由来の任意フィールド）
     "type": "v-meta",
     "vision": "v-meta",
-    "subdomain": "v-meta",
-    "responsibilities": "v-meta",
-    "implementationTechnology": "v-meta",
+    "sub": "v-meta",
+    "resp": "v-meta",
+    "tech": "v-meta",
     "purpose": "v-meta",
-    "branchMode": "v-meta",
+    "brMode": "v-meta",
     "mode": "v-meta",
 }
 
@@ -1133,7 +1133,7 @@ def _split_yaml_comment(s: str) -> tuple[str, str | None]:
 
 def _yaml_value_class(key: str, section: str) -> str:
     """key（と所属セクション）から値の色クラスを決める。"""
-    if key == "name" and section == "policies":
+    if key == "name" and section == "pols":
         return "v-pol"
     return DML_VALUE_CLASS_BY_KEY.get(key, "v-str")
 
@@ -1195,7 +1195,7 @@ def highlight_dml(dml: str) -> str:
 
         if indent == 0:
             mb = _YAML_BLOCK_KEY_RE.match(body)
-            if mb and mb.group(1) in ("contexts", "scenarios", "policies"):
+            if mb and mb.group(1) in ("ctxs", "scs", "pols"):
                 section = mb.group(1)
 
         body_html = _render_yaml_body(body, stack, section)

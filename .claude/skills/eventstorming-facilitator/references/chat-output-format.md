@@ -63,7 +63,7 @@ Claude Code（CLI/PCアプリ/スマホアプリ）はインライン `<svg>` / 
 ### 追加された DML
 
 \`\`\`dml
-{該当フェーズで確定した contexts / scenarios / policies のみ（YAML）}
+{該当フェーズで確定した ctxs / scs / pols のみ（YAML）}
 \`\`\`
 
 ### 用語集の追加
@@ -119,7 +119,7 @@ assistant が自己判断する。
   - フェーズ4: 各 EVT に CMD と Actor が紐付き、非同期遷移が同定
   - フェーズ4.5: LANGUAGE が記録され、レーン境界が明確
   - **フェーズ4.6: 全 AGG カードに `#### 目的`（30字以上）が記入され、`#### 背景`/`#### 制約` の有無を判定**
-  - フェーズ5: 全 AGG の不変条件・エラー、`branches` 分岐、**Zod スキーマ確定**。各 `rules[].why`、各 `errors[].when` の記入率を確認
+  - フェーズ5: 全 AGG の不変条件・エラー、`brs` 分岐、**Zod スキーマ確定**。各 `rules[].why`、各 `errs[].when` の記入率を確認
   - フェーズ6: causal-check 完了、残課題レビュー済
 
 ### 往復と判定するシグナル
@@ -141,12 +141,12 @@ assistant が自己判断する。
 |---|---|
 | フェーズ内往復 | 原則出さない。例外: SCENARIO 1つが大きく書き直されてユーザー確認が必要なときのみ末尾に 1 件 |
 | フェーズ1完了 | DML はまだ出さない (CONTEXT 名すら確定していない) |
-| フェーズ2完了 | `contexts` のみ (upstream / downstream 含む) |
+| フェーズ2完了 | `ctxs` のみ (up / dn 含む) |
 | フェーズ3完了 | 新規追加された scenario の `name` / `actor` / `evt` のみ (cmd/rules は未確定) |
 | フェーズ4完了 | 該当フェーズで追加・確定した scenario 全文 (cmd/evt/agg/rules 入り) |
-| フェーズ4.5完了 | `language` + `contexts` の追加分 |
+| フェーズ4.5完了 | `lang` + `ctxs` の追加分 |
 | **フェーズ4.6完了** | **DML 抜粋は出さない (DML 構文は不変)。代わりに「### AGG 目的・背景・制約サマリ」テーブルを出して各 AGG の `#### 目的` 1 行と制約件数を 1 表で示す** |
-| フェーズ5完了 | 新規 rules/errors が追加された scenario 全文 + policies 要素 (新規分) + **集約の Zod スキーマ**。`rules[].why`、`errors[].when` がある分は併記 |
+| フェーズ5完了 | 新規 rules/errs が追加された scenario 全文 + pols 要素 (新規分) + **集約の Zod スキーマ**。`rules[].why`、`errs[].when` がある分は併記 |
 | フェーズ6完了 | **新規分の抜粋のみ + MD/HTML ファイルパスを案内**。DML 全文は別ファイル `<session>.dml.yaml` に保持、チャットには流さない |
 
 DML 抜粋は ` ```dml ` コードブロックで囲む。
@@ -192,8 +192,8 @@ HTML は MD と並行して常に最新状態を保つ。`open` で起動した�
 | 「主催者BCに@Adminを追加」 | レーンへの actor 追加 | scenario に `actor: Admin` + フロー DSL に `@Admin` + HTML §3 |
 | 「C2 と E2 の間に !メール送信 を挟んで」 | CMD 挿入 | scenario に `cmd: SendMail` + フロー DSL + HTML §3 |
 | 「E4 を消して」 | 削除 | DML から該当 `evt` 削除 + フロー DSL + HTML から削除。下流に影響あれば `[?]` 警告 |
-| 「P1 を notifications BC に動かして」 | POLICY 移動 | policy の `context` を変更 + フロー DSL + HTML §3 のレーン変更 |
-| 「Member BC を participant にリネーム」 | CONTEXT リネーム | `contexts[].name` を member → participant に変更し scenarios/policies の `context` 参照も更新 + HTML §3 §4 §10 |
+| 「P1 を notifications BC に動かして」 | POLICY 移動 | policy の `ctx` を変更 + フロー DSL + HTML §3 のレーン変更 |
+| 「Member BC を participant にリネーム」 | CONTEXT リネーム | `ctxs[].name` を member → participant に変更し scs/pols の `ctx` 参照も更新 + HTML §3 §4 §10 |
 | 「ハッピーパスをやり直したい」 | フェーズ2 へロールバック | §1〜§3 を再構築 + HTML 再生成 |
 
 ### 8-2. assistant の反映手順 (1指示あたり)

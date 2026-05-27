@@ -1,6 +1,6 @@
 # DML (Domain Modeling Language) JSON Schema — Draft 2020-12
 #
-# DML は YAML 形式のドメインモデル（contexts / scenarios / policies の 3 リスト + 任意の domains）。
+# DML は YAML 形式のドメインモデル（ctxs / scs / pols の 3 リスト + 任意の domains）。
 # このスキーマは「構文 validity（形が正しいか）」のみを機械検証する。
 # 「意味 validity（参照の実在・因果整合・モデル品質）」は causal-check / quality-check が担う。
 # スキーマ通過は必要条件であって十分条件ではない。
@@ -11,8 +11,12 @@
 #   doc = yaml.safe_load(open("docs/eventstorming/<session>.dml.yaml"))  # None も許容
 #   list(Draft202012Validator(schema).iter_errors(doc))
 #
-# 後方互換: 拡張フィールド（type/vision/responsibilities/aggregates/subdomain/roles/
-# partnerRoles/branchMode/triggers/domains）はすべて optional。v1 記法は永続的に valid。
+# 後方互換: 拡張フィールド（type/vision/resp/aggs/sub/roles/
+# prRoles/brMode/trgs/domains）はすべて optional。v1 記法は永続的に valid。
+#
+# 略語化方針: 長いキー名は略語化、短いキー名（name/type/vision/note/lang/mod/qry/cmd/evt/agg/pol 等）は維持。
+# 主な略語: ctxs / scs / pols / ctx / aggs / sub(s) / up / dn / rel / prRoles / brMode / brs /
+#          cond / err / errs / resp / tech / trg / trgs / evts / lang / mod
 
 $schema: "https://json-schema.org/draft/2020-12/schema"
 $id: "https://pocket-modeling/schemas/dml.schema.yaml"
@@ -21,20 +25,20 @@ title: DML Document
 # トップレベルは object。必須キーは無い（空 {} も valid）。
 # 全行コメントのみの .dml.yaml は yaml.safe_load で None になるが、これは検証ツール層
 # （validate_dml.py / ビルダー）が「未記述」として検証前にスキップする（進行中セッション許容）。
-# スキーマを object に固定することで、違反が (root) に潰れず深いパス（例 scenarios/3/cmd）で報告される。
+# スキーマを object に固定することで、違反が (root) に潰れず深いパス（例 scs/3/cmd）で報告される。
 type: object
 additionalProperties: false
 properties:
   domains:
     type: array
     items: { $ref: "#/$defs/domain" }
-  contexts:
+  ctxs:
     type: array
     items: { $ref: "#/$defs/context" }
-  scenarios:
+  scs:
     type: array
     items: { $ref: "#/$defs/scenario" }
-  policies:
+  pols:
     type: array
     items: { $ref: "#/$defs/policy" }
 
@@ -63,7 +67,7 @@ $defs:
       - Upstream-Downstream    # +CML
       - Open-Host-Service      # +CML
       - Published-Language     # +CML
-  relationshipRole:                             # CML ショートコード（roles / partnerRoles 要素）
+  relationshipRole:                             # CML ショートコード（roles / prRoles 要素）
     type: string
     enum: [U, D, S, C, OHS, PL, ACL, CF, SK, P]
   subdomainType:
@@ -84,7 +88,7 @@ $defs:
     properties:
       name: { $ref: "#/$defs/contextName" }
       vision: { type: string }
-      subdomains:
+      subs:
         type: array
         items:
           type: object
@@ -99,14 +103,14 @@ $defs:
   relationshipEntry:
     type: object
     additionalProperties: false
-    required: [context]
+    required: [ctx]
     properties:
-      context: { $ref: "#/$defs/contextName" }
-      relationship: { $ref: "#/$defs/relationshipPattern" }   # v1・任意
+      ctx: { $ref: "#/$defs/contextName" }
+      rel: { $ref: "#/$defs/relationshipPattern" }            # v1・任意
       roles:                                                  # 自 BC 側の役割パターン
         type: array
         items: { $ref: "#/$defs/relationshipRole" }
-      partnerRoles:                                           # 相手 BC 側の役割パターン
+      prRoles:                                                # 相手 BC 側の役割パターン
         type: array
         items: { $ref: "#/$defs/relationshipRole" }
       note: { type: string }
@@ -127,31 +131,31 @@ $defs:
   context:
     type: object
     additionalProperties: false
-    required: [name]                            # name のみ必須（language 無しの BC が実在）
+    required: [name]                            # name のみ必須（lang 無しの BC が実在）
     properties:
       name: { $ref: "#/$defs/contextName" }
       # --- 拡張メタ（要素④・任意） ---
       type: { $ref: "#/$defs/bcType" }
       vision: { type: string }
-      responsibilities:                         # 文字列 or 文字列配列
+      resp:                                     # 文字列 or 文字列配列
         oneOf:
           - type: string
           - type: array
             items: { type: string }
-      implementationTechnology: { type: string }
-      subdomain: { $ref: "#/$defs/contextName" }   # 要素②・軽量参照
-      aggregates:
+      tech: { type: string }
+      sub: { $ref: "#/$defs/contextName" }      # 要素②・軽量参照
+      aggs:
         type: array
         items: { $ref: "#/$defs/aggregateMeta" }
       # --- v1 既存 ---
-      language:
+      lang:
         type: object
         additionalProperties: { type: string }   # EnglishTerm -> 日本語定義
-      module: { type: string }
-      upstream:
+      mod: { type: string }
+      up:
         type: array
         items: { $ref: "#/$defs/relationshipEntry" }
-      downstream:
+      dn:
         type: array
         items: { $ref: "#/$defs/relationshipEntry" }
       note: { type: string }
@@ -168,10 +172,10 @@ $defs:
   error:
     type: object
     additionalProperties: false
-    required: [condition, error]
+    required: [cond, err]
     properties:
-      condition: { type: string }
-      error: { $ref: "#/$defs/pascalCase" }
+      cond: { type: string }
+      err: { $ref: "#/$defs/pascalCase" }
       when: { type: string }
       note: { type: string }
 
@@ -181,7 +185,7 @@ $defs:
     additionalProperties: false
     required: [evt]
     properties:
-      condition: { type: string }    # concurrent / inclusive 時は省略可
+      cond: { type: string }         # concurrent / inclusive 時は省略可
       evt: { $ref: "#/$defs/pascalCase" }
       pol:
         oneOf:
@@ -194,18 +198,18 @@ $defs:
   scenario:
     type: object
     additionalProperties: false
-    required: [name, context, actor]
+    required: [name, ctx, actor]
     properties:
       name: { type: string }                  # 日本語（アクター＋行為）
-      context: { $ref: "#/$defs/contextName" }
+      ctx: { $ref: "#/$defs/contextName" }
       actor: { $ref: "#/$defs/pascalCase" }
       qry:
         type: array
         items: { $ref: "#/$defs/pascalCase" }
       cmd: { $ref: "#/$defs/pascalCase" }
       evt: { $ref: "#/$defs/pascalCase" }
-      branchMode: { $ref: "#/$defs/branchMode" }   # 要素③・省略時 exclusive
-      branches:
+      brMode: { $ref: "#/$defs/branchMode" }   # 要素③・省略時 exclusive
+      brs:
         type: array
         minItems: 1
         items: { $ref: "#/$defs/branch" }
@@ -213,7 +217,7 @@ $defs:
       rules:
         type: array
         items: { $ref: "#/$defs/rule" }
-      errors:
+      errs:
         type: array
         items: { $ref: "#/$defs/error" }
       pol:
@@ -222,27 +226,27 @@ $defs:
       note: { type: string }
     allOf:
       - not:
-          required: [evt, branches]            # evt と branches の同時指定を禁止
+          required: [evt, brs]                  # evt と brs の同時指定を禁止
       - if:
-          required: [branchMode]
+          required: [brMode]
         then:
-          required: [branches]                 # branchMode 単独を禁止
+          required: [brs]                       # brMode 単独を禁止
 
   # ---------- Policy（EVENTUAL-TX） ----------
   policy:
     type: object
     additionalProperties: false
-    required: [name, context]
+    required: [name, ctx]
     properties:
       name: { $ref: "#/$defs/pascalCase" }
-      context: { $ref: "#/$defs/contextName" }
-      trigger: { $ref: "#/$defs/pascalCase" }   # v1・単一トリガー
-      triggers:                                  # 要素③・複数トリガー join
+      ctx: { $ref: "#/$defs/contextName" }
+      trg: { $ref: "#/$defs/pascalCase" }       # v1・単一トリガー
+      trgs:                                      # 要素③・複数トリガー join
         type: object
         additionalProperties: false
-        required: [events]
+        required: [evts]
         properties:
-          events:
+          evts:
             type: array
             minItems: 1
             items: { $ref: "#/$defs/pascalCase" }
@@ -254,7 +258,7 @@ $defs:
       note: { type: string }
     allOf:
       - not:
-          required: [trigger, triggers]          # trigger と triggers の同時指定を禁止
+          required: [trg, trgs]                  # trg と trgs の同時指定を禁止
       - if:
           required: [bulk]
           properties:

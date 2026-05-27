@@ -13,7 +13,7 @@
 domains:
   - name: community-event-domain
     vision: "コミュニティイベントの企画から当日参加までを一気通貫で支える"
-    subdomains:
+    subs:
       - name: event-core
         type: CORE_DOMAIN
         vision: "イベントの企画・公開・変更というコア価値"
@@ -21,66 +21,66 @@ domains:
         type: GENERIC_SUBDOMAIN
         vision: "決済・返金。外部 PSP に委譲する汎用領域"
 
-contexts:
+ctxs:
   # ④ BC メタ + ① roles/partnerRoles を使う BC
   - name: event-planning
     type: FEATURE
     vision: "イベントのライフサイクルとキャパシティを所有する"
-    responsibilities: [Event, Capacity, Schedule]
-    implementationTechnology: "TypeScript, NestJS"
-    subdomain: event-core
-    language:
+    resp: [Event, Capacity, Schedule]
+    tech: "TypeScript, NestJS"
+    sub: event-core
+    lang:
       Event: "コミュニティが主催する集会・勉強会"
       Capacity: "イベントの定員（最大参加者数）"
-    module: event-planning
-    upstream: []
-    downstream:
-      - context: participation
-        relationship: Customer-Supplier
+    mod: event-planning
+    up: []
+    dn:
+      - ctx: participation
+        rel: Customer-Supplier
         note: "Event を下流 BC が参照"
-    aggregates:
+    aggs:
       - name: Event
         purpose: "イベントのライフサイクル（企画→公開→変更/中止）とキャパシティの単一の真実源"
         states: [DRAFT, PUBLISHED, CANCELLED, COMPLETED]
 
   - name: participation
     type: FEATURE
-    subdomain: event-core
-    language:
+    sub: event-core
+    lang:
       Event: "参加申込の対象となるエントリー"
       Capacity: "参加ステータスの枠（pending 含む）"
-    module: participation
-    upstream:
-      - context: event-planning
-        relationship: Customer-Supplier
-    downstream:
-      - context: payment
+    mod: participation
+    up:
+      - ctx: event-planning
+        rel: Customer-Supplier
+    dn:
+      - ctx: payment
         # ① CML の [D,ACL]<-[U,OHS,PL] 相当（自分=上流 OHS/PL、相手=下流 ACL）
         roles: [OHS, PL]
-        partnerRoles: [ACL]
+        prRoles: [ACL]
         note: "決済 BC へ確定申込を公開"
-    aggregates:
+    aggs:
       - name: Participation
         purpose: "参加申込の状態（申込/承認/キャンセル/繰上）の単一の真実源"
         states: [APPLIED, WAITLISTED, APPROVED, CANCELLED]
 
   - name: payment
-    subdomain: payment
-    language:
+    sub: payment
+    lang:
       Payment: "参加費の決済単位"
-    module: payment
-    upstream:
-      - context: participation
-        relationship: Customer-Supplier
-    downstream: []
-    aggregates:
+    mod: payment
+    up:
+      - ctx: participation
+        rel: Customer-Supplier
+    dn: []
+    aggs:
       - name: Payment
         purpose: "参加費の決済状態（保留→完了→返金）の単一の真実源"
         states: [PENDING, COMPLETED, REFUNDED]
 
-scenarios:
+scs:
   - name: 主催者がイベントを作成する
-    context: event-planning
+    ctx: event-planning
     actor: Organizer
     cmd: CreateEvent
     evt: EventCreated
@@ -88,60 +88,60 @@ scenarios:
     rules:
       - rule: capacity must be a positive integer
         why: "定員 0 のイベントは申込導線が成立しないため"
-    errors:
-      - condition: invalidCapacity
-        error: InvalidCapacityError
+    errs:
+      - cond: invalidCapacity
+        err: InvalidCapacityError
         when: "定員が 0 以下"
 
   # ③ branchMode: exclusive（既定だが明示）— SAME-TX 排他分岐
   - name: 参加者がイベントに参加申込する
-    context: participation
+    ctx: participation
     actor: Member
     qry:
       - GetRemainingCapacity
     cmd: ApplyForEvent
     agg: Participation
-    branchMode: exclusive
-    branches:
-      - condition: "remainingCapacity > 0"
+    brMode: exclusive
+    brs:
+      - cond: "remainingCapacity > 0"
         evt: ParticipationApplied
         pol: RequestPayment
-      - condition: "remainingCapacity = 0"
+      - cond: "remainingCapacity = 0"
         evt: ParticipationWaitlisted
 
   # ③ branchMode: concurrent — 複数イベントを同時発火（condition 省略）
   - name: システムが申込を確定し監査記録する
-    context: participation
+    ctx: participation
     actor: System
     cmd: ConfirmParticipation
     agg: Participation
-    branchMode: concurrent
-    branches:
+    brMode: concurrent
+    brs:
       - evt: ParticipationConfirmed
         pol: NotifyParticipant
       - evt: AuditLogRecorded
 
-policies:
+pols:
   # 単一トリガーの v1 記法
   - name: RequestPayment
-    context: payment
-    trigger: ParticipationApplied
+    ctx: payment
+    trg: ParticipationApplied
     cmd: ExecutePayment
     note: "申込確定で決済を開始"
 
   # ③ triggers（join）— 複数イベントが揃って起動
   - name: FinalizeOnPaymentAndApproval
-    context: payment
-    triggers:
-      events: [PaymentCompleted, ParticipationApproved]
+    ctx: payment
+    trgs:
+      evts: [PaymentCompleted, ParticipationApproved]
       mode: concurrent
     cmd: FinalizeEnrollment
     note: "決済完了かつ承認済みで参加確定"
 
   # 副作用専用 POLICY（cmd 省略・BULK）
   - name: NotifyParticipant
-    context: participation
-    trigger: ParticipationConfirmed
+    ctx: participation
+    trg: ParticipationConfirmed
     qry: GetParticipantContact
     bulk: true
     evt: ParticipantNotified

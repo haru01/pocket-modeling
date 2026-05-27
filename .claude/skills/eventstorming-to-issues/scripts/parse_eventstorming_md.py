@@ -419,10 +419,10 @@ def parse_dml_blocks(dml_text: str) -> dict:
     if not isinstance(data, dict):
         return {"scenarios": [], "policies": []}
     scenarios = [
-        _normalize_scenario(s) for s in (data.get("scenarios") or []) if isinstance(s, dict)
+        _normalize_scenario(s) for s in (data.get("scs") or []) if isinstance(s, dict)
     ]
     policies = [
-        _normalize_policy(p) for p in (data.get("policies") or []) if isinstance(p, dict)
+        _normalize_policy(p) for p in (data.get("pols") or []) if isinstance(p, dict)
     ]
     return {"scenarios": scenarios, "policies": policies}
 
@@ -450,9 +450,9 @@ def _normalize_scenario(s: dict) -> dict:
     if s.get("evt"):
         events.append({"name": s["evt"], "notes": []})
 
-    policies = _as_list(s.get("pol") or s.get("policies"))
+    policies = _as_list(s.get("pol"))
 
-    for br in s.get("branches") or []:
+    for br in s.get("brs") or []:
         if not isinstance(br, dict):
             continue
         if br.get("evt"):
@@ -474,12 +474,12 @@ def _normalize_scenario(s: dict) -> dict:
             )
 
     errors: list[dict] = []
-    for e in s.get("errors") or []:
+    for e in s.get("errs") or []:
         if isinstance(e, str):
             errors.append({"text": e, "notes": [], "when": None})
         elif isinstance(e, dict):
-            cond = str(e.get("condition", "")).strip()
-            err = str(e.get("error", "")).strip()
+            cond = str(e.get("cond", "")).strip()
+            err = str(e.get("err", "")).strip()
             text = f"{cond} → {err}" if cond and err else (cond or err)
             note = e.get("note")
             errors.append(
@@ -492,11 +492,11 @@ def _normalize_scenario(s: dict) -> dict:
 
     return {
         "name": s.get("name", ""),
-        "context": s.get("context"),
+        "context": s.get("ctx"),
         "actor": s.get("actor"),
         "cmd": s.get("cmd"),
         "events": events,
-        "branch_mode": s.get("branchMode"),   # v2: exclusive/concurrent/inclusive（branches 時）
+        "branch_mode": s.get("brMode"),   # v2: exclusive/concurrent/inclusive（brs 時）
         "agg": s.get("agg"),
         "rules": rules,
         "errors": errors,
@@ -516,19 +516,19 @@ def _normalize_policy(p: dict) -> dict:
     if isinstance(qry, list):
         qry = qry[0] if qry else None
 
-    single = p.get("trigger")
-    triggers_obj = p.get("triggers")
+    single = p.get("trg")
+    triggers_obj = p.get("trgs")
     trigger_events: list[str] = [single] if single else []
     trigger_mode = None
     if isinstance(triggers_obj, dict):
         trigger_events.extend(
-            t for t in (triggers_obj.get("events") or []) if t
+            t for t in (triggers_obj.get("evts") or []) if t
         )
         trigger_mode = triggers_obj.get("mode")
 
     return {
         "name": p.get("name", ""),
-        "context": p.get("context"),
+        "context": p.get("ctx"),
         "trigger": single,                 # v1 後方互換（join のみの場合は None）
         "trigger_events": trigger_events,   # v1+v2 を統一した全トリガー EVT
         "trigger_mode": trigger_mode,       # exclusive/concurrent/inclusive（join 時）

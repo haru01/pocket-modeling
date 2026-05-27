@@ -22,7 +22,7 @@ EventStorming セッションファイル `<ファイルパス>` のDDD/EventSto
    - フロー記法チェック F1〜F6
    - セクション完全性チェック S1〜S7
    - **目的サブセクション必須チェック S8（AGG カードの `#### 目的` 30 字以上）**
-   - **WHY/WHEN 推奨チェック W1〜W2（`rules[].why` / `errors[].when`）**
+   - **WHY/WHEN 推奨チェック W1〜W2（`rules[].why` / `errs[].when`）**
    - モデリング意味チェック M1〜M5
 4. D・F・S1〜S7 違反は Edit tool で直接修正する
 5. **S8 / W1 / W2 違反は自動修正しない**（形式上 S/W 系だが意味依存のため）。`[?-WHY] S8_<AggName>: ...` / `[?-WHY] W_N: ...` の形でレポートに列挙
@@ -38,8 +38,8 @@ EventStorming セッションファイル `<ファイルパス>` のDDD/EventSto
        [?-WHY] W1: scenario「主催者がコミュニティを作成する」 の rule
             `communityName must be unique system-wide` に `why` 未記入。
             推奨: why: "URL slug や検索 UX で name → id 逆引きを想定するため"
-       [?-WHY] W2: 同 scenario の error `DuplicateCommunityNameError`
-            (condition: duplicateName) に `when` 未記入。推奨: when: "name が既存と重複"
+       [?-WHY] W2: 同 scenario の err `DuplicateCommunityNameError`
+            (cond: duplicateName) に `when` 未記入。推奨: when: "name が既存と重複"
    )
    - M 違反候補あり: ホットスポット候補リスト（例:
        [?] M1: SCENARIO「顧客が注文を確定する」 — CMD/EVT で「確定」が

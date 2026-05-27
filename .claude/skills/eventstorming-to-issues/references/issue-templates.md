@@ -79,7 +79,7 @@ stateDiagram-v2
     - **なぜ必要か**: <DML の `rules[].why`>
 - **想定 ERR**:
   - <err text 1>
-    - **発生条件**: <DML の `errors[].when`>
+    - **発生条件**: <DML の `errs[].when`>
 - **連鎖 POLICY**: `PolicyA`, `PolicyB`
 
 ## 状態を変えない CMD（属性更新・一覧）

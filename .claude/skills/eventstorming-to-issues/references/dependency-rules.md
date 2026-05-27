@@ -17,7 +17,7 @@
 
 ## POLICY ルーティング規則
 
-DML（YAML）の `policies` は `parse_eventstorming_md.py` の `parse_dml_blocks()` で抽出され、`generate_issue_drafts.py:route_policies()` が各 POLICY を AGG に振り分ける。
+DML（YAML）の `pols` は `parse_eventstorming_md.py` の `parse_dml_blocks()` で抽出され、`generate_issue_drafts.py:route_policies()` が各 POLICY を AGG に振り分ける。
 
 ルーティング規則:
 
@@ -29,7 +29,7 @@ DML（YAML）の `policies` は `parse_eventstorming_md.py` の `parse_dml_block
 
 `outbound_consumers` は EVT 発火元 AGG 側で「自分の EVT を消費する POLICY」一覧として表示するため、上記とは別軸で集計される。
 
-cmd → AGG マップは scenario の `cmd` + `agg` から、evt → AGG マップは scenario の `evt`（および `branches[].evt`）+ `agg` から構築する（`generate_issue_drafts.py:build_cmd_to_agg_map()` / `build_evt_to_agg_map()`）。
+cmd → AGG マップは scenario の `cmd` + `agg` から、evt → AGG マップは scenario の `evt`（および `brs[].evt`）+ `agg` から構築する（`generate_issue_drafts.py:build_cmd_to_agg_map()` / `build_evt_to_agg_map()`）。
 
 ## 状態遷移 CMD の判定
 

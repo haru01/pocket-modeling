@@ -89,7 +89,7 @@
    - `Shared-Kernel`: 両 BC で共有するモデル部分
    - `ACL`（Anti-Corruption Layer）: 下流が上流を変換レイヤで隔離
 
-決定結果を DML（YAML）の `contexts[].upstream` / `downstream` に反映する（`relationship` に関係タイプを併記。`references/dml-spec.md` 参照）。
+決定結果を DML（YAML）の `ctxs[].up` / `dn` に反映する（`rel` に関係タイプを併記。`references/dml-spec.md` 参照）。
 
 ### 集約候補の見つけ方
 - 「一緒に変わるもの」をひとつの集約にする
@@ -127,6 +127,8 @@ Zod スキーマで「形」を固めた直後、**不変条件（RULE）と例�
 **BC レベルは任意：** §4 コンテキスト候補カードの `#### 目的` / `#### 背景` / `#### 制約` は任意。「BC 共通の戦略的判断」を 1 文で書ける場合のみ追加する。AGG カードと重複する内容なら BC レベルは省略してよい。
 
 **不足検知：** 全 AGG の `#### 目的` が 30 字以上書かれているか確認。空・短すぎる項目はホットスポット `H-WHY` 候補としてマークし、`references/quality-check.md` の S8 で再走時に検出される。
+
+**DML への反映（必須）：** §5 で確定した AGG メタを `.dml.yaml` の `ctxs[].aggs[]` にも反映する。各エントリは `name`（必須・PascalCase）・`purpose`（推奨・MD §5 の `#### 目的` 1 文を要約）・`states`（推奨・MD の `#### 状態遷移` から拾った upper-snake 状態名の配列）。AGG は所有 BC（`ctx`）の `aggs` に置く（複数 BC で参照される AGG でも所有 BC は 1 つ）。これにより quality-check が「scs の `agg:` 参照」「rules/brs の状態名」「`aggs[].states` 宣言」の三者整合を検証できる。
 
 ## 85〜90分：クローズと次のアクション
 

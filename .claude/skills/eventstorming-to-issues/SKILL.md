@@ -31,7 +31,7 @@ python3 .claude/skills/eventstorming-to-issues/scripts/parse_eventstorming_md.py
   <md_path> > /tmp/es-parsed.json
 ```
 - BC / AGG / SCENARIO / QRY / フロー / 状態遷移を JSON 化
-- DML（YAML）の policies / scenarios も抽出し `policies` / `dml_scenarios` キーに格納
+- DML（YAML）の pols / scs も抽出し `policies` / `dml_scenarios` キーに格納（内部表現は parser 仕様に従う）
 - MD セクション抽出は `eventstorming-facilitator/scripts/eventstorming_build.py` の `parse_md()` を再利用。DML（YAML）は **`<md_path>` の兄弟ファイル `<session>.dml.yaml`（純 YAML）から読む**（無ければ旧来の `.md` §9 埋め込み ` ```dml ` フェンスにフォールバック）。`yaml.safe_load` でパースして既存の dict 構造へ正規化（`parse_dml_blocks`）
 
 ### Step 3: 依存グラフ構築 + Mermaid 生成
@@ -48,7 +48,7 @@ python3 .claude/skills/eventstorming-to-issues/scripts/generate_issue_drafts.py 
   /tmp/es-parsed.json --output docs/issues/<session-id>/
 ```
 出力ファイル（AGG 単位 + 統合 Issue のみ。Sub-issue は廃止）:
-- `epics/<bc>__<AGG>.md`: **AGG Epic（self-contained）**。**ビジネス背景と制約（目的・背景・制約 + BC 共通の方針）**・Zod スキーマ・不変条件（rule）・エラー（error）・状態遷移・CMD/QRY 詳細（`rules[].why` / `errors[].when` を併記）・受信 POLICY・発信 EVT・受け入れ条件・モジュール構造提案を 1 ファイルに集約
+- `epics/<bc>__<AGG>.md`: **AGG Epic（self-contained）**。**ビジネス背景と制約（目的・背景・制約 + BC 共通の方針）**・Zod スキーマ・不変条件（rule）・エラー（err）・状態遷移・CMD/QRY 詳細（`rules[].why` / `errs[].when` を併記）・受信 POLICY・発信 EVT・受け入れ条件・モジュール構造提案を 1 ファイルに集約
 - `integration/<scenario>.md`: AGG 跨ぎ統合 SCENARIO
 - `cross-bc/<saga>.md`: Cross-BC Saga（現状未実装、将来拡張）
 - `_index.md`: BC（大項目）× AGG（中項目）ナビ
