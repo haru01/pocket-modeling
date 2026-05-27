@@ -5,6 +5,7 @@
 - Status: **{{ステータス}}**
 - Goal: {{ゴール}}
 - HTML ビュー: [../../dist/eventstorming/{{eventstorming-YYYYMMDD-HHMM}}.html](../../dist/eventstorming/{{eventstorming-YYYYMMDD-HHMM}}.html) （Python ビルダーが自動生成する派生ファイル）
+- DML: [./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml](./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml) （モデル本体・純 YAML。`.md` と並ぶ Single Source of Truth）
 
 ---
 
@@ -170,9 +171,9 @@ export type {{AggregateName}} = z.infer<typeof {{AggregateName}}Schema>;
 
 ## 9) DML
 
-```dml
-{{DML全文（英語のまま）}}
-```
+DML 全文は別ファイル [`./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml`](./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml)（YAML 直書き・フェンス不要）に保持する。`contexts` / `scenarios` / `policies` の 3 リスト、識別子は英語。`.dml.yaml` の記述形式・フル例は `references/dml-spec.md` を参照。HTML §9 にはこの `.dml.yaml` の内容が描画される。
+
+> このセクションは `.dml.yaml` へのリンク参照のみとし、DML 本文（YAML）は **埋め込まない**。
 
 ---
 

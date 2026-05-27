@@ -1,64 +1,161 @@
 # DML（Domain Modeling Language）記法仕様
 
-DDDモデリングのための情報圧縮ミニ言語。
-EVT（起きた事実）を起点にして、CMD・AGG・RULE・ERR・POLをシナリオとして記述する。
+DDDモデリングのための情報圧縮言語。**YAML フォーマット**で記述する。
+`contexts`（BC 宣言）・`scenarios`（EVT を起点にした業務シナリオ）・`policies`（EVENTUAL-TX）の
+3 つのトップレベルリストで 1 ドメインを表す。
 
 **記法の原則**
-- キーワード（SCENARIO, ACTOR, EVT, CMD, AGG, RULE, ERR, POL, POLICY, CONTEXT 等）は英語
-- **SCENARIO名は日本語**で、アクター＋行為を書く（例：`SCENARIO 主催者がコミュニティを作成する`）
-- **RULE / ERR の条件は英語**で書き、**日本語補足は上の行に `#` コメント**で分離する
-- **POLICY の日本語補足**も上の行に `#` コメントで分離する
-- **EVT / CMD / AGG** は英語のみ（キーワードで種別が伝わる）
-- BC（CONTEXT）名は `lowercase-with-hyphen` 形式、略さずに書く
+- DML は **MD とは別の兄弟ファイル `docs/eventstorming/<session>.dml.yaml`** に **YAML 直書き**（フェンス不要）で保存する。`.md` の §9 はこの `.dml.yaml` へのリンク参照のみ。ビルダーは `.md` ＋ 兄弟 `.dml.yaml` から HTML を生成する。
+  - （本仕様書内の ` ```dml ` フェンスは YAML 例の表示目的。実アーティファクトはフェンスなしの `.dml.yaml` ファイル。）
+- トップレベルは `contexts` / `scenarios` / `policies` の 3 リスト。**コメントによるセクション区切りは使わない**（リスト構造で自然に分離される）。
+- `scenarios` / `policies` の各要素は `context:` フィールドで所属 BC を参照する。
+- **識別子（`cmd` / `evt` / `agg` / `trigger` / `emits` / `qry` の値）は英語 PascalCase**。`()` や `<<>>` は付けない。
+- **`scenarios[].name` は日本語**で「アクター＋行為」を書く（例：`主催者がコミュニティを作成する`）。
+- **`rules[].rule` の不変条件は英語**。日本語の補足は `why` / `when` / `note` の**構造化フィールド**へ書く（`#` 行コメントによる補足慣習は廃止）。
+- BC（`contexts[].name`）は `lowercase-with-hyphen` 形式、略さずに書く。
+- キー順の推奨: `name → context → actor → qry → cmd → evt|branches → agg → rules → errors → pol`（YAML では強制ではないがスタイルとして統一する）。
+
+**バージョンと後方互換（DML v2）**
+- 本仕様は ContextMapper（CML）を参考にした **v2 拡張**を含む。拡張フィールド（`type` / `vision` / `responsibilities` / `implementationTechnology` / `subdomain` / `aggregates` / `roles` / `partnerRoles` / `branchMode` / `triggers` / トップレベル `domains`）は**すべて optional**。v1 記法（`contexts` / `scenarios` / `policies` の 3 リストと既存フィールド）は **v2 でもそのまま永続的に valid**。
+- 文法は **JSON Schema（Draft 2020-12）で機械検証**できる。スキーマ本体は [`./dml.schema.yaml`](./dml.schema.yaml)。検証は構文 validity のみを保証する（意味検証は causal-check / quality-check が担う。§9 参照）。
 
 ---
 
-## BC・コンテキスト宣言
+## 1. CONTEXT（BC 宣言）
 
 ```dml
-CONTEXT <lowercase-with-hyphen-name>
-  LANGUAGE    <EnglishTerm> = "<この文脈での意味（日本語可）>"
-  MODULE      <module-name>
-  UPSTREAM    <context-name>    # 関係タイプ（Customer-Supplier | Conformist | Shared-Kernel | ACL）
-  DOWNSTREAM  <context-name>    # 関係タイプ
+contexts:
+  - name: <lowercase-with-hyphen>      # BC 名（略さない）
+    language:
+      <EnglishTerm>: "<この文脈での意味（日本語可）>"
+    module: <module-name>
+    upstream:                          # この BC が依存する側（参照するモデルの所有者）
+      - context: <context-name>
+        relationship: Customer-Supplier # Customer-Supplier | Conformist | Shared-Kernel | ACL
+        note: "<任意の補足>"
+    downstream:                        # この BC に依存される側（このモデルを参照する下流）
+      - context: <context-name>
+        relationship: Customer-Supplier
 ```
 
-`LANGUAGE` でユビキタス言語を定義する。
-**同じ言葉が別CONTEXTで意味が違う場合、それぞれのCONTEXTで別々に定義する**。
-この差異がBounded Context（BC）の境界を示す。
+`language` でユビキタス言語を定義する。
+**同じ言葉が別 CONTEXT で意味が違う場合、それぞれの CONTEXT で別々に定義する**。
+この差異が Bounded Context（BC）の境界を示す。
 
-`UPSTREAM` / `DOWNSTREAM` で BC 間の依存方向を明示する（必須）。
-
-- `UPSTREAM`: この BC が**依存する**側（= このコードが参照するモデル所有者）
-- `DOWNSTREAM`: この BC に**依存される**側（= このモデルを参照する下流 BC）
-- 複数の UPSTREAM/DOWNSTREAM は行を分けて複数行記述
-- 関係タイプは行末に `# Customer-Supplier | Conformist | Shared-Kernel | ACL` の形で記述
-- 依存がない場合は `UPSTREAM  (none)` `DOWNSTREAM (none)` と明示
+`upstream` / `downstream` は BC 間の依存方向を明示する（必須）。**依存がない場合は空リスト `[]`** を書く。
 
 例：
 ```dml
-CONTEXT community-events
-  LANGUAGE    Event = "コミュニティが主催する集会・勉強会"
-  MODULE      community-events
-  UPSTREAM    (none)
-  DOWNSTREAM  participation   # Customer-Supplier。Event を下流 BC が参照
+contexts:
+  - name: community-events
+    language:
+      Event: "コミュニティが主催する集会・勉強会"
+    module: community-events
+    upstream: []
+    downstream:
+      - context: participation
+        relationship: Customer-Supplier
+        note: "Event を下流 BC が参照"
 
-CONTEXT participation
-  LANGUAGE    Event = "参加申込の対象となるエントリー"
-  MODULE      participation
-  UPSTREAM    community-events # Customer-Supplier。Event の情報を参照
-  DOWNSTREAM  checkin          # Customer-Supplier。Participation を checkin が参照
+  - name: participation
+    language:
+      Event: "参加申込の対象となるエントリー"
+    module: participation
+    upstream:
+      - context: community-events
+        relationship: Customer-Supplier
+    downstream:
+      - context: checkin
+        relationship: Customer-Supplier
 
-CONTEXT checkin
-  LANGUAGE    CheckIn = "当日の来場確認"
-  MODULE      checkin
-  UPSTREAM    participation    # Customer-Supplier
-  DOWNSTREAM  (none)
+  - name: checkin
+    language:
+      CheckIn: "当日の来場確認"
+    module: checkin
+    upstream:
+      - context: participation
+        relationship: Customer-Supplier
+    downstream: []
 ```
+
+### 1.1 リレーション語彙の拡充（v2・任意）
+
+`relationship`（粗い分類・人間向け）は従来どおり使える。より厳密に表現したいときは、CML 互換の
+`roles`（自 BC 側の役割パターン）/ `partnerRoles`（相手 BC 側の役割パターン）を **任意で**併記する。
+`upstream` / `downstream` が既に方向（U/D）を示すので、`roles` から `U`/`D` は省略してよい。
+
+| ショートコード | 意味 | | ショートコード | 意味 |
+|------|------|---|------|------|
+| `U` | Upstream | | `ACL` | Anti-Corruption Layer |
+| `D` | Downstream | | `CF` | Conformist |
+| `S` | Supplier | | `SK` | Shared Kernel |
+| `C` | Customer | | `P` | Partnership |
+| `OHS` | Open Host Service | | `PL` | Published Language |
+
+```dml
+upstream:
+  - context: printing            # CML の [D,ACL]<-[U,OHS,PL] を表す
+    roles: [ACL]                 # 自分（下流）側
+    partnerRoles: [OHS, PL]      # 相手（上流）側
+```
+
+`relationship` の enum は v1 の `Customer-Supplier` / `Conformist` / `Shared-Kernel` / `ACL` に加え、
+`Partnership` / `Upstream-Downstream` / `Open-Host-Service` / `Published-Language` を追加。
+**`relationship` と `roles` はどちらか一方で十分**（両者の意味整合は quality-check が確認する）。
+
+### 1.2 BC / 集約メタデータ（v2・任意）
+
+`.md` 側（§4 の目的/背景、§5 の集約）にあった情報を DML に構造化できる。すべて optional。
+
+```dml
+contexts:
+  - name: event-planning
+    type: FEATURE                 # FEATURE | APPLICATION | SYSTEM | MICROSERVICE
+    vision: "イベントのライフサイクルとキャパシティを所有する"   # domainVisionStatement
+    responsibilities: [Event, Capacity, Schedule]            # 文字列 or 文字列配列
+    implementationTechnology: "TypeScript, NestJS"           # 任意
+    subdomain: event-core         # §1.5 参照
+    language:
+      Event: "単発の開催単位"
+    module: event-planning
+    upstream: []
+    downstream: []
+    aggregates:                   # 任意。scenarios の agg を集約宣言で補足
+      - name: Event
+        purpose: "イベントのライフサイクルとキャパシティの単一の真実源"
+        states: [DRAFT, PUBLISHED, CANCELLED, COMPLETED]     # 状態名は UPPER_SNAKE
+```
+
+`aggregates[].states` を宣言すると、scenarios の rules / branches が参照する状態名との整合を
+quality-check が検証できる。
 
 ---
 
-## インフラ系ドメインの扱い（通知・スケジューラ・決済・メール等）
+## 1.5 Domain / Subdomain 分類（v2・任意）
+
+戦略的設計の意図（コア／補完／汎用）を残したいとき、トップレベルに `domains` を **任意で**置く。
+`domains` を書かなくても `contexts[].subdomain` は単なるタグとして使える（漸進的にビジョンと
+`type` を後から `domains` に集約できる）。
+
+```dml
+domains:
+  - name: community-event-domain
+    vision: "企画から当日参加までを一気通貫で支える"
+    subdomains:
+      - name: event-core
+        type: CORE_DOMAIN          # CORE_DOMAIN | SUPPORTING_DOMAIN | GENERIC_SUBDOMAIN
+        vision: "イベントの企画・公開・変更というコア価値"
+      - name: payment
+        type: GENERIC_SUBDOMAIN
+        vision: "決済・返金。外部 PSP に委譲する汎用領域"
+```
+
+`subdomains[].name` と `contexts[].subdomain` は同じ `lowercase-with-hyphen` 名前空間。
+両者の突合（参照の実在）は quality-check が確認する。
+
+---
+
+## 2. インフラ系ドメインの扱い（通知・スケジューラ・決済・メール等）
 
 業務ドメインと独立した技術基盤（通知・バッチ・外部 API 連携）は、**BC に昇格する**か**POLICY 内に留める**かを毎回判断する。デフォルト判断基準：
 
@@ -68,7 +165,7 @@ CONTEXT checkin
 - 状態を持たない（送ったら完了で追跡しない）
 - 他 BC から参照されない
 
-→ 既存 BC 内の `POLICY` ブロックとして記述する。専用 CONTEXT は作らない。
+→ 既存 BC の `policies` に POLICY を追加する。専用 CONTEXT は作らない。
 
 ### BC に昇格すべきサイン
 - 複数種類の通知 / 連携を統一的に管理（例：APPROVAL / REMINDER / SURVEY / CANCELLATION など）
@@ -76,322 +173,398 @@ CONTEXT checkin
 - SLA・再送ポリシー・失敗時のフォールバックが業務要件
 - 他 BC から「どの通知を送ったか」を参照される（監査ログ兼用など）
 
-→ 新規 `CONTEXT` を宣言し、`UPSTREAM` / `DOWNSTREAM` で他 BC との関係を明示する。
+→ `contexts` に新規 BC を宣言し、`upstream` / `downstream` で他 BC との関係を明示する。
 
-迷う場合は `[?]` で保留し、後続フェーズで再評価する。
-**「データモデル（テーブル）は存在するが BC として宣言していない」状態は原則 NG**（今回のような実装とドキュメントの乖離を生む）。
-
----
-
-## シナリオ定義（EVT起点で書く）
-
-```dml
-SCENARIO <アクター>が<何をする>
-  ACTOR <アクター名>
-  QRY   QueryName            # 省略可。CMD発行前にアクターが参照するRead Model
-  CMD   CommandName
-  EVT   EventName
-  AGG   AggregateName
-  # <日本語で不変条件を説明>
-  RULE  <invariant in English>
-    WHY  "<この不変条件が必要な業務・UX 上の理由（日本語可・推奨）>"
-  ERR   <condition> → <ErrorType>
-    WHEN "<このエラーが発生する状況の日本語説明（推奨）>"
-  POL   <PolicyName>
-```
-
-**`WHY` / `WHEN` 副属性（推奨）：** `RULE` 行の直下に **インデント +2** で `WHY "..."` を書くと、その不変条件が「なぜ必要か」を機械可読に紐付けられる。同様に `ERR` 行の直下に `WHEN "..."` でエラー発生条件の日本語説明を付ける。`#` コメント慣習と並存し、`#` は自由形式メモ・`WHY/WHEN` は意味付き構造として使い分ける。両方とも省略可（後方互換）だが、AI 実装エージェントが Issue から実装するときに「この RULE/ERR の意図」を読み解きやすくなるため強く推奨。
-
-**`WHY` の書き方：** `RULE` を **ユーザー影響・業務文脈** に翻訳する。
-- NG: `WHY "name の一意性を保つため"` （RULE 自体の言い換えで情報増えていない）
-- OK: `WHY "URL slug や検索 UX で name → id 逆引きを想定するため"` （業務・UX 文脈で説明）
-
-**集約が複数イベントを発火しうる場合（WHEN分岐）：**
-コマンドの処理結果に応じて発火イベントが変わる場合、`EVT` の代わりに `WHEN` で分岐を書く。
-後続ポリシーが分岐ごとに異なる場合は `→ POL` を inline で付ける：
-
-```dml
-SCENARIO システムが在庫を確保する
-  ACTOR System
-  CMD   ReserveInventory(orderId, items)
-  AGG   Inventory
-  # 確保数は在庫数以内
-  RULE  reserved quantity must not exceed available stock
-  WHEN  stock >= requested → EVT InventoryReserved    → POL ConfirmOrder
-  WHEN  stock < requested  → EVT InventoryInsufficient → POL CancelOnOutOfStock
-```
-
-`WHEN` を使う場合、トップレベルの `EVT` と `POL` は省略する。
-
-**SCENARIO名は日本語：** アクター（主催者/参加者/システム）＋行為を日本語で書く。
-「誰が何をするシナリオか」が一目でわかり、BCの責務やユーザーロールとの対応も明確になる。
-
-**ACTORは必須：** コマンドを発行するアクターを明記する。典型的な値は `Organizer`（主催者）、`Member`（参加者）、`System`（システム/ポリシー）。
-Event Flow 図解やアクセス制御の設計で「誰がこの操作を行うか」が機械的に参照できる。
-
-**RULE の日本語補足は上の行に分離：** インラインコメントではなく、RULE行の直前に `#` コメント行として書く。
-
-**なぜEVT起点か？**
-「起きた事実」から始めることで、実装の都合（コマンドの存在・APIの形）に引きずられず、
-ビジネスの本質的な流れを先に把握できる。
+迷う場合は `note: "[?] ..."` で保留し、後続フェーズで再評価する。
+**「データモデル（テーブル）は存在するが BC として宣言していない」状態は原則 NG**。
 
 ---
 
-## ポリシー定義（EVENTUAL-TX 専用・SCENARIOの直後・CONTEXT内に配置）
-
-`POLICY` ブロックは **EVENTUAL-TX（非同期・別トランザクション）限定**で使用する。
-同一トランザクションで処理される分岐（SAME-TX）は、発行元 SCENARIO の `WHEN` としてインラインで書く（後述）。
+## 3. SCENARIO（EVT 起点で書く）
 
 ```dml
-# <日本語でポリシーの目的を説明>
-POLICY <Name>
-  TRIGGER  EventName
-  QRY      <QueryName>             # BULK の場合は必須。単一宛先なら省略可
-  CMD      CommandName              # 原則必須。副作用専用 POLICY は省略可
-  BULK     true                    # × n の場合（省略時はfalse）
-  EVT      EventName               # 省略可。このポリシーが生成するイベント
+scenarios:
+  - name: <アクター>が<何をする>      # 日本語。アクター＋行為
+    context: <context-name>          # 所属 BC
+    actor: <ActorName>               # 必須。Organizer / Member / System など
+    qry:                             # 省略可。CMD 発行判断に必要な Read Model のみ
+      - <QueryName>
+    cmd: <CommandName>
+    evt: <EventName>                 # 単一イベント。分岐する場合は branches を使う
+    agg: <AggregateName>
+    rules:
+      - rule: <invariant in English>
+        why: "<この不変条件が必要な業務・UX 上の理由（日本語可・推奨）>"
+    errors:
+      - condition: <condition>
+        error: <ErrorType>
+        when: "<このエラーが発生する状況の日本語説明（推奨）>"
+    pol:                             # 後続 POLICY 参照（EVENTUAL-TX への接続）
+      - <PolicyName>
 ```
 
-- `TX` フィールドは記述しない（EVENTUAL 固定）
-- `QRY` 必須基準: `BULK true` のときは必須（送信対象リストを明示するため）。単一宛先が TRIGGER ペイロードから決まる場合は省略可
-- `CMD` 省略基準: **副作用専用 POLICY**（外部通知サービス / メール / プッシュ送信などの infrastructure 呼び出しで、内部 AGG を一切変更しないもの）に限り CMD を省略できる。この場合、対応する SCENARIO も書かない。AGG を更新する処理が含まれるなら必ず CMD と SCENARIO を書くこと
+**`why` / `when`（推奨）：** `rules[].why` でその不変条件が「なぜ必要か」を、`errors[].when` でエラー発生条件を機械可読に紐付ける。AI 実装エージェントが Issue から実装するときに意図を読み解きやすくなる。両方とも省略可（後方互換）だが強く推奨。
+
+**`why` の書き方：** `rule` を**ユーザー影響・業務文脈**に翻訳する。
+- NG: `why: "name の一意性を保つため"`（rule の言い換えで情報が増えていない）
+- OK: `why: "URL slug や検索 UX で name→id 逆引きを想定するため"`（業務・UX 文脈で説明）
+
+**集約が複数イベントを発火しうる場合（branches）：**
+コマンドの処理結果に応じて発火イベントが変わる場合、`evt` の代わりに `branches` で分岐を書く。
+分岐ごとに後続ポリシーが異なる場合は各 branch に `pol` を付ける（同一トランザクション内の SAME-TX 分岐）。
+
+```dml
+scenarios:
+  - name: システムが在庫を確保する
+    context: inventory
+    actor: System
+    cmd: ReserveInventory
+    agg: Inventory
+    rules:
+      - rule: reserved quantity must not exceed available stock
+        why: "在庫を超える引当を防ぐため"
+    branches:
+      - condition: "stock >= requested"
+        evt: InventoryReserved
+        pol: ConfirmOrder
+      - condition: "stock < requested"
+        evt: InventoryInsufficient
+        pol: CancelOnOutOfStock
+```
+
+`branches` を使う場合、トップレベルの `evt` は省略する。`condition` に `>` `<` `=` を含む場合はクォートで囲む（YAML パースエラー回避）。
+
+**分岐セマンティクス（`branchMode`・v2・任意）：** `branches` は省略時 `exclusive`（排他・1 つだけ発火）。
+CML の分岐演算子に対応した `branchMode` を任意で明示できる。
+
+| `branchMode` | CML | 意味 | `condition` |
+|------|-----|------|------|
+| `exclusive`（既定） | `X` | 条件に応じて 1 つだけ発火 | 各分岐に必須（網羅・排他は quality-check が確認） |
+| `concurrent` | `+` | すべて同時発火 | 省略可 |
+| `inclusive` | `O` | 1 つ以上が発火 | 任意 |
+
+```dml
+  - name: システムが申込を確定し記録する
+    context: ticketing
+    actor: System
+    cmd: ConfirmApplication
+    agg: Application
+    branchMode: concurrent       # 両方必ず発火（condition 省略可）
+    branches:
+      - evt: ApplicationConfirmed
+        pol: NotifyConfirmation
+      - evt: AuditLogRecorded
+```
+`branchMode` は `branches` がある時のみ意味を持つ（単独指定は不可）。
+
+**name は日本語：** アクター（主催者/参加者/システム）＋行為を日本語で書く。「誰が何をするシナリオか」が一目でわかり、BC の責務やユーザーロールとの対応も明確になる。
+
+**actor は必須：** コマンドを発行するアクターを明記する。典型値は `Organizer`（主催者）、`Member`（参加者）、`System`（システム/ポリシー）。
+
+**なぜ EVT 起点か？** 「起きた事実」から始めることで、実装の都合（コマンドの存在・API の形）に引きずられず、ビジネスの本質的な流れを先に把握できる。
+
+---
+
+## 4. POLICY（EVENTUAL-TX 専用）
+
+`policies` の各要素は **EVENTUAL-TX（非同期・別トランザクション）限定**で使用する。
+同一トランザクションで処理される分岐（SAME-TX）は、発行元 SCENARIO の `branches` として書く（§3）。
+
+```dml
+policies:
+  - name: <Name>
+    context: <context-name>
+    trigger: <EventName>
+    qry: <QueryName>          # BULK の場合は必須。単一宛先なら省略可
+    cmd: <CommandName>        # 原則必須。副作用専用 POLICY は省略可
+    bulk: true                # × n の場合（省略時は false）
+    evt: <EventName>          # 省略可。このポリシーが生成するイベント
+    note: "<任意の補足>"
+```
+
+- トランザクション種別フィールドは書かない（EVENTUAL 固定）。
+- `qry` 必須基準: `bulk: true` のときは必須（送信対象リストを明示するため）。単一宛先が trigger ペイロードから決まる場合は省略可。
+- `cmd` 省略基準: **副作用専用 POLICY**（外部通知 / メール / プッシュ送信などの infrastructure 呼び出しで、内部 AGG を一切変更しないもの）に限り `cmd` を省略できる。この場合、対応する SCENARIO も書かない。AGG を更新する処理が含まれるなら必ず `cmd` と SCENARIO を書く。
+
+**複数トリガーの join（`triggers`・v2・任意）：** 複数のイベントが揃って初めて起動する POLICY
+（フロー DSL の `&>>` join に対応）は、`trigger`（単一）の代わりに `triggers` を使う。
+`trigger` と `triggers` は排他（どちらか一方）。
+
+```dml
+policies:
+  - name: FinalizeOnBothApprovals
+    context: approval
+    triggers:
+      events: [ManagerApproved, FinanceApproved]
+      mode: concurrent          # exclusive | concurrent | inclusive（§3 と同じ語彙）
+    cmd: Finalize
+```
 
 ### 副作用専用 POLICY の例
 
 ```dml
-# 会場変更時に既存参加者へ通知（メール送信のみ、状態遷移なし）
-POLICY NotifyOnEventRelocation
-  TRIGGER  EventRelocated
-  QRY      GetConfirmedApplications
-  BULK     true
-  EVT      ChangeNotified
+policies:
+  - name: NotifyOnEventRelocation
+    context: event-planning
+    trigger: EventRelocated
+    qry: GetConfirmedApplications
+    bulk: true
+    evt: ChangeNotified
+    note: "会場変更時に既存参加者へ通知（メール送信のみ、状態遷移なし）"
 ```
 
-対応フロー DSL は `$ポリシー *> [event]`（CMD なし）と書く。AGG への BULK CMD（`*> !cmd > [event]`）と視覚的に区別され、Application AGG の責務肥大化を防げる。
+対応フロー DSL は `$ポリシー *> [event]`（CMD なし）と書く。AGG への BULK CMD（`*> !cmd > [event]`）と視覚的に区別され、AGG の責務肥大化を防げる。
 
-### SAME-TX 分岐（コマンド内の条件分岐）
-
-同一トランザクション内でコマンドの結果が条件により変わる場合、**独立した `POLICY` ブロックを作らず**、発行元 SCENARIO の中で `WHEN` として分岐を表現する：
-
-```dml
-# 定員超過なら同一トランザクションで WAITLISTED に落とす
-SCENARIO 参加者が参加申し込みをする
-  ACTOR Member
-  CMD   ApplyForEvent
-  AGG   Participation
-  QRY   GetRemainingCapacity
-  RULE  event must be published
-  WHEN  capacity > 0 → EVT ParticipationApplied
-  WHEN  capacity = 0 → EVT ParticipationWaitlisted
-```
-
-**判定基準：**
+### SAME-TX と EVENTUAL-TX の判定
 
 | TX | 書き方 | 根拠 |
 |----|-------|------|
-| SAME | SCENARIO の `WHEN` 分岐 | コマンド内の同期処理。Repository のトランザクション境界内で完結 |
-| EVENTUAL | `POLICY` ブロック | EventBus 経由の非同期処理。別トランザクションで発火 |
-
-WHEN 分岐で別ポリシーに接続する場合のみ `→ POL <PolicyName>` を付ける（EVENTUAL ポリシーへの接続時）：
-
-```dml
-SCENARIO システムが在庫を確保する
-  ACTOR System
-  CMD   ReserveInventory(orderId, items)
-  AGG   Inventory
-  WHEN  stock >= requested → EVT InventoryReserved     → POL ConfirmOrder
-  WHEN  stock < requested  → EVT InventoryInsufficient → POL CancelOnOutOfStock
-```
+| SAME | SCENARIO の `branches` | コマンド内の同期処理。Repository のトランザクション境界内で完結 |
+| EVENTUAL | `policies` の要素 | EventBus 経由の非同期処理。別トランザクションで発火 |
 
 ---
 
-## 記号の意味
+## 5. 記号の意味（付箋色との対応）
 
-### DML キーワード
+DML（YAML）の値は HTML レンダリング時に**役割ベースの意味色**でハイライトされる（付箋フロー図と同じパレット）。
 
-| 記号 | 意味 | 付箋色 |
+| フィールド | 意味 | 付箋色 / 値の色 |
 |------|------|--------|
-| `EventName` | ドメインイベント（起きた事実・過去形） | 橙 |
-| `CommandName(...)` | コマンド（操作・意図） | 青 |
-| `AggregateName` | 集約（状態を保持し変化させるもの） | 黄 |
-| `QRY QueryName` | Read Model（アクターがCMD発行前に参照するビュー） | 緑 |
-| `ERR: ...` | エラー（不変条件違反） | 薄赤 |
-| `[?]` | 未確認・迷い・設計判断が必要な箇所 | — |
+| `evt` / `trigger` / `emits` | ドメインイベント（起きた事実・過去形） | 橙 |
+| `cmd` | コマンド（操作・意図） | 青 |
+| `agg` / `actor` | 集約 / アクター | 黄 |
+| `qry` | Read Model（CMD 発行前に参照するビュー） | 緑 |
+| `pol` / POLICY の `name` | ポリシー | 紫 |
+| `errors[].error` | エラー型（不変条件違反） | 赤 |
+| キー名 | YAML キー | 淡い灰緑 |
+| `note: "[?] ..."` | 未確認・迷い・設計判断が必要な箇所 | — |
 
-### `` ```event-flow-svg `` フロー図記法
+### ` ```event-flow-svg ` フロー図記法
 
-（旧記法 `:::diagram-svg event_flow` … `:::` もレンダラーは後方互換で受け付ける。新規作成時は `` ```event-flow-svg `` を使う。）
+（フロー図 DSL は DML とは別のフェンス。YAML 化の対象外で従来どおり。）
 
 | 記号 | 意味 | 付箋色 |
 |------|------|--------|
 | `\|BC名\|:` | Bounded Context レーン（ヘッダー行。説明を続けて書く） | — |
 | `@アクター名` | アクター付箋 | 黄 |
-| `?クエリ名` | Read Model付箋（アクターがCMD発行前に参照するビュー） | 緑 |
+| `?クエリ名` | Read Model 付箋 | 緑 |
 | `[イベント名]` | イベント付箋 | 橙 |
 | `$ポリシー名` | ポリシー付箋 | 紫 |
 | `!コマンド名` | コマンド付箋（`!` 省略可） | 青 |
-| `>` | 同期フロー（直接連鎖）、フロー行内でアイテムをつなぐ | — |
-| `>>` | 非同期遷移（レーン切り替え）。**前レーン最後のフロー行の末尾**に付ける | — |
-| `*>` | **BULK Fork 矢印**。直後の CMD/EVT が N 個の並列インスタンスのうちの 1 つを代表する。HTML では 3 枚スタック + 「× N」バッジで描画 | — |
-| `&>>` | **Join + 非同期遷移**。直前の N 個の EVT が 1 つの後続トリガーへ合流する `>>` の Join 版。HTML では BPMN シンクバー（黒太線 + Σ N ラベル）で描画 | — |
+| `>` | 同期フロー（直接連鎖） | — |
+| `>>` | 非同期遷移（レーン切り替え）。前レーン最後のフロー行の末尾に付ける | — |
+| `*>` | BULK Fork 矢印。直後の CMD/EVT が N 個の並列インスタンスのうちの 1 つを代表 | — |
+| `&>>` | Join + 非同期遷移。直前の N 個の EVT が 1 つの後続トリガーへ合流 | — |
 
-**`*>` / `&>>` の使用条件:** これらのオペレータは **BULK POLICY**（DML 上で `BULK true` を持つ POLICY）から発火する fanout / join を表現する場合にのみ使う。任意の並列分岐には使わない。例:
-
-```
-|ticketing|: BULK 並列返金
-  $中止時の一括返金 *> !返金を実行 > [返金が完了した] &>>
-|event-planning|: 全 N 件完了 join で中止確定
-  $全返金完了時の中止確定 > !イベント中止を確定 > [イベント中止が確定した]
-```
+`*>` / `&>>` は **BULK POLICY**（`bulk: true` を持つ POLICY）から発火する fanout / join を表現する場合にのみ使う。
 
 ---
 
-## [?] の使い方
+## 6. `[?]`（未確認）の使い方
 
-確信が低い箇所や設計判断が必要な箇所に付ける。理由も一緒に書く。
+確信が低い箇所や設計判断が必要な箇所には、該当要素の `note` に `[?]` を付けて理由も書く。
 
 ```dml
-SCENARIO 参加者がイベントに参加申込する
-  # 定員チェック [?] Event集約とParticipation集約どちらが持つ？
-  RULE  capacity check
+scenarios:
+  - name: 参加者がイベントに参加申込する
+    context: participation
+    actor: Member
+    cmd: ApplyForEvent
+    agg: Participation
+    rules:
+      - rule: capacity check
+        note: "[?] Event 集約と Participation 集約どちらが定員を持つ？"
 ```
 
 ---
 
-## 記述ルール
+## 7. 記述ルール
 
-1. **SCENARIOのフィールド順は `ACTOR → QRY → CMD → EVT → AGG → RULE → ERR → POL`** を厳守する
-2. **POLICYはCONTEXT内・対応SCENARIOの直後に書く**: ファイル末尾にまとめない。`POL` はポリシー名の参照、`POLICY` ブロックが定義
-3. **省略可能フィールド**: `WHEN`（フィールドレベル）・`QRY`・`BULK` は必要なときだけ書く
-4. **QRYは「判断に必要なデータ」にのみ書く**: アクター（「このコマンドを発行するか」）またはポリシー（「どのコマンドを発行するか・誰に対して」）が判断するために必要なデータのみ。コマンドの実装内部で必要なデータ（BULKの実行対象リストなど）はコマンド実装の責務であり `QRY` に書かない
-5. **ERRは積極的に書く**: 「起きない条件」を毎回確認してERRに記録する — ERRがAGGの不変条件を明らかにする
-6. **コメントは `#` で**: `RULE`・`ERR`・`POLICY` の日本語補足は、対象行の**上の行**に `#` コメント行として書く
-7. **RULE / ERR の WHY / WHEN は強く推奨**: `RULE` 行の直下にインデント +2 で `WHY "..."` を、`ERR` 行の直下に `WHEN "..."` を書く。`#` コメントは自由形式メモ、`WHY/WHEN` は意味付き構造として並存。`WHY` は「業務・UX 文脈に翻訳した理由」を書く（RULE の言い換えではなく）
+1. **トップレベルは `contexts` / `scenarios` / `policies` の 3 リスト**。セクション区切りコメントは使わない。
+2. **キー順を推奨順で統一**: `name → context → actor → qry → cmd → evt|branches → agg → rules → errors → pol`。
+3. **省略可能フィールド**: `qry` / `branches` / `bulk` / `pol` は必要なときだけ書く。
+4. **qry は「判断に必要なデータ」にのみ書く**: アクター（「このコマンドを発行するか」）またはポリシー（「どのコマンドを発行するか・誰に対して」）が判断するために必要なデータのみ。コマンド実装内部で必要なデータ（BULK の実行対象リストなど）は `qry` に書かない。
+5. **errors は積極的に書く**: 「起きない条件」を毎回確認して `errors` に記録する — エラーが AGG の不変条件を明らかにする。
+6. **日本語補足は構造化フィールドへ**: `rules[].why` / `errors[].when` / `policies[].note` / 各要素の `note` に書く。`#` 行コメントによる補足は使わない。
+7. **`why` は業務・UX 文脈に翻訳**: rule の言い換えではなく「なぜ必要か」を書く。
+8. **完成時の発火/起動の明示**: 完成した SCENARIO は `evt` か `branches` の**いずれか一方**を、完成した POLICY は `trigger` か `triggers` の**いずれか一方**を持つ（副作用専用 POLICY の cmd 省略は §4 のとおり別途許容）。スキーマは進行中セッションを許容するため両方欠如でも valid だが、完成版では必ず明示する。
 
 ---
 
-## フル例（コミュニティイベント参加ドメイン）
+## 8. フル例（コミュニティイベント参加ドメイン）
 
 ```dml
-# ================================
-# コンテキスト宣言
-# ================================
+contexts:
+  - name: community-events
+    language:
+      Event: "コミュニティが主催する集会・勉強会"
+      Capacity: "イベントの定員（最大参加者数）"
+    module: community-events
+    upstream: []
+    downstream:
+      - context: participation
+        relationship: Customer-Supplier
 
-CONTEXT community-events
-  LANGUAGE    Event    = "コミュニティが主催する集会・勉強会"
-  LANGUAGE    Capacity = "イベントの定員（最大参加者数）"
-  MODULE      community-events
-  UPSTREAM    (none)
-  DOWNSTREAM  participation   # Customer-Supplier
+  - name: participation
+    language:
+      Event: "参加申込の対象となるエントリー"
+      Capacity: "参加ステータスの枠（pending 含む）"
+    module: participation
+    upstream:
+      - context: community-events
+        relationship: Customer-Supplier
+    downstream: []
 
-CONTEXT participation
-  LANGUAGE    Event    = "参加申込の対象となるエントリー"
-  LANGUAGE    Capacity = "参加ステータスの枠（pending含む）"  [?] capacityの責務はどちら？
-  MODULE      participation
-  UPSTREAM    community-events # Customer-Supplier
-  DOWNSTREAM  (none)
+scenarios:
+  - name: 主催者がコミュニティを作成する
+    context: community-events
+    actor: Organizer
+    cmd: CreateCommunity
+    evt: CommunityCreated
+    agg: Community
+    rules:
+      - rule: communityName must be unique system-wide
+        why: "URL slug や検索 UX で name→id 逆引きを想定するため"
+      - rule: name and description must not be empty
+      - rule: owner must always exist
+    errors:
+      - condition: duplicateName
+        error: DuplicateCommunityNameError
+      - condition: emptyName
+        error: InvalidCommunityDataError
+      - condition: emptyDescription
+        error: InvalidCommunityDataError
 
-# ================================
-# community-events
-# ================================
+  - name: 主催者がイベントを作成する
+    context: community-events
+    actor: Organizer
+    cmd: CreateEvent
+    evt: EventCreated
+    agg: Event
+    rules:
+      - rule: event must belong to an existing community
+      - rule: capacity must be positive integer
+    errors:
+      - condition: communityNotFound
+        error: CommunityNotFoundError
+      - condition: invalidCapacity
+        error: InvalidCapacityError
 
-SCENARIO 主催者がコミュニティを作成する
-  ACTOR Organizer
-  CMD   CreateCommunity
-  EVT   CommunityCreated
-  AGG   Community
-  # コミュニティ名はシステム全体でユニーク
-  RULE  communityName must be unique system-wide
-  # 名前・説明は空にできない
-  RULE  name and description must not be empty
-  # 主催者は必ず存在する
-  RULE  owner must always exist
-  ERR   duplicateName → DuplicateCommunityNameError
-  ERR   emptyName → InvalidCommunityDataError
-  ERR   emptyDescription → InvalidCommunityDataError
+  - name: 主催者がイベントを公開する
+    context: community-events
+    actor: Organizer
+    cmd: PublishEvent
+    evt: EventPublished
+    agg: Event
+    rules:
+      - rule: event must be in DRAFT status
+    errors:
+      - condition: alreadyPublished
+        error: EventAlreadyPublishedError
 
-SCENARIO 主催者がイベントを作成する
-  ACTOR Organizer
-  CMD   CreateEvent
-  EVT   EventCreated
-  AGG   Event
-  # 既存コミュニティに紐づくこと
-  RULE  event must belong to an existing community
-  # 定員は正の整数
-  RULE  capacity must be positive integer
-  ERR   communityNotFound → CommunityNotFoundError
-  ERR   invalidCapacity → InvalidCapacityError
+  - name: 主催者がイベントをキャンセルする
+    context: community-events
+    actor: Organizer
+    cmd: CancelEvent
+    evt: EventCancelled
+    agg: Event
+    rules:
+      - rule: event must not have already occurred
+        why: "開催済みイベントはキャンセル不可"
+    errors:
+      - condition: eventAlreadyOccurred
+        error: EventAlreadyOccurredError
+    pol:
+      - NotifyEventCancelled
 
-SCENARIO 主催者がイベントを公開する
-  ACTOR Organizer
-  CMD   PublishEvent
-  EVT   EventPublished
-  AGG   Event
-  # 下書き状態であること
-  RULE  event must be in DRAFT status
-  ERR   alreadyPublished → EventAlreadyPublishedError
+  - name: 参加者がイベントに参加申込する
+    context: participation
+    actor: Member
+    qry:
+      - GetRemainingCapacity
+    cmd: ApplyForEvent
+    agg: Participation
+    rules:
+      - rule: event must be published
+      - rule: user must not have existing participation for same event
+        why: "同一イベントへの二重申込を防ぐため"
+    errors:
+      - condition: eventNotPublished
+        error: EventNotAvailableError
+      - condition: duplicateParticipation
+        error: AlreadyAppliedError
+    branches:
+      - condition: "capacity > 0"
+        evt: ParticipationApplied
+      - condition: "capacity = 0"
+        evt: ParticipationWaitlisted
 
-SCENARIO 主催者がイベントをキャンセルする
-  ACTOR Organizer
-  CMD   CancelEvent
-  EVT   EventCancelled
-  AGG   Event
-  # 開催済みイベントはキャンセル不可
-  RULE  event must not have already occurred
-  ERR   eventAlreadyOccurred → EventAlreadyOccurredError
-  POL   NotifyEventCancelled
+  - name: 主催者が参加申込を承認する
+    context: participation
+    actor: Organizer
+    cmd: ApproveParticipation
+    evt: ParticipationApproved
+    agg: Participation
+    rules:
+      - rule: participation must be in APPLIED status
+    errors:
+      - condition: invalidStatus
+        error: InvalidStatusTransitionError
 
-# イベントキャンセル時に参加者へ通知
-POLICY NotifyEventCancelled
-  TRIGGER  EventCancelled
-  QRY      AllApprovedParticipations
-  CMD      SendCancellationNotification
-  BULK     true
-  TX       EVENTUAL
-  EVT      CancellationNotificationSent
+  - name: 参加者が参加をキャンセルする
+    context: participation
+    actor: Member
+    cmd: CancelParticipation
+    evt: ParticipationCancelled
+    agg: Participation
+    rules:
+      - rule: participation must be in APPLIED or APPROVED status
+    errors:
+      - condition: invalidStatus
+        error: InvalidStatusTransitionError
+    pol:
+      - WaitlistPromotion
 
-# ================================
-# participation
-# ================================
+policies:
+  - name: NotifyEventCancelled
+    context: community-events
+    trigger: EventCancelled
+    qry: AllApprovedParticipations
+    cmd: SendCancellationNotification
+    bulk: true
+    evt: CancellationNotificationSent
+    note: "イベントキャンセル時に参加者へ通知"
 
-SCENARIO 参加者がイベントに参加申込する
-  ACTOR Member
-  QRY   GetRemainingCapacity
-  CMD   ApplyForEvent
-  AGG   Participation
-  # 公開済みのイベントであること
-  RULE  event must be published
-  # 同一イベントへの二重申込禁止
-  RULE  user must not have existing participation for same event
-  ERR   eventNotPublished → EventNotAvailableError
-  ERR   duplicateParticipation → AlreadyAppliedError
-  # 定員内なら APPLIED、超過なら WAITLISTED（同一トランザクション）
-  WHEN  capacity > 0 → EVT ParticipationApplied
-  WHEN  capacity = 0 → EVT ParticipationWaitlisted
-
-SCENARIO 主催者が参加申込を承認する
-  ACTOR Organizer
-  CMD   ApproveParticipation
-  EVT   ParticipationApproved
-  AGG   Participation
-  # 申込済み状態であること
-  RULE  participation must be in APPLIED status
-  ERR   invalidStatus → InvalidStatusTransitionError
-
-SCENARIO 参加者が参加をキャンセルする
-  ACTOR Member
-  CMD   CancelParticipation
-  EVT   ParticipationCancelled
-  AGG   Participation
-  # キャンセル可能な状態であること
-  RULE  participation must be in APPLIED or APPROVED status
-  ERR   invalidStatus → InvalidStatusTransitionError
-  POL   WaitlistPromotion
-
-# キャンセル時にキャンセル待ちを繰り上げ（非同期・別トランザクション）
-POLICY WaitlistPromotion
-  TRIGGER  ParticipationCancelled
-  QRY      NextWaitlistedParticipation
-  CMD      PromoteWaitlistEntry
-  EVT      WaitlistPromoted
+  - name: WaitlistPromotion
+    context: participation
+    trigger: ParticipationCancelled
+    qry: NextWaitlistedParticipation
+    cmd: PromoteWaitlistEntry
+    evt: WaitlistPromoted
+    note: "キャンセル時にキャンセル待ちを繰り上げ（非同期・別トランザクション）"
 ```
+
+---
+
+## 9. JSON Schema による検証
+
+DML は [`./dml.schema.yaml`](./dml.schema.yaml)（JSON Schema Draft 2020-12・YAML 記述）で
+**構文 validity** を機械検証できる。検証ツールは `scripts/validate_dml.py`。
+
+```bash
+python3 .claude/skills/eventstorming-facilitator/scripts/validate_dml.py docs/eventstorming/<session>.dml.yaml
+```
+
+- ビルダー（`eventstorming_build.py`）は `.dml.yaml` 読込時に検証し、HTML §9 にバナー
+  （✅ / ⚠ 違反一覧）を描画する。**検証は非ブロッキング**で、違反があっても HTML は生成される。
+- 全行コメントのみ（YAML→`None`）や空ファイルは「未記述」として検証対象外（進行中セッション許容）。
+
+### 構文 validity と意味 validity の境界
+
+| レイヤ | 担保するもの | 例 |
+|------|------|------|
+| **JSON Schema**（機械・決定論的） | 構文 validity。トップレベル 3 リスト＋任意 `domains`、各要素の必須フィールド、型、enum（relationship / subdomainType / bcType / branchMode）、識別子の PascalCase・lowercase-with-hyphen、`evt`↔`branches` 排他、`trigger`↔`triggers` 排他、`bulk:true`→`qry` 必須、未知フィールド禁止 | `cmd` が PascalCase か、`subdomain.type` が enum 値か |
+| **causal-check / quality-check**（LLM・文脈依存） | 意味 validity。参照の実在・因果整合・モデル品質 | `trigger` が実在 EVT を指すか、`pol` が実在 POLICY か、upstream↔downstream の双方向一致、`subdomain` 参照の突合、`aggregates[].states` と分岐の整合、`relationship` と `roles` の意味矛盾、分岐の MECE 性、`evt` の過去形・`cmd` の命令形 |
+
+**スキーマ通過は必要条件であって十分条件ではない。** 「形が正しい」ことを Schema が、
+「意味が正しい」ことを causal-check / quality-check が担保する。

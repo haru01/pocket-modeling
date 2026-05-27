@@ -15,14 +15,14 @@ EventStorming セッションファイル `<ファイルパス>` のDDD/EventSto
   レポートに列挙する
 
 手順:
-1. `<ファイルパス>` を Read で読み込む
+1. `<ファイルパス>`（`.md`）と**兄弟 `.dml.yaml`（同名・拡張子 `.dml.yaml`、DML 本体・純 YAML）**を Read で読み込む（DML 記法チェックは `.dml.yaml` を対象）。あわせて `python3 .claude/skills/eventstorming-facilitator/scripts/validate_dml.py <session>.dml.yaml` を実行し、JSON Schema による構文違反（D1/D6/D8・enum・必須・排他など）を機械検出した結果を判断材料にする
 2. `.claude/skills/eventstorming-facilitator/references/quality-check.md` を Read で読み込む
 3. 全項目を順に検査する:
    - 表記チェック D1〜D10
    - フロー記法チェック F1〜F6
    - セクション完全性チェック S1〜S7
    - **目的サブセクション必須チェック S8（AGG カードの `#### 目的` 30 字以上）**
-   - **WHY/WHEN 推奨チェック W1〜W2（RULE 直下の `WHY` / ERR 直下の `WHEN`）**
+   - **WHY/WHEN 推奨チェック W1〜W2（`rules[].why` / `errors[].when`）**
    - モデリング意味チェック M1〜M5
 4. D・F・S1〜S7 違反は Edit tool で直接修正する
 5. **S8 / W1 / W2 違反は自動修正しない**（形式上 S/W 系だが意味依存のため）。`[?-WHY] S8_<AggName>: ...` / `[?-WHY] W_N: ...` の形でレポートに列挙
@@ -35,11 +35,11 @@ EventStorming セッションファイル `<ファイルパス>` のDDD/EventSto
             推奨: 決済責務の核を 1 文で言語化（30 字以上）
    )
    - W1/W2 違反あり: ホットスポット候補リスト（例:
-       [?-WHY] W1: SCENARIO「主催者がコミュニティを作成する」 の RULE
-            `communityName must be unique system-wide` に WHY 未記入。
-            推奨: WHY "URL slug や検索 UX で name → id 逆引きを想定するため"
-       [?-WHY] W2: 同 SCENARIO の ERR `duplicateName → DuplicateCommunityNameError`
-            に WHEN 未記入。推奨: WHEN "name が既存と重複"
+       [?-WHY] W1: scenario「主催者がコミュニティを作成する」 の rule
+            `communityName must be unique system-wide` に `why` 未記入。
+            推奨: why: "URL slug や検索 UX で name → id 逆引きを想定するため"
+       [?-WHY] W2: 同 scenario の error `DuplicateCommunityNameError`
+            (condition: duplicateName) に `when` 未記入。推奨: when: "name が既存と重複"
    )
    - M 違反候補あり: ホットスポット候補リスト（例:
        [?] M1: SCENARIO「顧客が注文を確定する」 — CMD/EVT で「確定」が

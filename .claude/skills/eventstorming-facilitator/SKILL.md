@@ -5,7 +5,7 @@ description: Facilitate DDD domain modeling sessions via EventStorming conversat
 
 # EventStorming + DDD モデリング ファシリテーター
 
-会話でドメインイベントを発見し DML（Domain Modeling Language）に情報圧縮する。MD ファイルが Single Source of Truth。AI は MD のみ `Write`/`Edit` し、PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/eventstorming/<session>.html` を自動再生成する（**AI は HTML を直接編集しない**）。チャットには DML 全文を流さず、構造化テーブル＋HTML パス案内に留める（Claude Code のチャット本文では SVG/Mermaid が描画されないため）。
+会話でドメインイベントを発見し DML（Domain Modeling Language）に情報圧縮する。`.md`（ストーリー/フロー/用語集）と兄弟ファイル `.dml.yaml`（モデル本体・純 YAML）の 2 ファイルが Single Source of Truth。AI はこの 2 ファイルを `Write`/`Edit` し、PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/eventstorming/<session>.html` を `.md` ＋ 兄弟 `.dml.yaml` から自動再生成する（**AI は HTML を直接編集しない**）。**書き込み順は `.dml.yaml` を先・`.md` を後**（`.md` 編集で確実に最新の DML を取り込んだ HTML が生成される）。チャットには DML 全文を流さず、構造化テーブル＋HTML パス案内に留める（Claude Code のチャット本文では SVG/Mermaid が描画されないため）。
 
 > **ヒント（ユーザーへ）**: 質問に迷ったら **`？`** と送ってください（半角 `?` でも可）。判断の軸を提示して一緒に考えます。
 
@@ -21,7 +21,7 @@ description: Facilitate DDD domain modeling sessions via EventStorming conversat
 | 4. CMD→EVT→POLICY チェーン | フロー全体を1本ずつ確認。AGG・BC 境界も同時に拾う |
 | 4.5. BC 境界 | 文脈で意味が変わる言葉を `LANGUAGE` として記録 |
 | **4.6. 目的・背景・制約** | **各 AGG の `#### 目的`（必須・30字以上）／`#### 背景`／`#### 制約` を 3 つの問いで言語化。RULE/ERR の前に意図を固める。BC レベルは任意。詳細: `references/session-guide.md`** |
-| 5. RULE・ERR | 各 AGG の不変条件・エラーケースを掘る。`RULE` 直下 `WHY "..."`、`ERR` 直下 `WHEN "..."` 併記（推奨） |
+| 5. RULE・ERR | 各 AGG の不変条件・エラーケースを掘る。`rules[].why`・`errors[].when` 併記（推奨） |
 | 6. 整合性チェック → 出力 | DML 整合性を確認し Markdown レポートを最終更新 |
 
 MD 編集ごとに HTML は自動再生成されるが、**ブラウザの自動リロードはしない**（必要に応じて手動）。
@@ -80,7 +80,7 @@ HTML 更新・DML 抜粋・用語集は出さない。本文末尾は問い 1 �
 
 ### 追加された DML
 ```dml
-<該当フェーズで確定した SCENARIO/POLICY/CONTEXT のみ>
+<該当フェーズで確定した contexts/scenarios/policies のみ（YAML）>
 ```
 
 ### 用語集の追加
@@ -108,30 +108,30 @@ HTML 更新・DML 抜粋・用語集は出さない。本文末尾は問い 1 �
 
 ### ③ HTML 出力（AI は触らない）
 
-- **トリガー**: MD を Write/Edit → PostToolUse hook → `dist/eventstorming/<session>.html` 再生成
-- **出力先**: `dist/eventstorming/`（MD は `docs/`、HTML は `dist/`）
-- **手動ビルド/全件/監視**: `python3 scripts/eventstorming_build.py <session>.md` / `--all` / `--watch`
+- **トリガー**: MD または兄弟 `.dml.yaml` を Write/Edit → PostToolUse hook → `dist/eventstorming/<session>.html` 再生成（ビルダーは `.md` ＋ 兄弟 `.dml.yaml` を読む）
+- **出力先**: `dist/eventstorming/`（MD/DML は `docs/`、HTML は `dist/`）
+- **手動ビルド/全件/監視**: `python3 scripts/eventstorming_build.py <session>.md`（`.dml.yaml` を渡しても兄弟 `.md` を解決）/ `--all` / `--watch`
 - **フェーズ2完了時のみ** `Bash open dist/eventstorming/<session>.html`。自動リロードはしない
 - **Claude Code preview panel への反映** — フェーズ完了テンプレ末尾で `Read dist/eventstorming/<session>.html` を必ず呼ぶ
 - **スマホアプリ案内** — HTML 新規/再生成のフェーズ完了テンプレに「📱 HTML をダウンロードしてブラウザで」を必ず添える
 - **描画仕様詳細**: `references/html-render-spec.md`、テンプレ: `templates/event-flow.html`
 
-### ④ MD ファイル管理
+### ④ MD / DML ファイル管理
 
-- アクティブ: `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md`（Single Source of Truth）
-- フェーズ2で `Write`、以降は `Edit` で該当セクションのみ差分更新
+- アクティブ: `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md`（ストーリー/フロー/用語集）＋兄弟 `eventstorming-YYYYMMDD-HHMM.dml.yaml`（モデル本体・純 YAML）。両者で Single Source of Truth
+- フェーズ2で `.md` を `Write`、以降は `Edit` で該当セクションのみ差分更新。DML の追加・更新は兄弟 `.dml.yaml` を `Write`/`Edit`（**`.dml.yaml` を先に書いてから `.md` を編集**）
 - 書き出し後は **必ず** Agent tool で品質チェックを起動（`references/quality-check-agent.md`）。HTML は派生物なのでチェック不要
-- **ユーザーが MD を直接編集した場合**: 次ターン応答前に `Read` で再読み込みし §3（フロー DSL）と §9（DML）を照合。差分があれば `Edit` で同期し品質チェック起動
+- **ユーザーが MD/DML を直接編集した場合**: 次ターン応答前に `Read` で再読み込みし §3（フロー DSL）と兄弟 `.dml.yaml` を照合。差分があれば `Edit` で同期し品質チェック起動
 
 | フロー DSL の変化 | DML への対応 |
 |---|---|
-| `@アクター > !コマンド > [イベント]` 追加 | 対応 SCENARIO 追加 |
-| `?リードモデル名` 追加 | SCENARIO に `QRY QueryName` 追加 |
-| `$ポリシー名` 追加 | 対応 POLICY 追加 |
-| フロー項目削除 | SCENARIO/POLICY 削除（迷う場合 `[?]`） |
-| レーン名（BC 名）変更 | CONTEXT 宣言と SCENARIO のモジュール名を更新 |
+| `@アクター > !コマンド > [イベント]` 追加 | `scenarios` に要素追加 |
+| `?リードモデル名` 追加 | scenario に `qry` 追加 |
+| `$ポリシー名` 追加 | `policies` に要素追加 |
+| フロー項目削除 | 該当 scenario/policy 削除（迷う場合 `note: "[?] ..."`） |
+| レーン名（BC 名）変更 | `contexts[].name` と scenario/policy の `context` を更新 |
 
-フロー図は日本語ラベル、DML は英語識別子（例：`!コミュニティを作成` ↔ `CMD CreateCommunity`）。新しい日本語ラベルが現れたら §10（用語集）に英語識別子を追記。
+フロー図は日本語ラベル、DML は英語識別子（例：`!コミュニティを作成` ↔ `cmd: CreateCommunity`）。新しい日本語ラベルが現れたら §10（用語集）に英語識別子を追記。
 
 ---
 
@@ -155,37 +155,41 @@ flow:
 
 **DSL 記号**: `|BC|:` レーンヘッダー（説明必須）／`@Actor`／`?ReadModel`（コマンド発行判断に必要な情報のみ）／`!Command`（`!` 省略可）／`[Event]`（過去形）／`$Policy`／`>` 同期連鎖／`>>` 非同期遷移（前レーン行末）／`*>` BULK Fork（N 個並列の 1 つ）／`&>>` Join+非同期遷移（N→1 合流の `>>` 版・前レーン行末）。色・HTML マッピング詳細: `references/html-render-spec.md` §6-3。
 
-**ラベル日本語化方針**: コマンド=動詞句、イベント=過去形、ポリシー=目的名詞句、アクター=役割名、BC 名=英語。DML コードブロック（§9）は英語維持。HTML 表示時は DSL 記号（`@!$[]`）を削除。
+**ラベル日本語化方針**: コマンド=動詞句、イベント=過去形、ポリシー=目的名詞句、アクター=役割名、BC 名=英語。DML ファイル（`.dml.yaml`）は英語維持。HTML 表示時は DSL 記号（`@!$[]`）を削除。
 
 ---
 
 ## DML 記述ルール（要点）
 
-完全仕様: `references/dml-spec.md`。
+DML は **MD とは別の兄弟ファイル `docs/eventstorming/<session>.dml.yaml`** に **YAML 直書き**（フェンス不要）で書く。`.md` の §9 はこの `.dml.yaml` へのリンク参照のみ。完全仕様: `references/dml-spec.md`。
 
-- **SCENARIO 名は日本語**でアクター＋行為（例：`SCENARIO 主催者がコミュニティを作成する`）。先頭に `ACTOR <名前>` 必須（典型値: `Organizer` `Member` `System`）
-- **SCENARIO 内フィールド順序 `ACTOR → QRY → CMD → EVT → AGG → RULE → ERR → POL`** 厳守
-- **`EVT/CMD/AGG/QRY` は英語識別子**（`EVT OrderPlaced` 等。`()` や `<<>>` 不要）。RULE/ERR/POLICY の日本語補足は上行に `#` コメント
-- **CONTEXT 宣言に `UPSTREAM`/`DOWNSTREAM` 必須**（依存なしは `(none)` 明示、関係タイプを行末コメント）。BC 名は `lowercase-with-hyphen`
-- **POLICY ブロックは EVENTUAL-TX 専用** — 対応 SCENARIO 直後・CONTEXT 内に配置。SAME-TX 分岐は発行元 SCENARIO の `WHEN` インライン
-- **ポリシー後の Command は原則必須**（`$Policy > !Command > [Event]`）。**例外**: 副作用専用 POLICY（外部通知/メール送信など AGG 更新を伴わない）は `$Policy > [Event]` 許容、対応 SCENARIO 省略、POLICY ブロックの `CMD` も省略（TRIGGER/QRY/BULK/EVT のみ）
-- **QRY は判断材料のみ** — アクターまたはポリシーの判断（どのコマンドを誰に発行するか）に必要なデータ。コマンド実装内部のデータ（BULK の対象リスト等）は含めない
+- **トップレベルは `contexts` / `scenarios` / `policies` の 3 リスト**。`#` によるセクション区切りは使わない（リスト構造で分離）。`scenarios`/`policies` の各要素は `context:` で所属 BC を参照
+- **`scenarios[].name` は日本語**でアクター＋行為（例：`name: 主催者がコミュニティを作成する`）。`actor` 必須（典型値: `Organizer` `Member` `System`）
+- **キー順 `name → context → actor → qry → cmd → evt|branches → agg → rules → errors → pol`** を推奨
+- **`cmd/evt/agg/trigger/emits/qry` の値は英語識別子**（`()` や `<<>>` 不要）。日本語補足は `rules[].why`・`errors[].when`・`note` の構造化フィールドへ（`#` 行コメントは使わない）
+- **`errors` は `condition` + `error`（ErrorType）**、**`rules` は `rule`（英語の不変条件）+ 任意の `why`**
+- **`contexts[]` に `upstream`/`downstream` 必須**（依存なしは空リスト `[]`、`relationship` を併記）。BC 名は `lowercase-with-hyphen`
+- **`policies` は EVENTUAL-TX 専用**。SAME-TX 分岐は発行元 scenario の `branches`（`condition` ＋ `evt`、必要なら `pol`）で書く
+- **ポリシー後の `cmd` は原則必須**。**例外**: 副作用専用 POLICY（外部通知/メール送信など AGG 更新を伴わない）は `cmd` 省略可（trigger/qry/bulk/evt のみ）、対応 scenario も省略
+- **`qry` は判断材料のみ** — アクターまたはポリシーの判断（どのコマンドを誰に発行するか）に必要なデータ。コマンド実装内部のデータ（BULK の対象リスト等）は含めない
 - **インフラ系ドメイン（通知・スケジューラ・決済等）は「BC 昇格 vs POLICY 留置」を判定** — データモデルがあるのに CONTEXT がない「宙吊り」禁止
 
 ---
 
-## MD 出力タイミング
+## MD / DML 出力タイミング
+
+`§N` は `.md` のセクション、`.dml.yaml` は兄弟 DML ファイル。**`.dml.yaml` を先に書いてから `.md` を編集**する。
 
 | タイミング | 操作 |
 |-----------|------|
-| フェーズ2完了 | `Write` 新規作成 → `Bash open <session>.html` 初回起動 |
-| フェーズ3完了 | `Edit` で §3・§9・§10 |
-| フェーズ4完了 | `Edit` で §3・§4・§9・§10 |
-| フェーズ4.5完了 | `Edit` で §4（LANGUAGE）・§9 |
+| フェーズ2完了 | `.md` を `Write` 新規作成（§9 は `.dml.yaml` へのリンク）→ `Bash open <session>.html` 初回起動 |
+| フェーズ3完了 | `.dml.yaml` を `Write`/`Edit` → `.md` の §3・§10 を `Edit` |
+| フェーズ4完了 | `.dml.yaml` を `Edit` → `.md` の §3・§4・§10 を `Edit` |
+| フェーズ4.5完了 | `.dml.yaml`（language）を `Edit` → `.md` の §4 を `Edit` |
 | **フェーズ4.6完了** | **`Edit` で §4（BC `#### 目的/背景/制約` 任意）・§5（AGG `#### 目的`必須/`#### 背景`/`#### 制約`）** |
-| フェーズ5完了 | `Edit` で §5（Zod・RULE/ERR）・§6・§9（`WHY`/`WHEN` 併記） |
-| フェーズ6（最終） | `Edit` で全セクション完成版 |
-| ユーザーが「保存して」 | 即座に MD を書き出す |
+| フェーズ5完了 | `.dml.yaml`（`why`/`when` 併記）を `Edit` → `.md` の §5（Zod・rules/errors）・§6 を `Edit` |
+| フェーズ6（最終） | `.dml.yaml` 完成版 → `.md` 全セクション完成版を `Edit` |
+| ユーザーが「保存して」 | 即座に `.dml.yaml` → `.md` の順で書き出す |
 
 **書き出し後の品質チェック（必須）**: Agent tool で `references/quality-check-agent.md` を起動。
 - **表記チェック (D/F/S 系)**: 形式違反は自動修正
@@ -207,7 +211,7 @@ flow:
 | 6 | リードモデル候補（`### QRYName（日本語名）`） | フェーズ4〜5 |
 | 7 | オープンクエスチョン | 随時 |
 | 8 | 次のアクション | 随時 |
-| 9 | DML（` ```dml ` 全文） | 随時 |
+| 9 | DML（別ファイル `<session>.dml.yaml` へのリンク参照。DML 全文は兄弟 `.dml.yaml` に YAML 直書き） | 随時 |
 | 10 | 用語集（日本語ラベル ↔ 英語 DML 識別子） | フェーズ3〜 |
 
 **§6 リードモデル候補**: 単一集約への単純ルックアップは省略し、(a) 計算値を含む / (b) 複数集約・複数 BC を横断 / (c) BULK クエリ（一覧取得）のいずれかのみ記載。各エントリは `利用者`／`目的`／`ソース`／`算出` を1行ずつ。

@@ -114,42 +114,53 @@ def route_policies(parsed: dict) -> dict[str, dict[str, list[dict]]]:
         )
 
     for p in policies:
-        trigger = p.get("trigger")
         cmd = p.get("cmd")
-        source_agg = evt_to_agg.get(trigger) if trigger else None
-        source_bc = agg_to_bc.get(source_agg) if source_agg else None
+        # v1 `trigger`（単一）と v2 `triggers`（join）を統一。trigger_events が
+        # 無い古い JSON でも trigger 単一にフォールバックする。
+        trigger_evts = p.get("trigger_events")
+        if not trigger_evts:
+            trigger_evts = [p["trigger"]] if p.get("trigger") else []
+        # 各トリガー EVT → source_agg を解決（join では複数の発火元を持ちうる）
+        resolved = [(t, evt_to_agg.get(t)) for t in trigger_evts]
+        source_aggs = [(t, sa) for t, sa in resolved if sa]
+        primary_source = source_aggs[0][1] if source_aggs else None
+        primary_source_bc = agg_to_bc.get(primary_source) if primary_source else None
         target_agg = cmd_to_agg.get(cmd) if cmd else None
         target_bc = agg_to_bc.get(target_agg) if target_agg else None
-        cross_bc = bool(source_bc and target_bc and source_bc != target_bc)
 
         if cmd and target_agg:
             slot(target_agg)["inbound"].append(
                 {
                     "policy": p,
-                    "source_agg": source_agg,
-                    "source_bc": source_bc,
+                    "source_agg": primary_source,
+                    "source_bc": primary_source_bc,
                     "target_cmd": cmd,
-                    "cross_bc": cross_bc,
+                    "cross_bc": bool(
+                        primary_source_bc and target_bc and primary_source_bc != target_bc
+                    ),
                 }
             )
-            if source_agg:
-                slot(source_agg)["outbound_consumers"].append(
+            # join では各発火元 AGG に outbound consumer を記録する
+            for t, sa in source_aggs:
+                sa_bc = agg_to_bc.get(sa)
+                slot(sa)["outbound_consumers"].append(
                     {
                         "policy": p,
-                        "evt": trigger,
+                        "evt": t,
                         "target_agg": target_agg,
                         "target_bc": target_bc,
-                        "cross_bc": cross_bc,
+                        "cross_bc": bool(sa_bc and target_bc and sa_bc != target_bc),
                     }
                 )
-        elif source_agg:
-            # 副作用専用 POLICY (CMD なし)
-            slot(source_agg)["side_effects"].append(
-                {
-                    "policy": p,
-                    "trigger_evt": trigger,
-                }
-            )
+        elif source_aggs:
+            # 副作用専用 POLICY (CMD なし)。各発火元に記録。
+            for t, sa in source_aggs:
+                slot(sa)["side_effects"].append(
+                    {
+                        "policy": p,
+                        "trigger_evt": t,
+                    }
+                )
         else:
             # 解決できなかった POLICY は記録しておく
             slot("__unresolved__")["unresolved"].append({"policy": p})

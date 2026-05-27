@@ -363,6 +363,16 @@
       text-align: center;
     }
 
+    /* === DML JSON Schema 検証バナー（§9） === */
+    .dml-banner {
+      padding: 8px 12px; border-radius: 6px; margin: 0 0 10px;
+      font-size: 13px; font-weight: 600;
+    }
+    .dml-banner-ok { background: #1B3320; color: #A5D6A7; border: 1px solid #2E7D32; }
+    .dml-banner-error { background: #3A1E1E; color: #EF9A9A; border: 1px solid #C62828; }
+    .dml-banner-error ul { margin: 6px 0 0; padding-left: 22px; font-weight: 400; }
+    .dml-banner-error li { margin: 2px 0; font-family: ui-monospace, monospace; }
+
     /* === 集約サブセクション (不変条件 / エラーケース / その他) === */
     .agg-subsection,
     .inv-section,
@@ -424,6 +434,16 @@
     pre.code .kw { color: #80CBC4; font-weight: 700; }
     pre.code .id { color: #FFCC80; }
     pre.code .cm { color: #78909C; font-style: italic; }
+    /* === DML (YAML) 役割ベース意味色 === */
+    pre.code .yk { color: #B0BEC5; }                 /* YAML キー: 淡い灰緑 */
+    pre.code .v-str { color: #ECEFF1; }              /* 既定の値 */
+    pre.code .v-actor { color: #FFE082; }            /* 黄: actor / agg */
+    pre.code .v-cmd { color: #90CAF9; }              /* 青: command */
+    pre.code .v-evt { color: #FFAB91; }              /* 橙: event / trigger / emits */
+    pre.code .v-qry { color: #A5D6A7; }              /* 緑: read model */
+    pre.code .v-pol { color: #CE93D8; }              /* 紫: policy */
+    pre.code .v-err { color: #EF9A9A; }              /* 赤: error type */
+    pre.code .v-meta { color: #80CBC4; font-style: italic; }  /* 青緑: v2 メタ（type/vision/subdomain 等） */
 
     /* === 用語集テーブル === */
     table.glossary {

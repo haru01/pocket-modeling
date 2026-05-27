@@ -19,6 +19,8 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
+import yaml
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_ROOT = SCRIPT_DIR.parent
 PROJECT_ROOT = SCRIPT_DIR.parents[3]
@@ -397,160 +399,145 @@ def extract_cross_agg_scenarios(
 
 
 # ============================================================
-# DML 内 POLICY / SCENARIO ブロックの抽出
+# DML（YAML）から SCENARIO / POLICY を抽出
 # ============================================================
 
 
 def parse_dml_blocks(dml_text: str) -> dict:
-    """DML テキストから SCENARIO / POLICY ブロックを抽出。
+    """DML（YAML）テキストから scenarios / policies を抽出する。
 
+    YAML を `yaml.safe_load` で読み、下流スクリプト（generate_issue_drafts.py /
+    build_dependency_graph.py）が消費する既存の dict 構造へ正規化して返す。
     返り値: {"scenarios": [...], "policies": [...]}
-    各ブロックの行頭の `#` コメントは preceding_notes として block に紐付ける。
+
+    （CONTEXT/BC は `## コンテキスト候補` カードから取得するため、ここでは
+    YAML の `contexts` は読まない＝旧テキスト DML と同じ役割分担を維持する）
     """
-    scenarios: list[dict] = []
-    policies: list[dict] = []
-    pending_notes: list[str] = []
-    lines = dml_text.splitlines()
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        stripped = line.strip()
-
-        if not stripped:
-            pending_notes = []
-            i += 1
-            continue
-
-        if stripped.startswith("#"):
-            pending_notes.append(stripped.lstrip("#").strip())
-            i += 1
-            continue
-
-        m_scenario = re.match(r"^SCENARIO\s+(.+)$", stripped)
-        m_policy = re.match(r"^POLICY\s+(\S+)\s*$", stripped)
-
-        if m_scenario or m_policy:
-            block_kind = "scenario" if m_scenario else "policy"
-            name = (m_scenario or m_policy).group(1).strip()
-            notes = pending_notes[:]
-            pending_notes = []
-            body: list[tuple[str, str, list[str]]] = []
-            i += 1
-            inline_notes: list[str] = []
-            while i < len(lines):
-                child = lines[i]
-                child_stripped = child.strip()
-                if not child_stripped:
-                    break
-                if not child.startswith(" "):
-                    break
-                if child_stripped.startswith("#"):
-                    inline_notes.append(child_stripped.lstrip("#").strip())
-                    i += 1
-                    continue
-                m_kv = re.match(r"^(\w+)\s+(.+)$", child_stripped)
-                if m_kv:
-                    body.append((m_kv.group(1), m_kv.group(2).strip(), inline_notes[:]))
-                    inline_notes = []
-                i += 1
-
-            if block_kind == "scenario":
-                scenarios.append(_assemble_scenario(name, body, notes))
-            else:
-                policies.append(_assemble_policy(name, body, notes))
-            continue
-
-        i += 1
-
+    if not dml_text.strip():
+        return {"scenarios": [], "policies": []}
+    data = yaml.safe_load(dml_text)
+    if not isinstance(data, dict):
+        return {"scenarios": [], "policies": []}
+    scenarios = [
+        _normalize_scenario(s) for s in (data.get("scenarios") or []) if isinstance(s, dict)
+    ]
+    policies = [
+        _normalize_policy(p) for p in (data.get("policies") or []) if isinstance(p, dict)
+    ]
     return {"scenarios": scenarios, "policies": policies}
 
 
-def _strip_quotes(value: str) -> str:
-    v = value.strip()
-    if len(v) >= 2 and (
-        (v[0] == '"' and v[-1] == '"') or (v[0] == "'" and v[-1] == "'")
-    ):
-        return v[1:-1]
-    return v
+def _as_list(value) -> list[str]:
+    """str / list / None を文字列リストへ正規化する。"""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    return [str(value)]
 
 
-def _assemble_scenario(name: str, body: list[tuple[str, str, list[str]]], notes: list[str]) -> dict:
-    """SCENARIO ブロック行を辞書化。同名キーは list で保持。
+def _normalize_scenario(s: dict) -> dict:
+    """YAML scenario dict を既存 dict 構造へ正規化する。
 
-    `RULE` 行の直下に `WHY "..."` があれば直前の RULE dict に `why` を注入する。
-    `ERR` 行の直下に `WHEN "..."` があれば直前の ERR dict に `when` を注入する。
-    （`WHEN` キーは SCENARIO の制御フロー分岐としても使われるので、直前が ERR
-    の場合のみ ERR.when として扱う。それ以外の WHEN は無視＝既存動作と同じ）
+    - `evt`（単一）と `branches[].evt` をまとめて `events` に
+    - `pol` / `policies` と `branches[].pol` を `policies` に
+    - `rules: [{rule, why, note}]` → `[{text, notes, why}]`
+    - `errors: [{condition, error, when, note}]` → `[{text: "cond → Error", notes, when}]`
     """
-    result: dict = {
-        "name": name,
-        "actor": None,
-        "cmd": None,
-        "events": [],
-        "agg": None,
-        "rules": [],
-        "errors": [],
-        "policies": [],
-        "notes": notes,
+    events: list[dict] = []
+    if s.get("evt"):
+        events.append({"name": s["evt"], "notes": []})
+
+    policies = _as_list(s.get("pol") or s.get("policies"))
+
+    for br in s.get("branches") or []:
+        if not isinstance(br, dict):
+            continue
+        if br.get("evt"):
+            events.append({"name": br["evt"], "notes": []})
+        policies.extend(_as_list(br.get("pol")))
+
+    rules: list[dict] = []
+    for r in s.get("rules") or []:
+        if isinstance(r, str):
+            rules.append({"text": r, "notes": [], "why": None})
+        elif isinstance(r, dict):
+            note = r.get("note")
+            rules.append(
+                {
+                    "text": r.get("rule", ""),
+                    "notes": [note] if note else [],
+                    "why": r.get("why"),
+                }
+            )
+
+    errors: list[dict] = []
+    for e in s.get("errors") or []:
+        if isinstance(e, str):
+            errors.append({"text": e, "notes": [], "when": None})
+        elif isinstance(e, dict):
+            cond = str(e.get("condition", "")).strip()
+            err = str(e.get("error", "")).strip()
+            text = f"{cond} → {err}" if cond and err else (cond or err)
+            note = e.get("note")
+            errors.append(
+                {
+                    "text": text,
+                    "notes": [note] if note else [],
+                    "when": e.get("when"),
+                }
+            )
+
+    return {
+        "name": s.get("name", ""),
+        "context": s.get("context"),
+        "actor": s.get("actor"),
+        "cmd": s.get("cmd"),
+        "events": events,
+        "branch_mode": s.get("branchMode"),   # v2: exclusive/concurrent/inclusive（branches 時）
+        "agg": s.get("agg"),
+        "rules": rules,
+        "errors": errors,
+        "policies": policies,
+        "notes": _as_list(s.get("note") or s.get("notes")),
     }
-    last_kind: str | None = None
-    for key, value, kv_notes in body:
-        k = key.upper()
-        if k == "ACTOR":
-            result["actor"] = value
-            last_kind = "ACTOR"
-        elif k == "CMD":
-            result["cmd"] = value
-            last_kind = "CMD"
-        elif k == "EVT":
-            result["events"].append({"name": value, "notes": kv_notes})
-            last_kind = "EVT"
-        elif k == "AGG":
-            result["agg"] = value
-            last_kind = "AGG"
-        elif k == "RULE":
-            result["rules"].append({"text": value, "notes": kv_notes, "why": None})
-            last_kind = "RULE"
-        elif k == "ERR":
-            result["errors"].append({"text": value, "notes": kv_notes, "when": None})
-            last_kind = "ERR"
-        elif k == "POL":
-            result["policies"].append(value)
-            last_kind = "POL"
-        elif k == "WHY":
-            if last_kind == "RULE" and result["rules"]:
-                result["rules"][-1]["why"] = _strip_quotes(value)
-        elif k == "WHEN":
-            if last_kind == "ERR" and result["errors"]:
-                result["errors"][-1]["when"] = _strip_quotes(value)
-            # それ以外の WHEN は SCENARIO の制御フロー分岐として無視（既存動作）
-    return result
 
 
-def _assemble_policy(name: str, body: list[tuple[str, str, list[str]]], notes: list[str]) -> dict:
-    """POLICY ブロック行を辞書化。"""
-    result: dict = {
-        "name": name,
-        "trigger": None,
-        "qry": None,
-        "cmd": None,
-        "bulk": False,
-        "emits": None,
-        "notes": notes,
+def _normalize_policy(p: dict) -> dict:
+    """YAML policy dict を既存 dict 構造へ正規化する。
+
+    `trigger`（v1・単一 EVT）に加え、v2 の `triggers: {events: [...], mode}`（join）も
+    取り込む。下流（route_policies）が単一・複数の両方を扱えるよう、全トリガー EVT を
+    `trigger_events`（リスト）に統一しつつ、`trigger`（単一・後方互換）も保持する。
+    """
+    qry = p.get("qry")
+    if isinstance(qry, list):
+        qry = qry[0] if qry else None
+
+    single = p.get("trigger")
+    triggers_obj = p.get("triggers")
+    trigger_events: list[str] = [single] if single else []
+    trigger_mode = None
+    if isinstance(triggers_obj, dict):
+        trigger_events.extend(
+            t for t in (triggers_obj.get("events") or []) if t
+        )
+        trigger_mode = triggers_obj.get("mode")
+
+    return {
+        "name": p.get("name", ""),
+        "context": p.get("context"),
+        "trigger": single,                 # v1 後方互換（join のみの場合は None）
+        "trigger_events": trigger_events,   # v1+v2 を統一した全トリガー EVT
+        "trigger_mode": trigger_mode,       # exclusive/concurrent/inclusive（join 時）
+        "qry": qry,
+        "cmd": p.get("cmd"),
+        "bulk": bool(p.get("bulk", False)),
+        "emits": p.get("evt"),
+        "notes": _as_list(p.get("note") or p.get("notes")),
     }
-    for key, value, _kv_notes in body:
-        k = key.upper()
-        if k == "TRIGGER":
-            result["trigger"] = value
-        elif k == "QRY":
-            result["qry"] = value
-        elif k == "CMD":
-            result["cmd"] = value
-        elif k == "BULK":
-            result["bulk"] = value.lower() == "true"
-        elif k == "EVT":
-            result["emits"] = value
-    return result
 
 
 # ============================================================
@@ -590,7 +577,20 @@ def main():
         sections.scenarios, scenario_owners, cmd_map
     )
 
-    dml_blocks = parse_dml_blocks(sections.dml or "")
+    # DML はサイドカー `<session>.dml.yaml`（純 YAML）を優先。
+    # 無ければ §9 の埋め込み ```dml フェンスから抽出済みの sections.dml にフォールバック。
+    dml_path = args.md_path.with_name(args.md_path.stem + ".dml.yaml")
+    dml_text = dml_path.read_text(encoding="utf-8") if dml_path.exists() else (sections.dml or "")
+    # JSON Schema 検証（警告のみ・non-blocking）。違反があっても Issue 生成は続行する。
+    # validate_dml が無い／スキーマが無い場合は静かにスキップ（疎結合）。
+    try:
+        from validate_dml import validate_dml_text  # facilitator scripts（sys.path 済）
+
+        for e in validate_dml_text(dml_text):
+            print(f"⚠ DML schema: {dml_path.name}: {e}", file=sys.stderr)
+    except Exception:
+        pass
+    dml_blocks = parse_dml_blocks(dml_text)
 
     result = {
         "session_id": build_session_id(args.md_path),
@@ -619,7 +619,7 @@ def main():
         ],
         "scenarios": sections.scenarios,
         "glossary": sections.glossary,
-        "dml": sections.dml,
+        "dml": dml_text,
     }
 
     out_text = json.dumps(result, ensure_ascii=False, indent=2)

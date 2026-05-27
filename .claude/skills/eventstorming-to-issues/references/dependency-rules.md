@@ -17,19 +17,19 @@
 
 ## POLICY ルーティング規則
 
-DML の `POLICY` ブロックは `parse_eventstorming_md.py` の `parse_dml_blocks()` で抽出され、`generate_issue_drafts.py:route_policies()` が各 POLICY を AGG に振り分ける。
+DML（YAML）の `policies` は `parse_eventstorming_md.py` の `parse_dml_blocks()` で抽出され、`generate_issue_drafts.py:route_policies()` が各 POLICY を AGG に振り分ける。
 
 ルーティング規則:
 
 | 条件 | 行き先 | Epic 内セクション |
 |---|---|---|
-| POLICY に `CMD <name>` あり | CMD が属する AGG (cmd → AGG マップで逆引き) | **受信 POLICY (inbound)** |
-| POLICY に `CMD` なし（副作用専用） | TRIGGER EVT を発火する AGG (evt → AGG マップで逆引き) | **副作用専用 POLICY (outbound, side-effects)** |
+| policy に `cmd` あり | CMD が属する AGG (cmd → AGG マップで逆引き) | **受信 POLICY (inbound)** |
+| policy に `cmd` なし（副作用専用） | TRIGGER EVT を発火する AGG (evt → AGG マップで逆引き) | **副作用専用 POLICY (outbound, side-effects)** |
 | 発生元 AGG ↔ 行き先 AGG が異なる BC | （上記に加えて） | `cross-bc` フラグを立て、Epic で ⚠ 表示 |
 
 `outbound_consumers` は EVT 発火元 AGG 側で「自分の EVT を消費する POLICY」一覧として表示するため、上記とは別軸で集計される。
 
-cmd → AGG マップは DML SCENARIO の `CMD <name>` + `AGG <agg>` から、evt → AGG マップは DML SCENARIO の `EVT <name>` + `AGG <agg>` から構築する（`generate_issue_drafts.py:build_cmd_to_agg_map()` / `build_evt_to_agg_map()`）。
+cmd → AGG マップは scenario の `cmd` + `agg` から、evt → AGG マップは scenario の `evt`（および `branches[].evt`）+ `agg` から構築する（`generate_issue_drafts.py:build_cmd_to_agg_map()` / `build_evt_to_agg_map()`）。
 
 ## 状態遷移 CMD の判定
 

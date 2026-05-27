@@ -2,7 +2,7 @@
 
 - Session: eventstorming-20260525-1331
 - Domain: ミップカメラ オンラインストア（下取り交換 + ポイント優遇）
-- Status: **フェーズ2 完了 / フェーズ3 着手前**
+- Status: **フェーズ4 完了（DML 生成済み）/ フェーズ5-6（Zod・rules/errors 詳細化）未了**
 - Goal: 購入フローの中で下取り交換を選べ、下取り承認時に残金決済とポイント優遇付与が走るドメインモデルを構築する
 - HTML ビュー: [../../dist/eventstorming/eventstorming-20260525-1331.html](../../dist/eventstorming/eventstorming-20260525-1331.html) （Python ビルダーが自動生成する派生ファイル）
 
@@ -188,31 +188,79 @@ flow:
 
 > **命名規約**: `### english-slug（日本語名）` 形式。HTML レンダー時にこの全体が `<h3>` に表示される。
 
-<!-- TODO: フェーズ4完了後に追記 -->
+サブドメイン分類（DML `domains`）: `trade-in-core`（CORE）/ `loyalty-program`（CORE）/ `purchasing`（SUPPORTING）。
 
-候補（仮）:
-- `store-front`（店舗フロント）— 商品閲覧・カート・注文・購入確定・残金決済・発送
-- `trade-in`（下取り交換）— 概算見積もり・集荷キット・受領・本査定・承認/キャンセル
-- `loyalty`（ポイント優遇）— ポイント計算・付与・消費・キャンペーン管理
+### store-front（店舗フロント）
+
+商品閲覧・カート・注文・購入確定・在庫引当・残金決済・発送を所有。サブドメイン `purchasing`。
+
+- **UPSTREAM**: `trade-in`（Partnership）, `loyalty`（Customer-Supplier）
+- **DOWNSTREAM**: なし
+- 集約: `Cart` / `Order` / `Inventory` / `Payment`
+
+### trade-in（下取り交換）
+
+申告・概算見積もり・集荷・受領・本査定・承認/キャンセルを所有。サブドメイン `trade-in-core`（差別化の中核）。
+
+- **UPSTREAM**: なし
+- **DOWNSTREAM**: `store-front`（Partnership）
+- 集約: `TradeIn` / `Appraisal`
+
+### loyalty（ポイント優遇）
+
+ポイント消費・付与・返戻とキャンペーン管理を所有。サブドメイン `loyalty-program`。
+
+- **UPSTREAM**: なし
+- **DOWNSTREAM**: `store-front`（Customer-Supplier）
+- 集約: `PointAccount` / `Campaign`
 
 ---
 
 ## 5) 集約候補
 
-<!-- TODO: フェーズ5完了後に追記 -->
+> 目的・状態は DML `contexts[].aggregates[]` と対応。Zod スキーマ・不変条件の詳細化はフェーズ5-6（未了）。
 
-候補（仮）:
-- `Order`（注文）
-- `TradeIn`（下取り）
-- `Appraisal`（査定）
-- `Campaign`（キャンペーン）
-- `PointAccount`（ポイント口座）
+### Cart（カート） — store-front
+- **目的**: 購入前の商品選択を保持する。状態: `ACTIVE → CHECKED_OUT`
+
+### Order（注文） — store-front
+- **目的**: 下取り・ポイントを含む購入注文のライフサイクルの単一の真実源。状態: `PLACED → PURCHASE_CONFIRMED → COMPLETED` / `CANCELLED`
+
+### Inventory（在庫） — store-front
+- **目的**: 購入確定時の在庫引当・解放を管理。状態: `AVAILABLE → ALLOCATED → RELEASED`
+
+### Payment（決済） — store-front
+- **目的**: 残金決済の状態を管理。状態: `PENDING → SETTLED` / `FAILED`
+
+### TradeIn（下取り） — trade-in
+- **目的**: 下取り交換プロセス（概算→発送→受領→承認/取消）の単一の真実源。状態: `ESTIMATED → KIT_SHIPPED → ITEM_SHIPPED → RECEIVED → APPROVED` / `CANCELLED` / `EXPIRED` / `TIMED_OUT` / `RETURNED`
+
+### Appraisal（査定） — trade-in
+- **目的**: 受領後の本査定の状態の単一の真実源。状態: `PENDING → COMPLETED`（/ `DISCREPANCY → REVISED`）→ `APPROVED`
+
+### PointAccount（ポイント口座） — loyalty
+- **目的**: 顧客のポイント残高と消費・付与・返戻の単一の真実源（残高ベース）
+
+### Campaign（キャンペーン） — loyalty
+- **目的**: ポイント優遇キャンペーンの期間とライフサイクル。状態: `SCHEDULED → ACTIVE → ENDED`
 
 ---
 
 ## 6) リードモデル候補
 
-<!-- TODO: フェーズ4〜5完了後に追記 -->
+> 単一集約への単純ルックアップは省略。判断材料となる Read Model のみ記載。
+
+### GetTradeInEstimate（下取り概算の参照） — trade-in
+- 利用者: 客（注文時）／ 目的: 注文確定時に概算下取り額と有効期限を確認 ／ ソース: TradeIn ／ 算出: 申告内容に基づく概算額・期限
+
+### GetPointBalance（ポイント残高の参照） — loyalty
+- 利用者: 客（注文時）／ 目的: 使用指定ポイントが残高内か判断 ／ ソース: PointAccount ／ 算出: 現在残高
+
+### GetOutstandingBalance（残金の参照） — store-front
+- 利用者: System（残金決済時）／ 目的: 決済すべき残金を算出 ／ ソース: Order + TradeIn + PointAccount ／ 算出: 購入額 − 下取り額 − 使用ポイント
+
+### GetApplicableBonusRate（付与率の参照） — loyalty
+- 利用者: System（ポイント付与時）／ 目的: 付与率を決定 ／ ソース: Order（下取り有無）+ Campaign（期間内か）／ 算出: 下取り +10% ＋ キャンペーン +5%
 
 ---
 
@@ -234,10 +282,7 @@ flow:
 
 ## 9) DML
 
-```dml
-# DML は フェーズ4 完了後に英語識別子で追記する
-# 現段階ではフロー DSL（セクション3）がモデルの主表現
-```
+DML 全文は別ファイル [`eventstorming-20260525-1331.dml.yaml`](./eventstorming-20260525-1331.dml.yaml)（YAML 直書き）に保持する。§3 フロー DSL から生成済み（3 BC・27 SCENARIO・19 POLICY、v2 文法: domains/subdomain/BCメタ/aggregates/branchMode を使用）。HTML §9 にその内容が描画される。完全仕様: `.claude/skills/eventstorming-facilitator/references/dml-spec.md`。
 
 ---
 
@@ -334,8 +379,13 @@ flow:
 | 下取り品発送猶予監視 | TradeInShipmentWatchdog | Alt-6・タイマー |
 | 下取りタイムアウト時注文取消 | OrderCancellationOnTradeInTimeout | Alt-6 |
 | キャンペーン終了監視 | CampaignEndWatchdog | Alt-9・期間終了でキャンペーンを終了 |
+| 購入確定時在庫引当 | InventoryAllocationOnPurchaseConfirmed | [?] DSL 同期継続の接続（PurchaseConfirmed→AllocateInventory）。SAME/別 TX 要確認 |
+| 在庫解放時注文取消 | OrderCancellationOnInventoryRelease | [?] Alt-8 補償の接続（InventoryReleased→CancelOrder） |
 
 ### リードモデル
 | 日本語（フロー図） | 英語（DML） | 備考 |
 |------|------|------|
-| （フェーズ4以降で追加） | | |
+| 下取り概算の参照 | GetTradeInEstimate | 注文時に概算額・有効期限を確認 |
+| ポイント残高の参照 | GetPointBalance | 注文時に使用ポイントが残高内か判断 |
+| 残金の参照 | GetOutstandingBalance | 残金 = 購入額 − 下取り額 − 使用ポイント |
+| 付与率の参照 | GetApplicableBonusRate | 下取り +10% ＋ キャンペーン +5% |

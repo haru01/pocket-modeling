@@ -13,8 +13,8 @@
 
 ## 命名規約
 
-- `bc:<kebab-case>` — DML の `CONTEXT` 識別子そのまま
-- `agg:<PascalCase>` — DML の `AGG` 識別子そのまま
+- `bc:<kebab-case>` — DML の `contexts[].name` 識別子そのまま
+- `agg:<PascalCase>` — DML の `scenarios[].agg` 識別子そのまま
 - `type:<lower>` — 種別は以下のみ
   - `type:aggregate`（AGG Epic Issue。CMD/QRY/受信 POLICY を inline 保持。AI dispatch 単位）
   - `type:scenario`（AGG 跨ぎ統合 Issue）

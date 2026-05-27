@@ -1,6 +1,7 @@
 # DML フロー整合性チェックリスト
 
-DMLの `SCENARIO` / `POLICY` のつながりを辿り、切れ・孤立・循環を検出する。
+DML（YAML）の `scenarios` / `policies` のつながりを辿り、切れ・孤立・循環を検出する。
+DML は兄弟 `<session>.dml.yaml` ファイル（純 YAML・フェンスなし）。`yaml.safe_load` でパースしてから各フィールドを収集する。
 
 ---
 
@@ -10,12 +11,12 @@ DMLの `SCENARIO` / `POLICY` のつながりを辿り、切れ・孤立・循環
 
 | リスト | 収集方法 |
 |--------|---------|
-| **EVT一覧** | 全 `SCENARIO` の `EVT` + `WHEN → EVT` + 全 `POLICY` の `EVT` |
-| **CMD一覧** | 全 `SCENARIO` の `CMD` |
-| **POLICY名一覧** | 全 `POLICY <Name>` |
-| **TRIGGER一覧** | 全 `POLICY` の `TRIGGER` |
-| **POLICY発行CMD一覧** | 全 `POLICY` の `CMD` |
-| **SCENARIO参照POL一覧** | 全 `SCENARIO` の `POL` + `WHEN → POL` |
+| **EVT一覧** | 全 `scenarios[].evt` + `scenarios[].branches[].evt` + 全 `policies[].evt` |
+| **CMD一覧** | 全 `scenarios[].cmd` |
+| **POLICY名一覧** | 全 `policies[].name` |
+| **TRIGGER一覧** | 全 `policies[].trigger` |
+| **POLICY発行CMD一覧** | 全 `policies[].cmd` |
+| **SCENARIO参照POL一覧** | 全 `scenarios[].pol` + `scenarios[].branches[].pol` |
 
 ---
 
@@ -28,9 +29,9 @@ DMLの `SCENARIO` / `POLICY` のつながりを辿り、切れ・孤立・循環
 | **C3** | SCENARIOのPOL参照が実在するPOLICYを指しているか | 未定義のPOLICYをSCENARIOが参照している |
 | **C4** | 孤立EVTの検出（終端以外） | どのPOLICY TRIGGERにも拾われないEVT（フロー終端でない場合は欠落） |
 | **C5** | System ACTORのSCENARIO CMDがPOLICYから発行されているか | 人間が呼ぶはずのないCMDが自動起動されていない |
-| **C6** | WHEN分岐の全パスにEVT→POLが揃っているか | 成功パスのみPOL定義、失敗パスが未接続 |
+| **C6** | `branches` の全パスに `evt`（必要なら `pol`）が揃っているか | 成功パスのみ pol 定義、失敗パスが未接続 |
 | **C7** | 循環参照の検出 | A→B→C→A のような無限ループになるPOLICYチェーン |
-| **C8** | CONTEXT の UPSTREAM / DOWNSTREAM 参照が実在する CONTEXT 名を指しているか | 未定義 BC を依存先に指定したタイプミス・古い名前の残存 |
+| **C8** | `contexts[].upstream` / `downstream` の `context` 参照が実在する `contexts[].name` を指しているか | 未定義 BC を依存先に指定したタイプミス・古い名前の残存 |
 
 ---
 
@@ -55,7 +56,7 @@ POLICY X の CMD: SomeCommand
 ### C3: SCENARIO POL参照チェック
 
 ```
-SCENARIO Y の POL: SomePolicy（またはWHEN → POL SomePolicy）
+scenario Y の pol: SomePolicy（または branches[].pol: SomePolicy）
 → POLICY名一覧に SomePolicy が存在するか？
 → NOなら: 「SCENARIO Y が参照する POLICY SomePolicy は未定義」
 ```
@@ -78,13 +79,13 @@ ACTOR が System のSCENARIOのCMDについて：
 → NOなら: 「CMD X はSystem SCENARIOだがどのPOLICYからも発行されていない」
 ```
 
-### C6: WHEN分岐の完全性チェック
+### C6: branches の完全性チェック
 
 ```
-WHENブロックを持つSCENARIOの各WHEN行について：
-→ → POL が付いているか？
-→ 全分岐でPOL参照が揃っているか？
-→ 不足があれば: 「SCENARIO Y のWHEN分岐 N にPOLが未定義」
+branches を持つ scenario の各 branch について：
+→ evt が付いているか？（全分岐で発火イベントが揃っているか）
+→ 後続ポリシーへ接続する分岐は pol が付いているか？
+→ 不足があれば: 「SCENARIO Y の branch N に evt / pol が未定義」
 ```
 
 ### C7: 循環参照チェック

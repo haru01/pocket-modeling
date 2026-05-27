@@ -63,7 +63,7 @@ Claude Code（CLI/PCアプリ/スマホアプリ）はインライン `<svg>` / 
 ### 追加された DML
 
 \`\`\`dml
-{該当フェーズで確定した SCENARIO / POLICY / CONTEXT のみ}
+{該当フェーズで確定した contexts / scenarios / policies のみ（YAML）}
 \`\`\`
 
 ### 用語集の追加
@@ -119,7 +119,7 @@ assistant が自己判断する。
   - フェーズ4: 各 EVT に CMD と Actor が紐付き、非同期遷移が同定
   - フェーズ4.5: LANGUAGE が記録され、レーン境界が明確
   - **フェーズ4.6: 全 AGG カードに `#### 目的`（30字以上）が記入され、`#### 背景`/`#### 制約` の有無を判定**
-  - フェーズ5: 全 AGG の不変条件・エラー、WHEN 分岐、**Zod スキーマ確定**。各 RULE 直下に `WHY`、各 ERR 直下に `WHEN` の記入率を確認
+  - フェーズ5: 全 AGG の不変条件・エラー、`branches` 分岐、**Zod スキーマ確定**。各 `rules[].why`、各 `errors[].when` の記入率を確認
   - フェーズ6: causal-check 完了、残課題レビュー済
 
 ### 往復と判定するシグナル
@@ -141,13 +141,13 @@ assistant が自己判断する。
 |---|---|
 | フェーズ内往復 | 原則出さない。例外: SCENARIO 1つが大きく書き直されてユーザー確認が必要なときのみ末尾に 1 件 |
 | フェーズ1完了 | DML はまだ出さない (CONTEXT 名すら確定していない) |
-| フェーズ2完了 | CONTEXT 宣言 (UPSTREAM / DOWNSTREAM 含む) のみ |
-| フェーズ3完了 | 新規追加された SCENARIO の `ACTOR` 行と `EVT` 行のみ (CMD/RULE は未確定) |
-| フェーズ4完了 | 該当フェーズで追加・確定した SCENARIO 全文 (CMD/EVT/AGG/RULE 入り) |
-| フェーズ4.5完了 | LANGUAGE 行 + CONTEXT 宣言の追加分 |
+| フェーズ2完了 | `contexts` のみ (upstream / downstream 含む) |
+| フェーズ3完了 | 新規追加された scenario の `name` / `actor` / `evt` のみ (cmd/rules は未確定) |
+| フェーズ4完了 | 該当フェーズで追加・確定した scenario 全文 (cmd/evt/agg/rules 入り) |
+| フェーズ4.5完了 | `language` + `contexts` の追加分 |
 | **フェーズ4.6完了** | **DML 抜粋は出さない (DML 構文は不変)。代わりに「### AGG 目的・背景・制約サマリ」テーブルを出して各 AGG の `#### 目的` 1 行と制約件数を 1 表で示す** |
-| フェーズ5完了 | 新規 RULE/ERR が追加された SCENARIO 全文 + POLICY ブロック (新規分) + **集約の Zod スキーマ**。RULE 直下に `WHY`、ERR 直下に `WHEN` がある分は併記 |
-| フェーズ6完了 | **新規分の抜粋のみ + MD/HTML ファイルパスを案内**。DML 全文はファイルに保持、チャットには流さない |
+| フェーズ5完了 | 新規 rules/errors が追加された scenario 全文 + policies 要素 (新規分) + **集約の Zod スキーマ**。`rules[].why`、`errors[].when` がある分は併記 |
+| フェーズ6完了 | **新規分の抜粋のみ + MD/HTML ファイルパスを案内**。DML 全文は別ファイル `<session>.dml.yaml` に保持、チャットには流さない |
 
 DML 抜粋は ` ```dml ` コードブロックで囲む。
 
@@ -188,21 +188,21 @@ HTML は MD と並行して常に最新状態を保つ。`open` で起動した�
 
 | 言い方 | 解釈 | 反映先 |
 |---|---|---|
-| 「E3 を"招待送信済"に変えて」 | E3 のラベル変更 | DML の EVT リネーム + フロー DSL のラベル変更 + HTML §3 と §10 更新 |
-| 「主催者BCに@Adminを追加」 | レーンへの actor 追加 | DML SCENARIO に `ACTOR Admin` + フロー DSL に `@Admin` + HTML §3 |
-| 「C2 と E2 の間に !メール送信 を挟んで」 | CMD 挿入 | DML SCENARIO に `CMD SendMail` + フロー DSL + HTML §3 |
-| 「E4 を消して」 | 削除 | DML から該当 EVT 行削除 + フロー DSL + HTML から削除。下流に影響あれば `[?]` 警告 |
-| 「P1 を notifications BC に動かして」 | POLICY 移動 | DML の POLICY を別 CONTEXT に再配置 + フロー DSL + HTML §3 のレーン変更 |
-| 「Member BC を participant にリネーム」 | CONTEXT リネーム | `CONTEXT member` → `CONTEXT participant` 全参照 Edit + HTML §3 §4 §10 |
+| 「E3 を"招待送信済"に変えて」 | E3 のラベル変更 | DML の `evt` リネーム + フロー DSL のラベル変更 + HTML §3 と §10 更新 |
+| 「主催者BCに@Adminを追加」 | レーンへの actor 追加 | scenario に `actor: Admin` + フロー DSL に `@Admin` + HTML §3 |
+| 「C2 と E2 の間に !メール送信 を挟んで」 | CMD 挿入 | scenario に `cmd: SendMail` + フロー DSL + HTML §3 |
+| 「E4 を消して」 | 削除 | DML から該当 `evt` 削除 + フロー DSL + HTML から削除。下流に影響あれば `[?]` 警告 |
+| 「P1 を notifications BC に動かして」 | POLICY 移動 | policy の `context` を変更 + フロー DSL + HTML §3 のレーン変更 |
+| 「Member BC を participant にリネーム」 | CONTEXT リネーム | `contexts[].name` を member → participant に変更し scenarios/policies の `context` 参照も更新 + HTML §3 §4 §10 |
 | 「ハッピーパスをやり直したい」 | フェーズ2 へロールバック | §1〜§3 を再構築 + HTML 再生成 |
 
 ### 8-2. assistant の反映手順 (1指示あたり)
 
 1. ユーザー指示を **対象アイテム** (A1/C2/E3 や日本語ラベル) と **操作** (追加/削除/変更/移動/リネーム) に分解
-2. **テキストで確認**: 「`E3 = 参加申し込みが完了した` を `招待送信済` に変更し、DML の `EVT ParticipationApplied` を `EVT InvitationSent` にリネームします。OK?」
-3. ユーザー OK → MD ファイルを `Edit` で書き換え (§3 フロー DSL / §9 DML / §10 用語集 を一貫して更新)
+2. **テキストで確認**: 「`E3 = 参加申し込みが完了した` を `招待送信済` に変更し、DML の `evt: ParticipationApplied` を `evt: InvitationSent` にリネームします。OK?」
+3. ユーザー OK → `.dml.yaml`（DML）を先に `Edit` → `.md` の §3 フロー DSL / §10 用語集 を `Edit` で一貫して更新
 4. HTML を `Edit` で該当セクション更新
-5. 品質チェックサブエージェント (`quality-check-agent.md`) を起動（MD のみ）
+5. 品質チェックサブエージェント (`quality-check-agent.md`) を起動（`.md` ＋ 兄弟 `.dml.yaml` を対象。HTML は対象外）
 6. **フェーズ完了相当の変更なら** チャット本文に構造化テーブル付き完了メッセージ。**細かい変更なら** テキスト確認のみ
 
 ### 8-3. 複数同時指示
@@ -248,7 +248,7 @@ quality-check で **S8 違反**（AGG `#### 目的` 未記入 / 30 字未満）�
 ### ホットスポット
 - H5. [?] capacity の責務は Event / Participation どちらか
 - H6. [?-WHY] AGG `Payment` の `#### 目的` 未記入 — 決済責務の核を 1 文で言語化が必要
-- H7. [?-WHY] RULE `participation must be in APPLIED status` の `WHY` 未記入
+- H7. [?-WHY] rule `participation must be in APPLIED status` の `why` 未記入
 ```
 
 クローズ済みは欠番、再利用しない（既存運用と同じ）。
@@ -258,7 +258,7 @@ quality-check で **S8 違反**（AGG `#### 目的` 未記入 / 30 字未満）�
 ## 10. 出力の節約原則
 
 - 1 メッセージが iOS で 3-4 スクロール以上にならないようにする
-- 同じ情報を繰り返さない (フェーズ完了時の DML 抜粋は新規分のみ、全文はファイル)
+- 同じ情報を繰り返さない (フェーズ完了時の DML 抜粋は新規分のみ、全文は別ファイル `<session>.dml.yaml`)
 - 「迷ったら `？`」案内は毎ターン繰り返さない (フェーズ完了時 + 初回のみ)
 - 「保存しました」「再起動します」のような実装的なメッセージは出さない
 - フェーズ完了マーク `✅` は使ってよい (進捗が見える)

@@ -76,10 +76,10 @@ stateDiagram-v2
 - **発火 EVT**: `EvtName`
 - **適用 RULE**:
   - <rule text 1>
-    - **なぜ必要か**: <DML の RULE 直下に書かれた `WHY "..."`>
+    - **なぜ必要か**: <DML の `rules[].why`>
 - **想定 ERR**:
   - <err text 1>
-    - **発生条件**: <DML の ERR 直下に書かれた `WHEN "..."`>
+    - **発生条件**: <DML の `errors[].when`>
 - **連鎖 POLICY**: `PolicyA`, `PolicyB`
 
 ## 状態を変えない CMD（属性更新・一覧）

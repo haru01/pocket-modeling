@@ -89,7 +89,7 @@
    - `Shared-Kernel`: 両 BC で共有するモデル部分
    - `ACL`（Anti-Corruption Layer）: 下流が上流を変換レイヤで隔離
 
-決定結果を DML の `CONTEXT` 宣言の `UPSTREAM` / `DOWNSTREAM` に反映する（`references/dml-spec.md` 参照）。
+決定結果を DML（YAML）の `contexts[].upstream` / `downstream` に反映する（`relationship` に関係タイプを併記。`references/dml-spec.md` 参照）。
 
 ### 集約候補の見つけ方
 - 「一緒に変わるもの」をひとつの集約にする

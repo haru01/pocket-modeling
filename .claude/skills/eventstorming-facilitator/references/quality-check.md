@@ -4,20 +4,24 @@ MDファイルを書き出した後、サブエージェントがこのチェッ
 
 ---
 
-## 1. DML記法チェック（セクション8の ```dml ブロック）
+## 1. DML記法チェック（兄弟 `.dml.yaml` ファイル・YAML 直書き）
+
+DML は兄弟 `<session>.dml.yaml` ファイル（純 YAML・フェンスなし）。`contexts` / `scenarios` / `policies` の 3 トップレベルリストで構成される。
+
+> **JSON Schema との分担**: 形式（正規表現で判定できるもの）= **D1 / D6 / D8** と、`evt`↔`branches` 排他・`trigger`↔`triggers` 排他・`bulk:true`→`qry` 必須・未知フィールド禁止・enum 違反は `references/dml.schema.yaml` が機械検証する（`scripts/validate_dml.py`）。サブエージェントはまず兄弟 `.dml.yaml` を Read し、Schema 違反（あれば build バナー / validate_dml の出力）を判断材料にする。**時制・命令形・言語・意図の判断（D2 / D3 / D4 / D7）は Schema では不可能**なので、引き続きこのチェックリストで確認・修正する。
 
 | # | ルール | NG例 | OK例 |
 |---|-------|------|------|
-| D1 | `EVT`/`CMD`/`AGG` 名は英語PascalCaseのみ | `EVT 注文確定` | `EVT OrderConfirmed` |
-| D2 | `EVT` 名は過去形 | `EVT PlaceOrder` | `EVT OrderPlaced` |
-| D3 | `CMD` 名は命令形 | `CMD OrderPlaced` | `CMD PlaceOrder` |
-| D4 | `SCENARIO` 名は日本語でアクター＋行為 | `SCENARIO OrderFlow` | `SCENARIO 顧客が注文を確定する` |
-| D5 | 各 `SCENARIO` 内に `ACTOR` 行がある | （ACTOR行なし） | `ACTOR Customer` |
-| D6 | `CONTEXT` 名は `lowercase-with-hyphen` | `CONTEXT OrderManagement` | `CONTEXT order-management` |
-| D7 | `RULE`/`ERR`/`POLICY` の日本語補足は直上の `#` コメント行に書く | `RULE 在庫数 >= 0` | `# 在庫数は0以上`<br>`RULE StockNonNegative` |
-| D8 | `EVT`/`CMD`/`AGG` に `()` `<<>>` を付けない | `EVT (OrderPlaced)` | `EVT OrderPlaced` |
-| D9 | `POLICY` ブロックは EVENTUAL-TX 限定。`TX SAME` 記述を検出したら SCENARIO の `WHEN` 分岐に書き換え提案する | `POLICY X`<br>`  TX SAME` | SCENARIO 内 `WHEN condition → EVT ...` |
-| D10 | 各 `CONTEXT` 宣言に `UPSTREAM` / `DOWNSTREAM` が記載されている（依存なしは `(none)` 明示） | `CONTEXT foo`<br>`  LANGUAGE Foo = "..."` | `CONTEXT foo`<br>`  LANGUAGE Foo = "..."`<br>`  UPSTREAM (none)`<br>`  DOWNSTREAM bar  # Customer-Supplier` |
+| D1 | `evt`/`cmd`/`agg` の値は英語PascalCaseのみ | `evt: 注文確定` | `evt: OrderConfirmed` |
+| D2 | `evt`（および `trigger`/`emits`/`branches[].evt`）の値は過去形 | `evt: PlaceOrder` | `evt: OrderPlaced` |
+| D3 | `cmd` の値は命令形 | `cmd: OrderPlaced` | `cmd: PlaceOrder` |
+| D4 | `scenarios[].name` は日本語でアクター＋行為 | `name: OrderFlow` | `name: 顧客が注文を確定する` |
+| D5 | 各 `scenarios[]` に `actor` がある | （actor なし） | `actor: Customer` |
+| D6 | `contexts[].name` は `lowercase-with-hyphen` | `name: OrderManagement` | `name: order-management` |
+| D7 | 日本語補足は `rules[].why` / `errors[].when` / `note` フィールドへ。`#` 行コメントは使わない | `# 在庫数は0以上`<br>`- rule: StockNonNegative` | `- rule: stock must be non-negative`<br>`  why: "在庫数は0以上"` |
+| D8 | `cmd`/`evt`/`agg` 等の値に `()` `<<>>` を付けない | `evt: (OrderPlaced)` | `evt: OrderPlaced` |
+| D9 | `policies` は EVENTUAL-TX 限定。同期分岐（SAME-TX）は `policies` に置かず、発行元 `scenarios[].branches` に書く | 同期分岐用の `policies` 要素 | scenario 内 `branches:`<br>`  - condition: ...`<br>`    evt: ...` |
+| D10 | 各 `contexts[]` に `upstream` / `downstream` がある（依存なしは空リスト `[]`、`relationship` 併記） | `- name: foo`<br>`  language: {...}` | `- name: foo`<br>`  upstream: []`<br>`  downstream:`<br>`    - context: bar`<br>`      relationship: Customer-Supplier` |
 
 ---
 
@@ -55,8 +59,8 @@ MDファイルを書き出した後、サブエージェントがこのチェッ
 
 | # | ルール | 検出ロジック | 違反例 → 推奨 |
 |---|-------|------|------|
-| W1 | 各 `RULE` 行の直下にインデント +2 で `WHY "..."` が書かれていることを推奨 | DML パースで `RULE  ...` 行の次の行が `    WHY  "..."` でない | `RULE communityName must be unique system-wide` → `WHY "URL slug や検索 UX で name → id 逆引きを想定するため"` を推奨 |
-| W2 | 各 `ERR` 行の直下にインデント +2 で `WHEN "..."` が書かれていることを推奨 | 同上、`ERR  ...` 行の次の行が `    WHEN "..."` でない | `ERR duplicateName → DuplicateCommunityNameError` → `WHEN "name が既存と重複"` を推奨 |
+| W1 | 各 `rules[]` に `why` キーが書かれていることを推奨 | YAML パースで `rules[]` 要素に `why` が無い | `- rule: communityName must be unique system-wide` → `why: "URL slug や検索 UX で name → id 逆引きを想定するため"` を推奨 |
+| W2 | 各 `errors[]` に `when` キーが書かれていることを推奨 | 同上、`errors[]` 要素に `when` が無い | `- condition: duplicateName`<br>`  error: DuplicateCommunityNameError` → `when: "name が既存と重複"` を推奨 |
 
 **S8 / W1 / W2 の運用方針:** D / F / S1〜S7 のような自動修正は **しない**。意味判断を伴うため、検出後はホットスポット候補 `[?-WHY]` プレフィックスで列挙し、ファシリテーター本体が次ターン以降に **1 件ずつ会話補完**（詳細は `chat-output-format.md` §10A「WHY 補完モード」）。
 

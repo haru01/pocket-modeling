@@ -2,7 +2,7 @@
 
 EventStorming セッションの全情報を **CSS 付箋風 HTML** として書き出してブラウザでリッチに表示するための仕様。
 
-**重要：AI は HTML を直接編集しない。** Python ビルダー（`.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py`）が MD ファイルを解析して HTML を自動生成する。AI は MD のみのソース・オブ・トゥルース。
+**重要：AI は HTML を直接編集しない。** Python ビルダー（`.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py`）が `.md` ＋ 兄弟 `.dml.yaml` を解析して HTML を自動生成する。AI が編集するソース・オブ・トゥルースは `.md`（ストーリー/フロー/用語集）と兄弟 `.dml.yaml`（モデル本体）の 2 ファイル。
 
 Claude Code の CLI/PC/スマホアプリではチャット本文の生 `<svg>` も Mermaid フェンスも描画されないため、別ファイル（HTML）として書き出してブラウザに任せる方針。
 
@@ -12,8 +12,9 @@ Claude Code の CLI/PC/スマホアプリではチャット本文の生 `<svg>` 
 
 | ファイル | 役割 |
 |---|---|
-| `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md` | DML / フロー DSL の **Single Source of Truth**（AI と人間がここを編集） |
-| `dist/eventstorming/eventstorming-YYYYMMDD-HHMM.html` | Python ビルダーが自動生成する派生ファイル。AI も人間も直接編集しない |
+| `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md` | ストーリー / フロー DSL / 用語集の **Single Source of Truth**（§9 は `.dml.yaml` へのリンク参照のみ）。AI と人間がここを編集 |
+| `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.dml.yaml` | DML（モデル本体）の **Single Source of Truth**。純 YAML 直書き（フェンス不要）。AI と人間がここを編集 |
+| `dist/eventstorming/eventstorming-YYYYMMDD-HHMM.html` | Python ビルダーが `.md` ＋ 兄弟 `.dml.yaml` から自動生成する派生ファイル。AI も人間も直接編集しない |
 | `.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py` | MD → HTML 変換スクリプト（Python 3 標準ライブラリのみ） |
 | `.claude/skills/eventstorming-facilitator/templates/event-flow.html` | テンプレート HTML（CSS とプレースホルダー入り） |
 
@@ -22,11 +23,12 @@ Claude Code の CLI/PC/スマホアプリではチャット本文の生 `<svg>` 
 ## 2. 自動再生成のフロー
 
 ```
-MD を Write/Edit (AI または人間)
+.md または兄弟 .dml.yaml を Write/Edit (AI または人間)
   ↓
 PostToolUse hook 起動 (.claude/settings.json)
   ↓
-python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <md_path>
+python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <path>
+  （.dml.yaml を渡された場合は兄弟 .md を解決。ビルダーは .md ＋ 兄弟 .dml.yaml を読む）
   ↓
 dist/eventstorming/<session>.html 再生成
   ↓
@@ -53,7 +55,7 @@ PostToolUse hook の設定: `.claude/settings.json`
 }
 ```
 
-hook 内で `tool_input.file_path` を判定し、`docs/eventstorming/*.md` の場合のみビルドを実行する。
+hook 内で `tool_input.file_path` を判定し、`docs/eventstorming/*.{md,dml}` の場合のみビルドを実行する（正規表現 `docs/eventstorming/.+\.(md|dml)$`）。
 
 ---
 
@@ -88,7 +90,7 @@ python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py 
 | 6 | リードモデル候補 | `.bc-card`（緑左ボーダー） |
 | 7 | オープンクエスチョン / ホットスポット | `.question`（青）`.hotspot`（赤）、`[CLOSED]` は緑背景 |
 | 8 | 次のアクション | `.next-actions` 緑カード |
-| 9 | DML | `pre.code` ダークテーマ + シンタックスハイライト（`.kw` `.id` `.cm`） |
+| 9 | DML（YAML） | `pre.code` ダークテーマ + 役割ベース意味色ハイライト（キー `.yk`、値 `.v-actor`/`.v-cmd`/`.v-evt`/`.v-qry`/`.v-pol`/`.v-err`/`.v-str`、コメント `.cm`） |
 | 10 | 用語集 | `table.glossary` カテゴリ別テーブル |
 
 未完成セクションは MD で `<!-- TODO: フェーズN完了後に追記 -->` プレースホルダー → HTML 側で `.todo-placeholder` に変換。
@@ -271,7 +273,7 @@ parse_flow_dsl(dsl) → Flow         # event-flow-svg フェンス → Flow AST
 render_flow(flow) → HTML 文字列    # Flow → Big Picture グリッド HTML
 render_progress(status) → HTML     # Status 行から進捗バー
 render_context_map(bc_cards) → SVG # UPSTREAM/DOWNSTREAM から関係図 SVG
-highlight_dml(dml) → HTML          # DML キーワードシンタックスハイライト
+highlight_dml(dml) → HTML          # DML（YAML）役割ベース意味色ハイライト
 highlight_zod(zod) → HTML          # Zod スキーマシンタックスハイライト
 render_html(sections) → HTML 全文  # テンプレに埋め込んで完成版を返す
 build(md_path, out_dir) → Path     # 1 ファイルビルド → reload_browser_tab() 呼び出し込み

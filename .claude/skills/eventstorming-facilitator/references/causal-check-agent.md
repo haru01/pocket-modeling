@@ -6,13 +6,13 @@
 Agent(
   description: "DMLフロー整合性検査",
   prompt: """
-EventStorming セッションファイル `<ファイルパス>` のDML（セクション8）の
-因果チェーンを検査し、結果をセクション6（オープンクエスチョン）に追記してください。
+EventStorming セッションの DML（兄弟 `.dml.yaml` ファイル・YAML）の
+因果チェーンを検査し、結果をセッション `.md` のオープンクエスチョンに追記してください。
 
 手順:
-1. `<ファイルパス>` を Read で読み込む
+1. `<ファイルパス>`（`.md`）と**兄弟 `.dml.yaml`（同名・拡張子 `.dml.yaml`、DML 本体・純 YAML）**を Read で読み込む
 2. `.claude/skills/eventstorming-facilitator/references/causal-check.md` を Read で読み込む
-3. 「検査対象の収集」を実施してEVT/CMD/POLICY/TRIGGERのリストを作成する
+3. 兄弟 `.dml.yaml`（純 YAML・フェンスなし）を `yaml.safe_load` でパースし、「検査対象の収集」を実施して EVT/CMD/POLICY/TRIGGER のリストを作成する
 4. C1〜C7 を順に検査する
 5. 問題あり・要確認の項目を以下の形式でセクション6に追記する（Edit tool）：
 

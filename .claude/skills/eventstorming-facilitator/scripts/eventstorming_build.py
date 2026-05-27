@@ -87,6 +87,7 @@ class MDSections:
     hotspots: list[dict] = field(default_factory=list)
     actions: list[str] = field(default_factory=list)
     dml: str = ""
+    dml_errors: list[str] = field(default_factory=list)
     glossary: dict = field(default_factory=dict)
 
 
@@ -1038,10 +1039,25 @@ def render_actions(actions: list[str], status: str) -> str:
     return f'<div class="next-actions">\n    <ul>\n      {items}\n    </ul>\n  </div>'
 
 
-def render_dml(dml: str) -> str:
+def render_dml(dml: str, errors: list[str] | None = None) -> str:
+    banner = render_dml_banner(dml, errors)
     if not dml.strip():
-        return '<div class="todo-placeholder">TODO</div>'
-    return f'<pre class="code">{highlight_dml(dml)}</pre>'
+        return banner + '<div class="todo-placeholder">TODO</div>'
+    return banner + f'<pre class="code">{highlight_dml(dml)}</pre>'
+
+
+def render_dml_banner(dml: str, errors: list[str] | None) -> str:
+    """JSON Schema 検証結果のバナー。違反があれば一覧、無ければ ✅、未記述は何も出さない。"""
+    if not dml.strip():
+        return ""
+    if errors:
+        items = "\n".join(f"<li>{esc(e)}</li>" for e in errors)
+        return (
+            '<div class="dml-banner dml-banner-error">'
+            f"⚠ DML スキーマ違反 {len(errors)} 件（構文のみ検証）"
+            f"<ul>{items}</ul></div>"
+        )
+    return '<div class="dml-banner dml-banner-ok">✅ DML スキーマ OK（構文検証）</div>'
 
 
 def render_glossary(glossary: dict) -> str:
@@ -1073,48 +1089,127 @@ def render_glossary(glossary: dict) -> str:
 # シンタックスハイライト
 # ============================================================
 
-DML_KEYWORDS = {
-    "CONTEXT", "LANGUAGE", "MODULE", "UPSTREAM", "DOWNSTREAM",
-    "SCENARIO", "ACTOR", "QRY", "CMD", "EVT", "AGG", "RULE", "ERR",
-    "POL", "POLICY", "TRIGGER", "WHEN", "MAP",
+ZOD_KEYWORDS = {"export", "const", "type", "typeof", "import", "from"}
+
+# DML（YAML）の値を「キー名」に応じて付箋色クラスへ割り当てる
+DML_VALUE_CLASS_BY_KEY = {
+    "actor": "v-actor",
+    "agg": "v-actor",
+    "cmd": "v-cmd",
+    "evt": "v-evt",
+    "trigger": "v-evt",
+    "emits": "v-evt",
+    "events": "v-evt",      # v2: triggers の join イベント
+    "qry": "v-qry",
+    "pol": "v-pol",
+    "error": "v-err",
+    # v2 メタ（CML 由来の任意フィールド）
+    "type": "v-meta",
+    "vision": "v-meta",
+    "subdomain": "v-meta",
+    "responsibilities": "v-meta",
+    "implementationTechnology": "v-meta",
+    "purpose": "v-meta",
+    "branchMode": "v-meta",
+    "mode": "v-meta",
 }
 
-ZOD_KEYWORDS = {"export", "const", "type", "typeof", "import", "from"}
+_YAML_KEY_RE = re.compile(r"^([\w-]+):(\s*)(.*)$")
+_YAML_BLOCK_KEY_RE = re.compile(r"^([\w-]+):\s*$")
+
+
+def _split_yaml_comment(s: str) -> tuple[str, str | None]:
+    """行末コメント `# ...` を分離する（クォート内の # は無視）。"""
+    in_single = in_double = False
+    for i, ch in enumerate(s):
+        if ch == "'" and not in_double:
+            in_single = not in_single
+        elif ch == '"' and not in_single:
+            in_double = not in_double
+        elif ch == "#" and not in_single and not in_double and (i == 0 or s[i - 1] == " "):
+            return s[:i].rstrip(), s[i:]
+    return s, None
+
+
+def _yaml_value_class(key: str, section: str) -> str:
+    """key（と所属セクション）から値の色クラスを決める。"""
+    if key == "name" and section == "policies":
+        return "v-pol"
+    return DML_VALUE_CLASS_BY_KEY.get(key, "v-str")
+
+
+def _render_yaml_body(body: str, stack: list[tuple[int, str]], section: str) -> str:
+    """list マーカー除去後の本体（`key: value` / 裸スカラー）を span 化する。"""
+    if not body:
+        return ""
+    m = _YAML_KEY_RE.match(body)
+    if m:
+        key, gap, value = m.group(1), m.group(2), m.group(3)
+        key_html = f'<span class="yk">{esc(key)}</span>:'
+        if value == "":
+            return key_html
+        cls = _yaml_value_class(key, section)
+        return f'{key_html}{gap}<span class="{cls}">{esc(value)}</span>'
+    # 裸スカラー（リスト項目）: 直近の親キーで色付け（qry → 緑、pol → 紫 等）
+    parent = stack[-1][1] if stack else ""
+    cls = DML_VALUE_CLASS_BY_KEY.get(parent, "v-str")
+    return f'<span class="{cls}">{esc(body)}</span>'
 
 
 def highlight_dml(dml: str) -> str:
-    lines = []
-    for line in dml.split("\n"):
-        # コメント行
-        stripped = line.lstrip()
-        if stripped.startswith("#"):
-            indent = line[: len(line) - len(stripped)]
-            lines.append(f'{indent}<span class="cm">{esc(stripped)}</span>')
+    """DML（YAML）を役割ベースの意味色でシンタックスハイライトする。
+
+    値の色はキー名に対応（evt/trigger/emits=橙, cmd=青, actor/agg=黄,
+    qry=緑, pol/policy=紫, error=赤）。キー名は淡色、コメントは灰イタリック。
+    付箋フロー図と同じカラーパレットで DML を読めるようにする。
+    """
+    out: list[str] = []
+    stack: list[tuple[int, str]] = []  # (列, ブロックキー名)
+    section = ""  # トップレベル contexts / scenarios / policies
+    for raw in dml.split("\n"):
+        if not raw.strip():
+            out.append("")
             continue
-        out = ""
-        i = 0
-        while i < len(line):
-            # キーワード
-            matched = False
-            for kw in DML_KEYWORDS:
-                if line[i:].startswith(kw) and (
-                    i + len(kw) == len(line) or not line[i + len(kw)].isalnum()
-                ):
-                    if i == 0 or not line[i - 1].isalnum():
-                        out += f'<span class="kw">{kw}</span>'
-                        i += len(kw)
-                        matched = True
-                        break
-            if matched:
-                continue
-            # コメント
-            if line[i] == "#":
-                out += f'<span class="cm">{esc(line[i:])}</span>'
-                break
-            out += esc(line[i])
-            i += 1
-        lines.append(out)
-    return "\n".join(lines)
+        indent = len(raw) - len(raw.lstrip(" "))
+        indent_str = raw[:indent]
+        stripped = raw[indent:]
+
+        # コメント専用行
+        if stripped.startswith("#"):
+            out.append(f'{indent_str}<span class="cm">{esc(stripped)}</span>')
+            continue
+
+        content, comment = _split_yaml_comment(stripped)
+
+        marker = ""
+        body = content
+        if body.startswith("- "):
+            marker, body = "- ", body[2:]
+        elif body == "-":
+            marker, body = "-", ""
+        col = indent + len(marker)
+
+        # スタック整理（同列以上のブロックキーを破棄）
+        while stack and stack[-1][0] >= col:
+            stack.pop()
+
+        if indent == 0:
+            mb = _YAML_BLOCK_KEY_RE.match(body)
+            if mb and mb.group(1) in ("contexts", "scenarios", "policies"):
+                section = mb.group(1)
+
+        body_html = _render_yaml_body(body, stack, section)
+
+        mb = _YAML_BLOCK_KEY_RE.match(body)
+        if mb:
+            stack.append((col, mb.group(1)))
+
+        line = indent_str + (esc(marker) if marker else "") + body_html
+        if comment is not None:
+            sep = " " if (marker or body_html) else ""
+            line += f'{sep}<span class="cm">{esc(comment)}</span>'
+        out.append(line)
+    return "\n".join(out)
 
 
 def highlight_zod(zod: str) -> str:
@@ -1207,7 +1302,7 @@ def build_body_html(
     qry_cards_html = render_qry_cards(sections.qry_cards)
     questions_html = render_questions_hotspots(sections.questions, sections.hotspots)
     actions_html = render_actions(sections.actions, status)
-    dml_html = render_dml(sections.dml)
+    dml_html = render_dml(sections.dml, sections.dml_errors)
     glossary_html = render_glossary(sections.glossary)
 
     return f"""
@@ -1260,6 +1355,25 @@ def build_body_html(
 # ============================================================
 
 
+def _validate_dml_warn(dml_text: str, dml_path: Path) -> list[str]:
+    """DML を JSON Schema で検証し、違反を stderr に警告出力して一覧を返す。
+
+    検証は **非ブロッキング**。validate_dml が import できない / スキーマが無い等は
+    静かに空リストを返し、ビルドを止めない。
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from validate_dml import validate_dml_text
+
+        errors = validate_dml_text(dml_text)
+    except Exception as e:  # 検証基盤の不在・想定外は警告のみでスキップ
+        print(f"⚠ DML 検証スキップ: {e}", file=sys.stderr)
+        return []
+    for e in errors:
+        print(f"⚠ DML schema: {dml_path.name}: {e}", file=sys.stderr)
+    return errors
+
+
 def build(
     md_path: Path,
     out_dir: Path,
@@ -1268,6 +1382,14 @@ def build(
 ) -> Path:
     md_text = md_path.read_text(encoding="utf-8")
     sections = parse_md(md_text)
+    # DML はサイドカー `<session>.dml.yaml`（純 YAML）を優先。
+    # 無ければ parse_md が §9 の埋め込み ```dml フェンスから抽出した値にフォールバック。
+    dml_path = md_path.with_name(md_path.stem + ".dml.yaml")
+    if dml_path.exists():
+        sections.dml = dml_path.read_text(encoding="utf-8").strip()
+    # JSON Schema 検証（警告のみ・non-blocking）。違反は §9 バナーと stderr に出すが
+    # ビルドは止めない（編集途中の不完全 DML でも HTML プレビューを保つ）。
+    sections.dml_errors = _validate_dml_warn(sections.dml, dml_path)
     html = render_html(sections)
 
     if artifact:
@@ -1402,6 +1524,11 @@ def main() -> int:
         return 1
 
     md_path = Path(args.path)
+    # hook が `.dml.yaml` を渡した場合は兄弟 `.md` をセッション本体として解決
+    # （HTML 命名・他セクションは `.md` 由来、DML は build() がサイドカーから読む）。
+    # 二重拡張子 `.dml.yaml` は with_suffix では剥がせないので name から除去する。
+    if md_path.name.endswith(".dml.yaml"):
+        md_path = md_path.with_name(md_path.name[: -len(".dml.yaml")] + ".md")
     if not md_path.exists():
         print(f"❌ ファイルが見つかりません: {md_path}", file=sys.stderr)
         return 1
