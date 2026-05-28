@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""EventStorming MD + DML → HTML ビルダー
+"""EventStorming DML → HTML ビルダー（YAML-only）
 
-DML（`.dml.yaml`）をモデル唯一の真実源とし、HTML §3（イベントフロー）と
-§8（集約カード）と §6（意思決定ログ）を DML から自動生成する。`.md` は物語（§1/§2）と
-次のアクション（§4）・オープンクエスチョン（§5）・コンテキスト候補（§7）・
-リードモデル（§9）・DML 参照（§10）を保持する。glossary_index（語彙の英→日変換）は
-DML `ctxs[].lang` を全 BC 走査して機械的に生成する（HTML §4 用語集セクションは廃止）。
+`.dml.yaml`（DML）を **唯一の入力** とし、HTML 全セクションを DML だけから生成する。
+v5 で `.md` 入力サポートを廃止：物語（story）/ 代替シナリオ散文（narratives）/ 次のアクション
+（actions）/ オープンクエスチョン（questions）/ BC 散文（ctxs[].description）/ リードモデル
+（qrys）も DML 内に保持される。glossary_index（語彙の英→日変換）は DML `ctxs[].lang` を
+全 BC 走査して機械的に生成する。
 
 使い方:
-    python3 scripts/eventstorming_build.py <md_path>              # 個別ビルド
-    python3 scripts/eventstorming_build.py --all                  # 全件ビルド
-    python3 scripts/eventstorming_build.py --watch [<md_dir>]     # 監視モード
-    python3 scripts/eventstorming_build.py <md_path> --artifact   # Artifact 互換 HTML
-    python3 scripts/eventstorming_build.py <md_path> --artifact --copy
+    python3 scripts/eventstorming_build.py <yaml_path>            # 個別ビルド
+    python3 scripts/eventstorming_build.py --all                  # 全件ビルド（*.dml.yaml）
+    python3 scripts/eventstorming_build.py --watch [<dir>]        # 監視モード
+    python3 scripts/eventstorming_build.py <yaml_path> --artifact # Artifact 互換 HTML
+    python3 scripts/eventstorming_build.py <yaml_path> --artifact --copy
                                                                   # pbcopy でクリップボードへ
 """
 
@@ -90,242 +90,47 @@ class Flow:
 
 
 @dataclass
-class MDSections:
-    header: dict = field(default_factory=dict)
+class DMLDocument:
+    """`.dml.yaml` を構造化した HTML ビルダー入力。
+
+    各フィールドはレンダラがそのまま消費するため、`load_dml_document` で
+    YAML 由来の構造を取り回しやすい形に正規化する。
+    """
+    session: dict = field(default_factory=dict)
     story: str = ""
-    scenarios: list[dict] = field(default_factory=list)
-    # `agg_cards` は parse_md の互換 shim として残置（旧 .md §5 = 現 §9 を読む下流スキル用）。
-    # HTML §9（新順）の描画は DML aggs[] を使うため、ビルダーはこのフィールドを参照しない。
-    bc_cards: list[dict] = field(default_factory=list)
-    agg_cards: list[dict] = field(default_factory=list)
-    qry_cards: list[dict] = field(default_factory=list)
+    narratives: list[dict] = field(default_factory=list)
+    actions: list[dict] = field(default_factory=list)
     questions: list[dict] = field(default_factory=list)
-    hotspots: list[dict] = field(default_factory=list)
-    actions: list[str] = field(default_factory=list)
-    dml: str = ""
+    qrys: list[dict] = field(default_factory=list)
+    dml_text: str = ""              # 元 YAML 全文（§10 表示用）
     dml_errors: list[str] = field(default_factory=list)
-    dml_model: dict | None = None  # yaml.safe_load 結果。None=未読/解析不可（縮退フラグ）
+    model: dict | None = None       # yaml.safe_load 結果（ctxs/aggs/scs/pols/flows/decisions の参照元）
 
 
-# ============================================================
-# MD パーサ
-# ============================================================
+def load_dml_document(yaml_text: str) -> DMLDocument:
+    """YAML 全文を DMLDocument に正規化する。
 
-
-def parse_md(md_text: str) -> MDSections:
-    s = MDSections()
-
-    title_match = re.search(r"^# (.+)$", md_text, re.MULTILINE)
-    if title_match:
-        s.header["title"] = title_match.group(1).strip()
-
-    # ヘッダーパターンを複数受け付ける(値側に**…** / キー側に**…** の両方)
-    header_patterns = {
-        "session": [
-            r"^-?\s*Session:\s*(.+?)$",
-            r"^-?\s*\*\*Session\*\*:\s*(.+?)$",
-        ],
-        "domain": [
-            r"^-?\s*Domain:\s*(.+?)$",
-            r"^-?\s*\*\*Domain\*\*:\s*(.+?)$",
-        ],
-        "status": [
-            r"^-?\s*Status:\s*\*\*(.+?)\*\*",
-            r"^-?\s*\*\*Status\*\*:\s*(.+?)$",
-        ],
-        "goal": [
-            r"^-?\s*Goal:\s*(.+?)$",
-            r"^-?\s*\*\*Goal\*\*:\s*(.+?)$",
-        ],
-    }
-    for key, patterns in header_patterns.items():
-        for pattern in patterns:
-            m = re.search(pattern, md_text, re.MULTILINE)
-            if m:
-                s.header[key] = m.group(1).strip()
-                break
-
-    # セクション見出し: `## N) 名前` / `## N. 名前` / `## N 名前` のいずれも受付
-    section_re = re.compile(r"^## \d+[).]?\s+(.+)$", re.MULTILINE)
-    matches = list(section_re.finditer(md_text))
-    sections: dict[str, str] = {}
-    for i, m in enumerate(matches):
-        name = m.group(1).strip()
-        start = m.end()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(md_text)
-        body = md_text[start:end].strip()
-        # セクション区切り `---` の行を除去（行単位で確実に処理）
-        body = "\n".join(line for line in body.split("\n") if line.strip() != "---").strip()
-        sections[name] = body
-
-    # セクション名のエイリアス(英語名・日本語名どちらでも取得可能)
-    def get_section(*names):
-        for n in names:
-            if n in sections:
-                return sections[n]
-        return ""
-
-    s.story = get_section("Happy Path Story", "ハッピーパスストーリー")
-    s.scenarios = parse_scenarios(
-        get_section("代替シナリオ", "Alternative Scenarios")
-    )
-    # §3（Event Walkthrough）は DML flows[]+scs/pols から生成するためパース不要。
-    # 旧 event-flow-svg DSL は廃止（README/dml-spec の §3 参照）。
-    s.bc_cards = parse_bc_cards(
-        get_section("コンテキスト候補", "BC Candidates", "Context Candidates")
-    )
-    s.agg_cards = parse_agg_cards(
-        get_section("集約候補", "Aggregate Candidates")
-    )
-    s.qry_cards = parse_qry_cards(
-        get_section("リードモデル候補", "Read Models")
-    )
-    s.questions, s.hotspots = parse_questions_hotspots(
-        get_section("オープンクエスチョン", "Open Questions")
-    )
-    s.actions = parse_actions(
-        get_section("次のアクション", "Next Actions")
-    )
-    s.dml = parse_dml(get_section("DML"))
-
-    return s
-
-
-def parse_scenarios(text: str) -> list[dict]:
-    """代替シナリオを解析する。
-
-    対応フォーマット:
-    1. `### シナリオ名` 形式（テンプレート準拠）
-    2. `1. **シナリオ名** — 散文` の番号付きリスト形式（自然な MD）
+    解析失敗・PyYAML 不在は空ドキュメントを返す（呼び出し側でフォールバック）。
     """
-    result = []
-    # 形式 1: ### 見出しがある場合
-    if re.search(r"^### ", text, re.MULTILINE):
-        parts = re.split(r"^### ", text, flags=re.MULTILINE)
-        for part in parts[1:]:
-            lines = part.strip().split("\n", 1)
-            name = lines[0].strip()
-            body = lines[1].strip() if len(lines) > 1 else ""
-            body = re.split(r"^---\s*$", body, maxsplit=1, flags=re.MULTILINE)[0].strip()
-            result.append({"name": name, "text": body})
-        return result
+    doc = DMLDocument(dml_text=yaml_text)
+    if yaml is None or not yaml_text.strip():
+        return doc
+    try:
+        loaded = yaml.safe_load(yaml_text)
+    except yaml.YAMLError as e:  # type: ignore[attr-defined]
+        print(f"⚠ DML YAML 解析失敗: {e}", file=sys.stderr)
+        return doc
+    if not isinstance(loaded, dict):
+        return doc
 
-    # 形式 2: 番号付きリスト `1. **名称** — 散文` (em-dash / en-dash / hyphen 対応)
-    list_re = re.compile(
-        r"^\s*\d+\.\s*\*\*(.+?)\*\*\s*[—–\-]\s*(.+?)(?=^\s*\d+\.|\Z)",
-        re.MULTILINE | re.DOTALL,
-    )
-    for m in list_re.finditer(text):
-        name = m.group(1).strip()
-        body = m.group(2).strip()
-        result.append({"name": name, "text": body})
-    return result
-
-
-def parse_bc_cards(text: str) -> list[dict]:
-    """MD §8 から BC カードの散文部分のみを抽出する。
-
-    LANGUAGE / 依存方向（UPSTREAM/DOWNSTREAM）は DML `ctxs[].lang` / `up` / `dn`
-    が唯一の真実源なので **MD からは読まない**。merge_bc_cards_with_dml が
-    DML 側から languages / upstream / downstream / downstream_slugs を補う。
-    """
-    cards = []
-    parts = re.split(r"^### ", text, flags=re.MULTILINE)
-    for part in parts[1:]:
-        lines = part.strip().split("\n")
-        name_line = lines[0].strip()
-        slug_match = re.match(r"^([\w-]+)", name_line)
-        slug = slug_match.group(1) if slug_match else name_line
-        body = "\n".join(lines[1:]).strip()
-
-        reason = ""
-        scenarios = ""
-        for line in body.split("\n"):
-            line = line.strip()
-            if line.startswith("- 境界の理由:"):
-                reason = line.split(":", 1)[1].strip()
-            elif line.startswith("- 含むシナリオ:"):
-                scenarios = line.split(":", 1)[1].strip()
-
-        cards.append(
-            {
-                "slug": slug,
-                "name": name_line,
-                "reason": reason,
-                "scenarios": scenarios,
-                "upstream": "",
-                "downstream": "",
-                "downstream_slugs": [],
-                "languages_by_cat": [],
-                "purpose": extract_prose_subsection(body, "目的"),
-                "background": extract_prose_subsection(body, "背景"),
-                "constraints": extract_subsection(body, "制約"),
-            }
-        )
-    return cards
-
-
-def merge_bc_cards_with_dml(
-    md_cards: list[dict], dml_model: dict | None
-) -> list[dict]:
-    """MD §8 BC カードに DML `ctxs[]` の lang / up / dn を merge する。
-
-    - MD 側からは slug / name / reason / scenarios / purpose / background /
-      constraints のみ採用
-    - languages / upstream / downstream / downstream_slugs は DML `ctxs[]`
-      から取得（重複管理を避ける）
-    - DML 未登録の slug は警告し、MD のみで描画（縮退）
-    """
-    if not dml_model:
-        return md_cards
-    ctxs = dml_model.get("ctxs") or []
-    ctx_index = {
-        c.get("name", ""): c for c in ctxs if isinstance(c, dict)
-    }
-
-    merged = []
-    for card in md_cards:
-        slug = card["slug"]
-        ctx = ctx_index.get(slug)
-        if ctx is None:
-            print(
-                f"⚠ BC '{slug}' は DML ctxs[] に未登録 (§8 LANGUAGE/依存方向は空で描画)",
-                file=sys.stderr,
-            )
-            merged.append(card)
-            continue
-
-        # languages_by_cat: [(カテゴリ表示名, [(en, jp), ...]), ...] の順序保持リスト。
-        # 空のカテゴリは含めない。レンダリングはこの順番でカテゴリ別表を描く。
-        languages_by_cat: list[tuple[str, list[tuple[str, str]]]] = []
-        lang_dict = ctx.get("lang") or {}
-        if isinstance(lang_dict, dict):
-            for cat_key, cat_label in LANG_CATEGORIES:
-                cat_dict = lang_dict.get(cat_key) or {}
-                if not isinstance(cat_dict, dict) or not cat_dict:
-                    continue
-                rows: list[tuple[str, str]] = []
-                for term, definition in cat_dict.items():
-                    en = str(term).strip()
-                    jp = str(definition).strip()
-                    if en and jp:
-                        rows.append((en, jp))
-                if rows:
-                    languages_by_cat.append((cat_label, rows))
-
-        upstream_str, _ = _format_dml_deps(ctx.get("up") or [])
-        downstream_str, downstream_slugs = _format_dml_deps(ctx.get("dn") or [])
-
-        merged.append(
-            {
-                **card,
-                "languages_by_cat": languages_by_cat,
-                "upstream": upstream_str,
-                "downstream": downstream_str,
-                "downstream_slugs": downstream_slugs,
-            }
-        )
-    return merged
+    doc.model = loaded
+    doc.session = loaded.get("session") or {}
+    doc.story = loaded.get("story") or ""
+    doc.narratives = [n for n in (loaded.get("narratives") or []) if isinstance(n, dict)]
+    doc.actions = [a for a in (loaded.get("actions") or []) if isinstance(a, dict)]
+    doc.questions = [q for q in (loaded.get("questions") or []) if isinstance(q, dict)]
+    doc.qrys = [q for q in (loaded.get("qrys") or []) if isinstance(q, dict)]
+    return doc
 
 
 def _format_dml_deps(deps: list) -> tuple[str, list[str]]:
@@ -350,177 +155,6 @@ def _format_dml_deps(deps: list) -> tuple[str, list[str]]:
     if not parts:
         return "(none)", []
     return " · ".join(parts), slugs
-
-
-def parse_agg_cards(text: str) -> list[dict]:
-    """互換 shim: 旧 `.md` §5 = 現 §9（Zod ＋ 散文）を読む parse 関数。
-
-    HTML 描画は `render_agg_cards_from_dml` を使うためビルダー本体は呼ばないが、
-    `parse_md` の戻り値（MDSections.agg_cards）を import している下流スキル
-    （`eventstorming-to-issues`）のための互換維持。同スキルが DML 読みへ
-    移行したら本関数も削除可能。
-    """
-    cards = []
-    parts = re.split(r"^### ", text, flags=re.MULTILINE)
-    for part in parts[1:]:
-        lines = part.strip().split("\n")
-        name = lines[0].strip()
-        body = "\n".join(lines[1:]).strip()
-
-        zod_match = re.search(r"```ts\n(.*?)\n```", body, re.DOTALL)
-        zod_code = zod_match.group(1).strip() if zod_match else ""
-
-        ctx_match = re.search(r"^- コンテキスト:\s*`([^`]+)`", body, re.MULTILINE)
-        ctx = ctx_match.group(1) if ctx_match else ""
-        rel_match = re.search(r"^- 関連シナリオ:\s*(.+)$", body, re.MULTILINE)
-        rel = rel_match.group(1).strip() if rel_match else ""
-
-        cards.append(
-            {
-                "name": name,
-                "context": ctx,
-                "related": rel,
-                "zod": zod_code,
-                "purpose": extract_prose_subsection(body, "目的"),
-                "background": extract_prose_subsection(body, "背景"),
-                "constraints": extract_subsection(body, "制約"),
-                "invariants": extract_subsection(body, "不変条件"),
-                "errors": extract_subsection(body, "エラーケース"),
-                "transitions": extract_subsection(body, "状態遷移"),
-                "derived": extract_subsection(body, "派生イベント"),
-                "notes": extract_subsection(body, "備考"),
-            }
-        )
-    return cards
-
-
-def extract_subsection(text: str, heading: str) -> list[str]:
-    pattern = (
-        rf"^####\s+{re.escape(heading)}\s*\n(.+?)"
-        r"(?=^####|^---|^###\s|\Z)"
-    )
-    m = re.search(pattern, text, re.MULTILINE | re.DOTALL)
-    if not m:
-        return []
-    body = m.group(1).strip()
-    items = []
-    for line in body.split("\n"):
-        line = line.strip()
-        if line.startswith("- "):
-            items.append(line[2:].strip())
-    return items
-
-
-def extract_prose_subsection(text: str, heading: str) -> str:
-    """`#### 見出し` の本文を散文として返す。bullet 行は除外して連結。
-
-    `extract_subsection` の散文版。テンプレ準拠の `#### 目的` / `#### 背景`
-    のように散文 1〜3 文を持つサブセクションのために用意。
-
-    bullet (`- ...`) 行は除外する（bullet 主体のサブセクションは
-    `extract_subsection` を使う）。複数行の散文は半角スペースで連結する。
-    見出しが無い場合は空文字を返す（パース成功扱い・後方互換）。
-    """
-    pattern = (
-        rf"^####\s+{re.escape(heading)}\s*\n(.+?)"
-        r"(?=^####|^---|^###\s|\Z)"
-    )
-    m = re.search(pattern, text, re.MULTILINE | re.DOTALL)
-    if not m:
-        return ""
-    body = m.group(1).strip()
-    lines: list[str] = []
-    for line in body.split("\n"):
-        s = line.strip()
-        if not s or s.startswith("- "):
-            continue
-        lines.append(s)
-    return " ".join(lines)
-
-
-def parse_qry_cards(text: str) -> list[dict]:
-    cards = []
-    parts = re.split(r"^### ", text, flags=re.MULTILINE)
-    for part in parts[1:]:
-        lines = part.strip().split("\n")
-        name = lines[0].strip()
-        body = "\n".join(lines[1:]).strip()
-        fields = {}
-        for line in body.split("\n"):
-            m = re.match(r"^- \*\*(.+?)\*\*:\s*(.+)$", line.strip())
-            if m:
-                fields[m.group(1)] = m.group(2).strip()
-        cards.append(
-            {
-                "name": name,
-                "user": fields.get("利用者", ""),
-                "purpose": fields.get("目的", ""),
-                "source": fields.get("ソース", ""),
-                "calc": fields.get("算出", ""),
-            }
-        )
-    return cards
-
-
-def parse_questions_hotspots(text: str) -> tuple[list[dict], list[dict]]:
-    """オープンクエスチョン/ホットスポット解析。
-
-    対応フォーマット:
-    1. `[CLOSED] Q1. 内容`  (テンプレート準拠の解消形)
-    2. `Q1. 内容` (未解消)
-    3. `~~Q1. 見出し~~ → 結論`  (取り消し線で解消を表現する自然な MD)
-    """
-    questions: list[dict] = []
-    hotspots: list[dict] = []
-    seen: set[tuple[str, str]] = set()  # (kind, num) で重複防止
-
-    # 形式 3: 取り消し線形式
-    strikethrough_re = re.compile(
-        r"^-?\s*~~([QH])(\d+)\.\s*(.+?)~~\s*(?:→\s*(.+))?$",
-        re.MULTILINE,
-    )
-    for m in strikethrough_re.finditer(text):
-        kind = m.group(1)
-        num = m.group(2)
-        body = m.group(3).strip()
-        conclusion = m.group(4).strip() if m.group(4) else ""
-        full = f"{body} → {conclusion}" if conclusion else body
-        key = (kind, num)
-        if key in seen:
-            continue
-        seen.add(key)
-        entry = {"num": num, "text": full, "closed": True}
-        (questions if kind == "Q" else hotspots).append(entry)
-
-    # 形式 1/2: [CLOSED] 接頭辞または通常形式
-    line_re = re.compile(
-        r"^-?\s*(\[CLOSED\]\s+)?([QH])(\d+)\.\s*(.+?)$", re.MULTILINE
-    )
-    for m in line_re.finditer(text):
-        kind = m.group(2)
-        num = m.group(3)
-        key = (kind, num)
-        if key in seen:
-            continue
-        seen.add(key)
-        closed = bool(m.group(1))
-        body = m.group(4).strip()
-        entry = {"num": num, "text": body, "closed": closed}
-        (questions if kind == "Q" else hotspots).append(entry)
-    return questions, hotspots
-
-
-def parse_actions(text: str) -> list[str]:
-    return [
-        line.strip()[2:].strip()
-        for line in text.split("\n")
-        if line.strip().startswith("- ")
-    ]
-
-
-def parse_dml(text: str) -> str:
-    m = re.search(r"```dml\n(.*?)\n```", text, re.DOTALL)
-    return m.group(1) if m else ""
 
 
 # ============================================================
@@ -551,6 +185,7 @@ LANG_CATEGORIES: list[tuple[str, str]] = [
     ("evts", "イベント"),
     ("pols", "ポリシー"),
     ("qrys", "リードモデル"),
+    ("states", "状態"),
 ]
 
 
@@ -878,19 +513,22 @@ def render_story(story: str) -> str:
     return f'<div class="story">\n    {inner}\n  </div>'
 
 
-def render_scenarios(scenarios: list[dict]) -> str:
-    if not scenarios:
+def render_scenarios(narratives: list[dict]) -> str:
+    """`narratives[]`（旧 .md §2）を代替シナリオカードとして描画。"""
+    if not narratives:
         return '<div class="todo-placeholder">代替シナリオなし</div>'
     cards = []
-    for s in scenarios:
+    for n in narratives:
+        title = n.get("title") or n.get("flow_id") or n.get("id") or ""
+        prose = n.get("prose") or ""
         text_html = "\n".join(
             f"<p>{esc(line.strip())}</p>"
-            for line in s["text"].split("\n")
+            for line in prose.split("\n")
             if line.strip()
         )
         cards.append(
             f'<div class="scenario-card">\n'
-            f'    <h3>{esc(s["name"])}</h3>\n'
+            f'    <h3>{esc(title)}</h3>\n'
             f"    {text_html}\n"
             f"  </div>"
         )
@@ -1021,24 +659,143 @@ def render_flow(flow: Flow) -> str:
     )
 
 
+def bc_cards_from_dml(model: dict | None) -> list[dict]:
+    """DML `ctxs[]` から BC カード表示用 dict 列を組み立てる。
+
+    各カードは slug/name/description（導入散文）/purpose/background/constraints
+    /upstream/downstream/downstream_slugs/languages_by_cat を持つ。purpose/background/
+    constraints は render_intent_blocks で色付きブロックに描画される。
+    """
+    if not model:
+        return []
+    ctxs = model.get("ctxs") or []
+    cards: list[dict] = []
+    for ctx in ctxs:
+        if not isinstance(ctx, dict):
+            continue
+        slug = str(ctx.get("name") or "").strip()
+        if not slug:
+            continue
+
+        languages_by_cat: list[tuple[str, list[tuple[str, str]]]] = []
+        lang_dict = ctx.get("lang") or {}
+        if isinstance(lang_dict, dict):
+            for cat_key, cat_label in LANG_CATEGORIES:
+                cat_dict = lang_dict.get(cat_key) or {}
+                if not isinstance(cat_dict, dict) or not cat_dict:
+                    continue
+                rows: list[tuple[str, str]] = []
+                for term, definition in cat_dict.items():
+                    en = str(term).strip()
+                    jp = str(definition).strip()
+                    if en and jp:
+                        rows.append((en, jp))
+                if rows:
+                    languages_by_cat.append((cat_label, rows))
+
+        upstream_str, _ = _format_dml_deps(ctx.get("up") or [])
+        downstream_str, downstream_slugs = _format_dml_deps(ctx.get("dn") or [])
+
+        label_ja = str(ctx.get("label_ja") or "").strip()
+        cards.append(
+            {
+                "slug": slug,
+                "name": slug,
+                "label_ja": label_ja,
+                "description": ctx.get("description") or "",
+                "purpose": ctx.get("purpose") or "",
+                "background": ctx.get("background") or "",
+                "constraints": ctx.get("constraints") or [],
+                "upstream": upstream_str,
+                "downstream": downstream_str,
+                "downstream_slugs": downstream_slugs,
+                "languages_by_cat": languages_by_cat,
+            }
+        )
+    return cards
+
+
+def _render_markdown_prose(text: str) -> str:
+    """description 内の素朴な Markdown（段落 / `- ` 箇条書き / `**強調**`）を HTML 化する。
+
+    本格的な MD パーサは導入しない（依存最小化のため）。description はテンプレ準拠の
+    bullet と段落を想定。改行 1 つを段落区切りとし、`- ` 行は <ul><li> として纏める。
+    `**...**` を <strong> に変換、それ以外はテキストとしてエスケープ済みで出力する。
+    """
+    if not text.strip():
+        return ""
+    lines = [ln.rstrip() for ln in text.split("\n")]
+    out: list[str] = []
+    bullet_buffer: list[str] = []
+
+    def flush_bullets() -> None:
+        if bullet_buffer:
+            items = "\n      ".join(f"<li>{ln}</li>" for ln in bullet_buffer)
+            out.append(f"<ul>\n      {items}\n    </ul>")
+            bullet_buffer.clear()
+
+    para_buffer: list[str] = []
+
+    def flush_para() -> None:
+        if para_buffer:
+            joined = " ".join(para_buffer).strip()
+            if joined:
+                out.append(f"<p>{joined}</p>")
+            para_buffer.clear()
+
+    for raw in lines:
+        s = raw.strip()
+        if not s:
+            flush_bullets()
+            flush_para()
+            continue
+        if s.startswith("- "):
+            flush_para()
+            bullet_buffer.append(_inline_md(s[2:].strip()))
+            continue
+        flush_bullets()
+        para_buffer.append(_inline_md(s))
+    flush_bullets()
+    flush_para()
+    return "\n    ".join(out)
+
+
+_INLINE_MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _inline_md(text: str) -> str:
+    """インライン MD（`**強調**` のみ）を HTML 化。それ以外はエスケープ。"""
+    parts: list[str] = []
+    pos = 0
+    for m in _INLINE_MD_BOLD_RE.finditer(text):
+        parts.append(esc(text[pos:m.start()]))
+        parts.append(f"<strong>{esc(m.group(1))}</strong>")
+        pos = m.end()
+    parts.append(esc(text[pos:]))
+    return "".join(parts)
+
+
 def render_bc_cards(cards: list[dict]) -> str:
     if not cards:
         return '<div class="todo-placeholder">TODO: フェーズ4完了後に追記</div>'
     out = []
     for c in cards:
-        scenarios_html = (
-            f'<div class="dep" style="margin-top: 4px;">'
-            f'<strong>含むシナリオ:</strong> {esc(c.get("scenarios", ""))}</div>'
-            if c.get("scenarios") else ""
-        )
+        desc_html = _render_markdown_prose(c.get("description") or "")
         intent_html = render_intent_blocks(c)
-        # LANGUAGE はカテゴリ別タイプ表として、目的/背景/制約（intent_html）の **後ろ** に描画。
         lang_html = _render_bc_languages(c.get("languages_by_cat") or [])
+        label_ja = c.get("label_ja") or ""
+        if label_ja:
+            heading = (
+                f'<span class="label-ja">{esc(label_ja)}</span>'
+                f' <span class="dash">—</span> '
+                f'<span class="slug">{esc(c["name"])}</span>'
+            )
+        else:
+            heading = f'<span class="slug">{esc(c["name"])}</span>'
         out.append(
             f'<div class="bc-card">\n'
-            f'    <h3>{esc(c["name"])}</h3>\n'
-            f"    <p>{esc(c['reason'])}</p>\n"
-            f"    {scenarios_html}\n"
+            f'    <h3>{heading}</h3>\n'
+            f"    {desc_html}\n"
             f'    <div class="dep"><strong>UPSTREAM:</strong> {esc(c["upstream"])} · '
             f'<strong>DOWNSTREAM:</strong> {esc(c["downstream"])}</div>\n'
             f"    {intent_html}\n"
@@ -1076,7 +833,7 @@ def _render_bc_languages(
     body = "\n    ".join(sections)
     return (
         f'<div class="lang-section">\n'
-        f'      <div class="lang-section-label"><strong>LANGUAGE</strong></div>\n'
+        f'      <div class="lang-section-label"><strong>用語集</strong></div>\n'
         f"      {body}\n"
         f"    </div>"
     )
@@ -1206,6 +963,67 @@ def _render_attr_table(rows: list[dict], header_class: str = "") -> str:
     )
 
 
+def _render_state_diagram(agg: dict, glossary_index: dict[str, str]) -> str:
+    """AGG の states / transitions から Mermaid stateDiagram-v2 ブロックを生成する。
+
+    Mermaid 構文:
+        stateDiagram-v2
+            state "計算済み" as CALCULATED
+            CALCULATED --> CONSUMED : PlaceOrder
+            CALCULATED --> EXPIRED : ExpireQuote
+
+    transitions が無い AGG は空文字を返す（HTML 側で何も描画されない）。
+    """
+    transitions = agg.get("transitions") or []
+    states = agg.get("states") or []
+    if not transitions:
+        return ""
+
+    lines: list[str] = ["stateDiagram-v2"]
+
+    # 状態に日本語ラベルを与える
+    declared: set[str] = set()
+    for s in states:
+        s_name = str(s)
+        jp = localize(s_name, glossary_index)
+        label = jp if jp and jp != s_name else s_name
+        # Mermaid のラベル: " で囲む。日本語に含まれうる " はないので素直に出す
+        lines.append(f'    state "{label}" as {s_name}')
+        declared.add(s_name)
+
+    # 遷移行（from -> to : via）
+    for t in transitions:
+        if not isinstance(t, dict):
+            continue
+        frm = str(t.get("from", "")).strip()
+        to = t.get("to", "")
+        via = str(t.get("via", "")).strip()
+        if not frm or not to:
+            continue
+        targets = to if isinstance(to, list) else [to]
+        for tgt in targets:
+            tgt = str(tgt).strip()
+            if not tgt:
+                continue
+            for needed in (frm, tgt):
+                if needed and needed not in declared:
+                    lines.append(f'    state "{needed}" as {needed}')
+                    declared.add(needed)
+            if via:
+                via_jp = localize(via, glossary_index)
+                via_label = via_jp if via_jp and via_jp != via else via
+                lines.append(f"    {frm} --> {tgt} : {via_label}")
+            else:
+                lines.append(f"    {frm} --> {tgt}")
+
+    return (
+        '<div class="state-diagram">\n'
+        '      <div class="state-diagram-label">状態遷移図</div>\n'
+        '      <pre class="mermaid">\n' + "\n".join(lines) + "\n      </pre>\n"
+        "    </div>"
+    )
+
+
 def render_agg_cards_from_dml(
     model: dict, glossary_index: dict[str, str]
 ) -> str:
@@ -1240,11 +1058,20 @@ def render_agg_cards_from_dml(
                 "属性未記述（DML aggs[].attrs[] 追記）</em></div>"
             )
 
+        def _state_label(state: str) -> str:
+            """状態を「日本語 (CODE)」形式に整形（日本語名を左、英語名を右に）。"""
+            jp = localize(state, glossary_index)
+            if jp and jp != state:
+                return f'{esc(jp)} <code class="state-code">{esc(state)}</code>'
+            return f'<code>{esc(state)}</code>'
+
+        state_diagram_html = _render_state_diagram(a, glossary_index)
+
         states_html = ""
         if a["states"]:
             states_html = (
                 '<div class="agg-subsection"><strong>状態:</strong> '
-                + " → ".join(f"<code>{esc(s)}</code>" for s in a["states"])
+                + " → ".join(_state_label(s) for s in a["states"])
                 + "</div>"
             )
 
@@ -1252,11 +1079,11 @@ def render_agg_cards_from_dml(
         if a["transitions"]:
             items = []
             for t in a["transitions"]:
-                frm = esc(str(t.get("from", "")))
+                frm_html = _state_label(str(t.get("from", "")))
                 to = t.get("to", "")
                 to_html = (
-                    " | ".join(esc(str(x)) for x in to)
-                    if isinstance(to, list) else esc(str(to))
+                    " | ".join(_state_label(str(x)) for x in to)
+                    if isinstance(to, list) else _state_label(str(to))
                 )
                 via = esc(str(t.get("via", "")))
                 via_jp = esc(localize(str(t.get("via", "")), glossary_index))
@@ -1266,11 +1093,13 @@ def render_agg_cards_from_dml(
                     f" <span class=\"why\">({via_jp})</span>" if via_jp and via_jp != via else ""
                 )
                 items.append(
-                    f"<li><code>{frm}</code> → <code>{to_html}</code> via {via_label}{when_html}</li>"
+                    f"<li>{frm_html} → {to_html} via {via_label}{when_html}</li>"
                 )
             transitions_html = (
-                '<div class="agg-subsection"><strong>状態遷移:</strong>'
-                f"<ul>\n      " + "\n      ".join(items) + "\n    </ul></div>"
+                '<details class="agg-subsection transitions-details">'
+                '<summary><strong>状態遷移（詳細）</strong> '
+                '<span class="why">— POL / when 補足を含む</span></summary>'
+                f"<ul>\n      " + "\n      ".join(items) + "\n    </ul></details>"
             )
 
         inv_html = ""
@@ -1341,11 +1170,20 @@ def render_agg_cards_from_dml(
 
         sections = [
             meta, intent_html, attr_html, states_html,
-            transitions_html, inv_html, err_html, events_html,
+            state_diagram_html, transitions_html, inv_html, err_html, events_html,
         ]
+        agg_label_ja = glossary_index.get(a["name"], "")
+        if agg_label_ja and agg_label_ja != a["name"]:
+            heading = (
+                f'<span class="label-ja">{esc(agg_label_ja)}</span>'
+                f' <span class="dash">—</span> '
+                f'<span class="slug">{esc(a["name"])}</span>'
+            )
+        else:
+            heading = f'<span class="slug">{esc(a["name"])}</span>'
         out.append(
             f'<div class="bc-card">\n'
-            f'    <h3>{esc(a["name"])}</h3>\n'
+            f'    <h3>{heading}</h3>\n'
             "    " + "\n    ".join(s for s in sections if s)
             + "\n  </div>"
         )
@@ -1416,67 +1254,105 @@ def render_decisions(model: dict, glossary_index: dict[str, str]) -> str:
     return "\n  ".join(out)
 
 
-def render_qry_cards(cards: list[dict]) -> str:
-    if not cards:
+def render_qry_cards(qrys: list[dict]) -> str:
+    """`qrys[]`（旧 .md §9）をリードモデルカードとして描画。
+
+    新スキーマでは name/ctx/purpose/users/sources/formula を持つ。
+    """
+    if not qrys:
         return '<div class="todo-placeholder">TODO: フェーズ4〜5完了後に追記</div>'
     out = []
-    for c in cards:
+    for q in qrys:
+        name = q.get("name") or ""
+        ctx = q.get("ctx") or ""
+        purpose = q.get("purpose") or ""
+        users = q.get("users") or ""
+        sources_raw = q.get("sources") or []
+        if isinstance(sources_raw, list):
+            sources = " · ".join(str(s) for s in sources_raw if s)
+        else:
+            sources = str(sources_raw)
+        formula = q.get("formula") or ""
+        ctx_html = f' <code style="font-size: 12px; color: #607D8B;">{esc(ctx)}</code>' if ctx else ""
         out.append(
             f'<div class="bc-card" style="border-left: 4px solid #2E7D32;">\n'
-            f'    <h3 style="color: #2E7D32;">{esc(c["name"])}</h3>\n'
-            f'    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>利用者:</strong> {esc(c["user"])}</p>\n'
-            f'    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>目的:</strong> {esc(c["purpose"])}</p>\n'
-            f'    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>ソース:</strong> {esc(c["source"])}</p>\n'
-            f'    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>算出:</strong> {esc(c["calc"])}</p>\n'
+            f'    <h3 style="color: #2E7D32;">{esc(name)}{ctx_html}</h3>\n'
+            f'    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>利用者:</strong> {esc(users)}</p>\n'
+            f'    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>目的:</strong> {esc(purpose)}</p>\n'
+            f'    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>ソース:</strong> {esc(sources)}</p>\n'
+            f'    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>算出:</strong> {esc(formula)}</p>\n'
             f"  </div>"
         )
     return "\n  ".join(out)
 
 
-def render_questions_hotspots(questions: list[dict], hotspots: list[dict]) -> str:
-    parts = []
-    open_q = [q for q in questions if not q["closed"]]
-    closed_q = [q for q in questions if q["closed"]]
-    open_h = [h for h in hotspots if not h["closed"]]
-    closed_h = [h for h in hotspots if h["closed"]]
+def render_questions(questions: list[dict]) -> str:
+    """`questions[]`（旧 .md §5）をオープン/クローズで色分け描画する。
 
-    if not open_q and not open_h and (closed_q or closed_h):
+    新スキーマ: { id, topic, why, status: open|closed, decision_id? }。
+    旧 MD の番号 Q{n} 表記を維持するため id をそのまま使う（先頭が Q なら除去して表示）。
+    """
+    if not questions:
+        return '<div class="todo-placeholder">未確認事項なし</div>'
+
+    open_qs = [q for q in questions if q.get("status") != "closed"]
+    closed_qs = [q for q in questions if q.get("status") == "closed"]
+
+    parts: list[str] = []
+    if not open_qs and closed_qs:
         parts.append(
             '<p style="color: #2E7D32; font-weight: 600;">✅ すべて解決済み</p>'
         )
 
-    for q in open_q:
+    def _label(q: dict) -> str:
+        qid = str(q.get("id") or "")
+        return f"Q{qid[1:]}" if qid.startswith("Q") and qid[1:].isdigit() else qid
+
+    def _body(q: dict) -> str:
+        topic = q.get("topic") or ""
+        why = q.get("why") or ""
+        if topic and why:
+            return f"{topic} — {why}"
+        return topic or why
+
+    for q in open_qs:
         parts.append(
-            f'<div class="question"><strong>Q{q["num"]}.</strong> {esc(q["text"])}</div>'
+            f'<div class="question"><strong>{esc(_label(q))}.</strong> {esc(_body(q))}</div>'
         )
-    for q in closed_q:
+    for q in closed_qs:
+        suffix = ""
+        did = q.get("decision_id")
+        if did:
+            suffix = f' <code style="color: #2E7D32; margin-left: 6px;">→ {esc(did)}</code>'
         parts.append(
             f'<div class="question" style="background: #E8F5E9; border-left-color: #2E7D32;">'
-            f'<strong>[CLOSED] Q{q["num"]}.</strong> {esc(q["text"])}</div>'
+            f'<strong>[CLOSED] {esc(_label(q))}.</strong> {esc(_body(q))}{suffix}</div>'
         )
 
-    if hotspots:
-        parts.append('<h3 style="margin-top:16px;">ホットスポット</h3>')
-    for h in open_h:
-        parts.append(
-            f'<div class="hotspot"><strong>H{h["num"]}.</strong> {esc(h["text"])}</div>'
-        )
-    for h in closed_h:
-        parts.append(
-            f'<div class="hotspot" style="background: #E8F5E9; border-left-color: #2E7D32;">'
-            f'<strong>[CLOSED] H{h["num"]}.</strong> {esc(h["text"])}</div>'
-        )
-
-    if not parts:
-        return '<div class="todo-placeholder">未確認事項なし</div>'
     return "\n  ".join(parts)
 
 
-def render_actions(actions: list[str], status: str) -> str:
+def render_actions(actions: list[dict], status: str) -> str:
+    """`actions[]`（旧 .md §4）を次のアクションとして描画。
+
+    新スキーマ: { id, text, owner?, done? }。done=true は取り消し線で表示。
+    """
     if not actions:
         return '<div class="todo-placeholder">未定</div>'
-    items = "\n      ".join(f"<li>{esc(a)}</li>" for a in actions)
-    return f'<div class="next-actions">\n    <ul>\n      {items}\n    </ul>\n  </div>'
+    items: list[str] = []
+    for a in actions:
+        text = a.get("text") or ""
+        done = bool(a.get("done"))
+        owner = a.get("owner") or ""
+        owner_html = f' <em style="color: #607D8B;">[{esc(owner)}]</em>' if owner else ""
+        if done:
+            items.append(
+                f'<li style="text-decoration: line-through; color: #9E9E9E;">{esc(text)}{owner_html}</li>'
+            )
+        else:
+            items.append(f"<li>{esc(text)}{owner_html}</li>")
+    items_html = "\n      ".join(items)
+    return f'<div class="next-actions">\n    <ul>\n      {items_html}\n    </ul>\n  </div>'
 
 
 def render_dml(dml: str, errors: list[str] | None = None) -> str:
@@ -1642,18 +1518,18 @@ def load_template() -> str:
     return TEMPLATE_PATH.read_text(encoding="utf-8")
 
 
-def render_html(sections: MDSections) -> str:
+def render_html(doc: DMLDocument) -> str:
     template = load_template()
 
-    title = sections.header.get("domain") or sections.header.get("title", "EventStorming")
-    session = sections.header.get("session", "")
-    goal = sections.header.get("goal", "")
-    status = sections.header.get("status", "")
+    session_dict = doc.session or {}
+    title = session_dict.get("domain") or session_dict.get("id") or "EventStorming"
+    session_id = session_dict.get("id") or ""
+    goal = session_dict.get("goal") or ""
+    status = session_dict.get("status") or ""
 
-    # テンプレ全体をリプレース。テンプレ内のサンプル本文は丸ごと差し替える
     html = template
 
-    # ヘッダー
+    # ヘッダー（テンプレのプレースホルダーを差し替える）
     html = re.sub(
         r"<h1>EventStorming — \{\{ドメイン名\}\}</h1>",
         f"<h1>EventStorming — {esc(title)}</h1>",
@@ -1661,12 +1537,11 @@ def render_html(sections: MDSections) -> str:
     )
     html = re.sub(
         r"Session:\s*<code>\{\{eventstorming-YYYYMMDD-HHMM\}\}</code>\s*·\s*\n\s*Goal:\s*\{\{ゴール\}\}",
-        f"Session: <code>{esc(session)}</code> · Goal: {esc(goal)}",
+        f"Session: <code>{esc(session_id)}</code> · Goal: {esc(goal)}",
         html,
     )
 
-    # ボディ全体を構築して、テンプレの <body>...</body> 間を差し替える
-    body_html = build_body_html(sections, title, session, goal, status)
+    body_html = build_body_html(doc, title, session_id, goal, status)
     html = re.sub(
         r"<body>.*?</body>",
         f"<body>\n{body_html}\n</body>",
@@ -1678,45 +1553,38 @@ def render_html(sections: MDSections) -> str:
 
 
 def build_body_html(
-    sections: MDSections, title: str, session: str, goal: str, status: str
+    doc: DMLDocument, title: str, session: str, goal: str, status: str
 ) -> str:
     progress_html = render_progress(status)
-    story_html = render_story(sections.story)
-    scenarios_html = render_scenarios(sections.scenarios)
+    story_html = render_story(doc.story)
+    scenarios_html = render_scenarios(doc.narratives)
     # glossary_index は DML `ctxs[].lang` を全 BC 走査して機械的に生成する。
-    # HTML §4「用語集」セクションは廃止済み。本 index はフロー図ラベルや
-    # §6 意思決定ログの affects 表示で英語識別子を日本語に置換する用途のみ。
-    glossary_index = build_glossary_index_from_dml(sections.dml_model)
+    # フロー図ラベルや §6 意思決定ログの affects 表示で英語識別子を日本語に置換する。
+    glossary_index = build_glossary_index_from_dml(doc.model)
 
-    # DML 解析成功時のみ §3（フロー）・§9（集約）・§7（意思決定ログ）を生成。
-    # 失敗時はプレースホルダーで縮退し例外を出さない。
     decisions_html = ""
-    if sections.dml_model is not None:
-        flows = build_flows_from_dml(sections.dml_model, glossary_index)
+    if doc.model is not None:
+        flows = build_flows_from_dml(doc.model, glossary_index)
         flows_html = render_flows(flows)
-        agg_cards_html = render_agg_cards_from_dml(
-            sections.dml_model, glossary_index
-        )
-        decisions_html = render_decisions(sections.dml_model, glossary_index)
+        agg_cards_html = render_agg_cards_from_dml(doc.model, glossary_index)
+        decisions_html = render_decisions(doc.model, glossary_index)
     else:
         flows_html = (
             '<div class="todo-placeholder">'
-            "DML 解析不可（PyYAML 不在 / 未記述）— §11 を参照"
+            "DML 解析不可（PyYAML 不在 / 未記述）— §10 を参照"
             "</div>"
         )
         agg_cards_html = (
-            '<div class="todo-placeholder">DML 解析不可 — §11 を参照</div>'
+            '<div class="todo-placeholder">DML 解析不可 — §10 を参照</div>'
         )
 
-    # §8 BC カードは MD §8 の散文に DML `ctxs[]` の lang / up / dn を merge して描画。
-    # LANGUAGE / 依存方向は DML 唯一の真実源なので MD 側には書かない（§8 重複防止）。
-    bc_cards_merged = merge_bc_cards_with_dml(sections.bc_cards, sections.dml_model)
-    context_map_html = render_context_map(bc_cards_merged)
-    bc_cards_html = render_bc_cards(bc_cards_merged)
-    qry_cards_html = render_qry_cards(sections.qry_cards)
-    questions_html = render_questions_hotspots(sections.questions, sections.hotspots)
-    actions_html = render_actions(sections.actions, status)
-    dml_html = render_dml(sections.dml, sections.dml_errors)
+    bc_cards = bc_cards_from_dml(doc.model)
+    context_map_html = render_context_map(bc_cards)
+    bc_cards_html = render_bc_cards(bc_cards)
+    qry_cards_html = render_qry_cards(doc.qrys)
+    questions_html = render_questions(doc.questions)
+    actions_html = render_actions(doc.actions, status)
+    dml_html = render_dml(doc.dml_text, doc.dml_errors)
 
     # §6 意思決定ログ（§4 用語集セクション廃止に伴い 1 つ繰り上げ）。
     # decisions[] が空なら見出しごと非表示
@@ -1772,22 +1640,6 @@ def build_body_html(
 # ============================================================
 
 
-def _load_dml_model(dml_text: str) -> dict | None:
-    """DML テキストを yaml.safe_load する。失敗・PyYAML 不在は None。
-
-    返り値 None は build_body_html の縮退フラグ（§3/§9/§7 をスキップ）。
-    全行コメントのみ（=None）/ 空文字 / dict 以外はすべて None として扱う。
-    """
-    if yaml is None or not dml_text.strip():
-        return None
-    try:
-        loaded = yaml.safe_load(dml_text)
-    except yaml.YAMLError as e:  # type: ignore[attr-defined]
-        print(f"⚠ DML YAML 解析失敗: {e}", file=sys.stderr)
-        return None
-    return loaded if isinstance(loaded, dict) else None
-
-
 def _validate_dml_warn(dml_text: str, dml_path: Path) -> list[str]:
     """DML を JSON Schema で検証し、違反を stderr に警告出力して一覧を返す。
 
@@ -1807,26 +1659,32 @@ def _validate_dml_warn(dml_text: str, dml_path: Path) -> list[str]:
     return errors
 
 
+def _session_stem(yaml_path: Path) -> str:
+    """`*.dml.yaml` からセッション識別子（`.dml.yaml` を剥がした名前）を取り出す。"""
+    name = yaml_path.name
+    if name.endswith(".dml.yaml"):
+        return name[: -len(".dml.yaml")]
+    return yaml_path.stem
+
+
 def build(
-    md_path: Path,
+    yaml_path: Path,
     out_dir: Path,
     *,
     artifact: bool = False,
 ) -> Path:
-    md_text = md_path.read_text(encoding="utf-8")
-    sections = parse_md(md_text)
-    # DML はサイドカー `<session>.dml.yaml`（純 YAML）を優先。
-    # 無ければ parse_md が §11 の埋め込み ```dml フェンスから抽出した値にフォールバック。
-    dml_path = md_path.with_name(md_path.stem + ".dml.yaml")
-    if dml_path.exists():
-        sections.dml = dml_path.read_text(encoding="utf-8").strip()
-    # JSON Schema 検証（警告のみ・non-blocking）。違反は §11 バナーと stderr に出すが
+    """`*.dml.yaml` 1 つから HTML を生成する（YAML-only パイプライン）。"""
+    if not yaml_path.name.endswith(".dml.yaml"):
+        raise ValueError(
+            f"入力は *.dml.yaml である必要があります（received: {yaml_path.name}）。"
+            " v5 以降 `.md` 入力はサポートされません。"
+        )
+    yaml_text = yaml_path.read_text(encoding="utf-8")
+    doc = load_dml_document(yaml_text)
+    # JSON Schema 検証（警告のみ・non-blocking）。違反は §10 バナーと stderr に出すが
     # ビルドは止めない（編集途中の不完全 DML でも HTML プレビューを保つ）。
-    sections.dml_errors = _validate_dml_warn(sections.dml, dml_path)
-    # DML を構造化して読み込む（HTML §3/§9/§7 の起点）。
-    # 失敗や PyYAML 不在は None に。build_body_html が縮退して例外を出さない。
-    sections.dml_model = _load_dml_model(sections.dml)
-    html = render_html(sections)
+    doc.dml_errors = _validate_dml_warn(yaml_text, yaml_path)
+    html = render_html(doc)
 
     if artifact:
         html = strip_for_artifact(html)
@@ -1835,11 +1693,8 @@ def build(
         suffix = ".html"
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / (md_path.stem + suffix)
+    out_path = out_dir / (_session_stem(yaml_path) + suffix)
     out_path.write_text(html, encoding="utf-8")
-
-    # 自動リロードは廃止（meta refresh / AppleScript reload とも撤去済み）。
-    # ブラウザ側で手動リロードしてください。
     return out_path
 
 
@@ -1879,32 +1734,33 @@ def copy_to_clipboard(path: Path) -> bool:
 
 def build_all(in_dir: Path, out_dir: Path, *, artifact: bool = False) -> list[Path]:
     results = []
-    for md_path in sorted(in_dir.glob("*.md")):
+    for yaml_path in sorted(in_dir.glob("*.dml.yaml")):
         try:
-            out = build(md_path, out_dir, artifact=artifact)
+            out = build(yaml_path, out_dir, artifact=artifact)
             results.append(out)
-            print(f"✅ {md_path.name} → {out.relative_to(PROJECT_ROOT)}")
+            print(f"✅ {yaml_path.name} → {out.relative_to(PROJECT_ROOT)}")
         except Exception as e:
-            print(f"❌ {md_path.name}: {e}", file=sys.stderr)
+            print(f"❌ {yaml_path.name}: {e}", file=sys.stderr)
     return results
 
 
 def watch(in_dir: Path, out_dir: Path, interval: float = 1.0) -> None:
     print(f"👀 監視中: {in_dir} (Ctrl-C で停止)")
-    # 起動時の既存ファイルは reload を抑止するため事前にスキャンしておく
-    mtimes: dict[Path, float] = {p: p.stat().st_mtime for p in in_dir.glob("*.md")}
+    mtimes: dict[Path, float] = {
+        p: p.stat().st_mtime for p in in_dir.glob("*.dml.yaml")
+    }
     try:
         while True:
-            for md_path in in_dir.glob("*.md"):
-                mtime = md_path.stat().st_mtime
-                prev = mtimes.get(md_path)
+            for yaml_path in in_dir.glob("*.dml.yaml"):
+                mtime = yaml_path.stat().st_mtime
+                prev = mtimes.get(yaml_path)
                 if prev is None or mtime > prev:
-                    mtimes[md_path] = mtime
+                    mtimes[yaml_path] = mtime
                     try:
-                        out = build(md_path, out_dir)
-                        print(f"♻️  {md_path.name} → {out.relative_to(PROJECT_ROOT)}")
+                        out = build(yaml_path, out_dir)
+                        print(f"♻️  {yaml_path.name} → {out.relative_to(PROJECT_ROOT)}")
                     except Exception as e:
-                        print(f"❌ {md_path.name}: {e}", file=sys.stderr)
+                        print(f"❌ {yaml_path.name}: {e}", file=sys.stderr)
             time.sleep(interval)
     except KeyboardInterrupt:
         print("\n👋 停止しました")
@@ -1917,10 +1773,10 @@ def watch(in_dir: Path, out_dir: Path, interval: float = 1.0) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="EventStorming MD → HTML ビルダー",
+        description="EventStorming DML → HTML ビルダー（YAML-only）",
     )
-    parser.add_argument("path", nargs="?", help="MD ファイルパス（省略時は --all か --watch）")
-    parser.add_argument("--all", action="store_true", help="全 MD をビルド")
+    parser.add_argument("path", nargs="?", help="*.dml.yaml ファイルパス（省略時は --all か --watch）")
+    parser.add_argument("--all", action="store_true", help="全 *.dml.yaml をビルド")
     parser.add_argument("--watch", action="store_true", help="ファイル変更を監視して自動ビルド")
     parser.add_argument(
         "--artifact",
@@ -1959,19 +1815,25 @@ def main() -> int:
         parser.print_help()
         return 1
 
-    md_path = Path(args.path)
-    # hook が `.dml.yaml` を渡した場合は兄弟 `.md` をセッション本体として解決
-    # （HTML 命名・他セクションは `.md` 由来、DML は build() がサイドカーから読む）。
-    # 二重拡張子 `.dml.yaml` は with_suffix では剥がせないので name から除去する。
-    if md_path.name.endswith(".dml.yaml"):
-        md_path = md_path.with_name(md_path.name[: -len(".dml.yaml")] + ".md")
-    if not md_path.exists():
-        print(f"❌ ファイルが見つかりません: {md_path}", file=sys.stderr)
+    yaml_path = Path(args.path)
+    # hook が `.md` を渡してきた場合は兄弟 `.dml.yaml` を入力として解決する。
+    if yaml_path.suffix == ".md":
+        sibling = yaml_path.with_name(yaml_path.stem + ".dml.yaml")
+        if sibling.exists():
+            yaml_path = sibling
+        else:
+            print(
+                f"❌ v5 以降 `.md` 入力は廃止されました。{sibling.name} を作成してください",
+                file=sys.stderr,
+            )
+            return 1
+    if not yaml_path.exists():
+        print(f"❌ ファイルが見つかりません: {yaml_path}", file=sys.stderr)
         return 1
 
     try:
-        out = build(md_path, out_dir, artifact=args.artifact)
-        print(f"✅ {md_path.name} → {out.relative_to(PROJECT_ROOT)}")
+        out = build(yaml_path, out_dir, artifact=args.artifact)
+        print(f"✅ {yaml_path.name} → {out.relative_to(PROJECT_ROOT)}")
         if args.copy:
             copy_to_clipboard(out)
         return 0

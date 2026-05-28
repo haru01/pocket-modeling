@@ -8,7 +8,59 @@
 # - フェーズ 4.6: aggs[] に 5 AGG の purpose/background/constraints/states/transitions
 # - フェーズ 5: scs[].rules/errs、aggs[].attrs、aggs[].events[].params
 # - フェーズ 6: decisions[] に H1〜H7 を昇格（5 件採用＋理由付き不採用案）
+# - v5 移行: 旧 .md の散文（story / narratives / questions / actions / BC description / qrys）
+#   を本 DML に統合。HTML は YAML のみから生成される。
 # ============================================================
+
+# ----------------------------------------------------------------
+# Session メタ（旧 .md ヘッダー）
+# ----------------------------------------------------------------
+session:
+  id: eventstorming-20260528-1209
+  domain: "タップカメラ（シュッピン株式会社）— 下取交換（新品/中古購入時に旧機種を下取り）"
+  status: "フェーズ 6 完了（意思決定ログ）＋ 分岐 CMD 2 件追加（CompleteInspection / DecideFinalAppraisal）＋ セクション再編 v3（§4 用語集を廃止し DML ctxs[].lang から glossary 自動生成、§5 以降を §4–§10 に繰り上げ）"
+  goal: "EventStorming スキルの動作検証（フェーズ網羅・粒度中・改善メモ並走）"
+  html_link: "../../dist/eventstorming/eventstorming-20260528-1209.html"
+  note: "Web 調査ベースの推測モデル。実装の正確な仕様（タイムアウト日数・決済タイミング等）は [?] で保留し、フェーズ 6 の decisions[] で言語化する方針（C2 採用）。"
+
+# ----------------------------------------------------------------
+# Story（旧 .md §1 Happy Path）
+# ----------------------------------------------------------------
+story: |
+  会員のタクヤさんは、現在使っているミラーレスカメラを買い替えたいと考えていた。手持ち機材の使い道は無く、できれば購入と同時に手放したい。
+
+  タップカメラの EC サイトで目当ての新品ボディを見つけたタクヤさんは、商品ページから **「下取交換を利用する」** を選択した。フォームで旧機種の型番を入力すると、システムがオンライン査定で **概算買取額** を即座に提示し、**下取適用で 10%UP** された見積を表示する。タクヤさんはこの条件で **注文を確定** し、新品代金から下取見積額を差し引いた **差額が仮押さえ** される。
+
+  注文確定後、タクヤさんは梱包した旧機種をタップカメラへ発送する。物流センターに到着すると、査定スタッフが受領し、**動作確認・外観検査** を行って **正式な買取額** を決定する。概算と一致した買取額がタクヤさんに通知され、本人がこれを承認すると **買取が成立** し、システムは新品ボディの **出荷指示** を行う。配送業者が新品を届けると、注文は完了する。買い替えが 1 つの取引として滑らかに完結し、タクヤさんは旧機種の処分先を別途探す手間を負わずに済んだ。
+
+# ----------------------------------------------------------------
+# Narratives（旧 .md §2 代替シナリオ散文）
+# ----------------------------------------------------------------
+narratives:
+  - id: alt-1
+    title: "査定減額の合意/拒否"
+    flow_id: alt-rejected
+    prose: |
+      受領した旧機種は使用感が想定より大きく、査定スタッフは概算より低い正式買取額を提示する。タクヤさんが減額を **受諾** すれば、新たな差額で再仮押さえののち新品が発送される。**拒否** した場合は旧機種が返送され、注文は通常購入として全額決済に切り替わる。
+  - id: alt-2
+    title: "旧機種が長期未着 → タイムアウト"
+    flow_id: alt-timeout
+    prose: |
+      注文確定後、一定期間内に旧機種がタップカメラに到着しない場合、下取契約が自動的に取り消される。注文は通常購入として残金が全額決済され、10%UP 特典も失効する。タイムアウト日数は [?] 保留（先取交換は 10 日、下取交換は要確認）。
+  - id: alt-3
+    title: "客都合キャンセル"
+    prose: |
+      査定通知前にタクヤさんが下取をキャンセルした場合、旧機種が未発送なら下取部分のみ取り消され、新品購入は通常決済に切り替わる。旧機種到着後のキャンセルは旧機種返送＋通常購入扱いとなる（返送料は **D3 採用により会社負担**）。
+  - id: alt-4
+    title: "検品で偽物・盗品疑いを検出（CMD 1 → EVT 2 分岐の例 #1）"
+    flow_id: alt-suspicious
+    prose: |
+      到着した旧機種を査定スタッフが検品した結果、シリアル番号や外観の特徴から偽物または盗品の疑いが浮上した。**同じ `CompleteInspection` コマンドが、通常品なら `InspectionCompleted` を、疑義ありなら `SuspiciousItemDetected` を emit する分岐モデル**（`brMode: exclusive`）。後者の場合 TradeIn は SUSPENDED 状態で停止し、古物営業法 15 条に基づく確認手続きと業務監督者への報告が走る。会員への通常通知は保留される。
+  - id: alt-5
+    title: "査定で 20%超の大幅減額（CMD 1 → EVT 2 分岐の例 #2）"
+    flow_id: alt-significant-reduction
+    prose: |
+      受領した旧機種は概算より大幅に状態が悪く、正式査定額が概算の 80% 未満となった。**同じ `DecideFinalAppraisal` コマンドが、概算との差が 20% 以内なら `FinalAppraisalDecided` を、20% 超なら `FinalAppraisalDecidedWithSignificantReduction` を emit する分岐モデル**（`brMode: exclusive`）。後者は通常の `NotifyOnAppraisalDecided`（会員通知）を発火せず、別 POL `HoldNotificationOnSignificantReduction` が業務監督者へエスカレーション。承認を得たうえで会員に説明付き通知を行う社内統制フロー。
 
 domains:
   - name: trade-in-exchange
@@ -33,8 +85,18 @@ domains:
 ctxs:
   - name: store-front
     type: FEATURE
+    label_ja: "店舗フロント"
     sub: catalog-and-sales
     vision: "会員向けの新品/中古販売 EC。注文起点で下取りを束ねる"
+    description: |
+      - 境界の理由: 会員向けの「商品閲覧→注文確定→下取申込」を 1 つの UI/業務文脈で扱う層。下取の業務メカニクスや決済の内部状態を持ち込まず、Order を上流の親として保つ
+      - 含むシナリオ: 会員が概算査定を要求する／会員が下取付きで注文を確定する
+    purpose: "下取機能と購入機能を会員の認知負荷を最小化する形で接合する。「買い替え」の一連の体験を 1 つの注文として表現することが、タップカメラの差別化価値の表面に立つ。"
+    background: "EC・楽天店舗・店頭で見積もり経路が乱立し、会員が「どこで査定したか」で価格が変わる体験のばらつきが発生していた。Quote の概算と Order の確定を同一 BC で扱うことでこの不整合を吸収する。"
+    constraints:
+      - "カタログ参照は別 BC（catalog）に切り出していない（本セッションスコープ外）"
+      - "下取付き注文の整合性（Quote → Order）は本 BC 内で完結させる"
+      - "下取無し注文の挙動は本セッションでは未定義（[?] Q11 関連）"
     # lang はカテゴリ別 dict-of-dicts。本 BC で扱う語彙を種別ごとに分けて
     # 英→日ラベル（短い表記）として登録する。HTML §7 のタイプ別表と
     # glossary_index（フロー図ラベル日本語化）はここから機械的に生成される。
@@ -54,6 +116,18 @@ ctxs:
       evts:
         EstimateCalculated: "概算査定額が算出された"
         OrderPlaced: "注文された"
+      states:
+        # Quote
+        CALCULATED: "計算済み"
+        CONSUMED: "消費済み"
+        EXPIRED: "失効"
+        # Order
+        PLACED: "確定"
+        AWAITING_TRADE_IN: "下取待ち"
+        SETTLED: "成立"
+        CONVERTED_TO_FULL: "通常購入に切替"
+        COMPLETED: "完了"
+        CANCELLED: "キャンセル"
     up: []
     dn:
       - { ctx: trade-in,    rel: Customer-Supplier, note: "注文に下取契約を要求" }
@@ -63,8 +137,19 @@ ctxs:
 
   - name: trade-in
     type: FEATURE
+    label_ja: "下取契約"
     sub: trade-in-core
     vision: "旧機種の受領から正式査定額確定までを所有"
+    description: |
+      - 境界の理由: 旧機種の物理的ライフサイクル（受領 → 検品 → 査定 → 承認/拒否 → 成立/返送）を所有する CORE BC。オペレーション業務（査定スタッフ）と社内統制（古物営業法対応）が集約される
+      - 含むシナリオ: 会員が下取をキャンセル／旧機種発送 → 受領 → 検品 → 査定確定 → 承認/拒否／システムがタイムアウト検知
+    purpose: "旧機種の引き受けから売買成立までを **タップカメラの差別化価値**（スピード査定・10%UP・透明性）として一気通貫に支える。AGG 状態を真実源として、オペレーションと業務監督・法令対応を統合する。"
+    background: "業界の中古買取は「送ったら査定が不透明」「減額理由が不明」というクレームが多い領域。TradeIn AGG に状態を集約し、各状態遷移の根拠（rules/errs）を明示することで、サポート対応・社内統制・古物営業法対応をモデル化する。"
+    constraints:
+      - "1 TradeIn には 1 旧機種のみ（複数下取は本セッション範囲外）"
+      - "査定は **2 段階**（concept: estimateAmount → finalAmount）"
+      - "古物営業法に基づく本人確認・取引記録の法定保管義務"
+      - "`CompleteInspection` / `DecideFinalAppraisal` は **brs 分岐**を持つ（CMD 1 → EVT 2 ／業務統制の表現）"
     lang:
       aggs:
         TradeIn: "下取契約"
@@ -108,6 +193,19 @@ ctxs:
         HoldNotificationOnSignificantReduction: "大幅減額時に通知保留＋監督者エスカレ"
         ConvertOnAppraisalRejected: "拒否時に通常購入へ切替"
         ConvertOnTimeout: "タイムアウト時に通常購入へ切替"
+      states:
+        LINKED: "注文に連携済み"
+        SHIPPED: "発送済み"
+        RECEIVED: "受領済み"
+        INSPECTED: "検品済み"
+        SUSPENDED: "保留"
+        APPRAISED: "査定確定"
+        APPROVED: "承認済み"
+        REJECTED: "拒否"
+        SETTLED: "成立"
+        CANCELLED: "キャンセル"
+        TIMED_OUT: "タイムアウト"
+        RETURNED: "返送済み"
     up:
       - { ctx: store-front, rel: Customer-Supplier }
     dn:
@@ -116,8 +214,19 @@ ctxs:
     aggs: [TradeIn]
 
   - name: payment
+    label_ja: "決済"
     sub: payment
     vision: "差額与信から残金請求・返金までの決済責務"
+    description: |
+      - 境界の理由: カード会社 API・PSP との対話を含む副作用層を、業務文脈から切り離した GENERIC BC。下取交換特有の「与信額が確定するまで変動する」課題はあるが、決済プリミティブ自体は標準化された汎用部分として扱う
+      - 含むシナリオ: （該当 scs なし — 与信操作はすべて POL → AGG への内部 CMD として実装）
+      - 受信する POL: AuthorizeOnOrderPlaced / ConvertOnAppraisalRejected / ConvertOnTimeout / ChargeRemainingOnConverted
+    purpose: "下取付き注文の **与信額の動的変動** を吸収しつつ、最終的なキャプチャ（実請求）を確実に実行する。差額仮押さえ（D2 採用）方針で UX とリスクを両立する。"
+    background: "下取交換では正式査定が確定するまで請求額が動くため、通常 EC の「注文時全額与信→出荷時請求」モデルが使えない。差額のみ仮押さえし、必要に応じて再与信する設計判断は D2 で採用済み。"
+    constraints:
+      - "初期 hold 額 = `order.totalAmount - quote.estimateAmount`（D2 採用）"
+      - "カード会社の与信有効期限（一般に 30 日）以内にキャプチャすること"
+      - "通常購入への切替時は再与信（RE_AUTHORIZED）が必要"
     lang:
       aggs:
         Authorization: "与信"
@@ -135,6 +244,12 @@ ctxs:
       pols:
         AuthorizeOnOrderPlaced: "注文確定時に差額与信"
         ChargeRemainingOnConverted: "通常購入切替時に残金請求"
+      states:
+        PENDING: "保留"
+        AUTHORIZED: "与信済み"
+        RE_AUTHORIZED: "再与信済み"
+        CAPTURED: "請求済み"
+        RELEASED: "解放済み"
     up:
       - { ctx: store-front, rel: Customer-Supplier }
       - { ctx: trade-in, rel: Customer-Supplier }
@@ -142,8 +257,19 @@ ctxs:
     aggs: [Authorization]
 
   - name: fulfillment
+    label_ja: "物流"
     sub: fulfillment
     vision: "新品の出荷指示・配送追跡、および旧機種の返送実行"
+    description: |
+      - 境界の理由: 倉庫オペレーション・在庫引当・運送業者連携を扱う GENERIC BC。新品の outbound 出荷と旧機種の return 出荷の両方を kind 属性で区別して保持
+      - 含むシナリオ: 物流が新品を出荷する／配送業者が新品を届ける
+      - 受信する POL: InstructShipmentOnSettled / ReturnOnAppraisalRejected（trade-in BC 側からも返送実行を受ける）
+    purpose: "買取成立後の新品引き渡しと、査定拒否時の旧機種返送を、共通の Shipment ライフサイクルで扱う。在庫の引当ロックと運送追跡の真実源として機能する。"
+    background: "下取交換は「新品が客に届く」「旧機種が客から店舗に届く」「旧機種が店舗から客に返る」という 3 種の Shipment が混在する。返送 Shipment（return）を別 AGG に切り出さず kind で区別する選択は、運用負担と整合性のバランスをとった判断。"
+    constraints:
+      - "`carrierTrackingId` は Shipment ごとに一意"
+      - "INSTRUCTED 状態で在庫を引当ロック（解除は CANCELLED 時のみ）"
+      - "返送 Shipment は一度発送したらリルート不可"
     lang:
       aggs:
         Shipment: "出荷"
@@ -159,6 +285,11 @@ ctxs:
         NewItemDelivered: "新品が配送完了した"
       pols:
         InstructShipmentOnSettled: "成立時に出荷指示"
+      states:
+        INSTRUCTED: "出荷指示済み"
+        SHIPPED: "発送済み"
+        DELIVERED: "配送完了"
+        CANCELLED: "キャンセル"
     up:
       - { ctx: store-front, rel: Customer-Supplier }
       - { ctx: trade-in, rel: Customer-Supplier }
@@ -811,3 +942,91 @@ decisions:
       - name: "no-expiry"
         adopted: false
         why_not: "古い Quote を理由にした請求トラブルや古物相場乖離のリスクが残る"
+
+# ----------------------------------------------------------------
+# Open Questions（旧 .md §5）
+# ----------------------------------------------------------------
+questions:
+  - id: Q1
+    topic: "下取交換のタイムアウト日数は？"
+    why: "決まると：Alt-2 の Saga 期限と決済切替トリガーが確定"
+    status: closed
+    decision_id: D1
+  - id: Q2
+    topic: "注文時点の決済モデルは「差額仮押さえ」か「査定確定まで保留」か？"
+    why: "決まると：与信のタイミング・通常購入への切替時の追加課金処理が確定"
+    status: closed
+    decision_id: D2
+  - id: Q3
+    topic: "査定減額時の返送料・キャンセル返送料の負担者は？"
+    why: "決まると：Alt-1/Alt-3 のコスト配分と通知文面が確定"
+    status: closed
+    decision_id: D3
+  - id: Q4
+    topic: "買取成立後の新品出荷自動指示の担い手と着手プロセス"
+    why: "`ShipmentInstructed`（出荷指示が発行された）から `ShipNewItem`（新品を出荷する）への自動受け渡しを誰が担うのか、また倉庫側は指示を受けたら即座に出荷作業へ着手するのか、人手チェックを挟むのかを決める"
+    status: open
+  - id: Q5
+    topic: "会員都合の下取キャンセル後に自動で動く業務（Alt-3）"
+    why: "旧機種が未発送のとき／到着後のときで、返送指示・与信解放・通常購入への切替の手順は誰がどの順番で行うかを決める"
+    status: open
+  - id: Q6
+    topic: "発送/受領/検品完了イベント後の自動業務"
+    why: "受領通知メール、検品着手のキュー入れ等が未定義。担当部署への自動通知や次工程への自動引き渡しは必要か、必要なら何をトリガーに何を行うかを決める"
+    status: open
+  - id: Q7
+    topic: "概算査定額算出後の業務（離脱追跡・誘導通知）"
+    why: "会員が概算を見ただけで離脱したケースの追跡や、概算→注文への誘導通知が必要かどうかを決める"
+    status: open
+  - id: Q8
+    topic: "偽物・盗品疑い検出後の業務手順（Alt-4 / alt-suspicious）"
+    why: "`SuspiciousItemDetected` 後、業務監督者への報告・古物営業法 15 条に基づく確認手続き・所轄警察への申告・会員への保留通知のうちどれを誰がどの順番で行うか、また TradeIn が SUSPENDED から解除される条件を決める"
+    status: open
+  - id: Q9
+    topic: "与信確保/残金決済イベント後の業務"
+    why: "`DifferentialAuthorized` 後に在庫の仮押さえや配送準備の事前着手は必要か、`RemainingChargeSettled` 後に出荷指示が自動発火するべきか（現行は買取成立経由のみ）を決める"
+    status: open
+  - id: Q10
+    topic: "Authorization AGG への操作シナリオの欠落"
+    why: "差額仮押さえ・通常購入への切替・残金請求・与信解放はすべて POL から AGG への内部 CMD で実行される設計だが、コールセンター起点の手動キャンセル時の与信解放（ReleaseAuthorization）など、人手起点の操作が必要なら scs として追加するか確認"
+    status: open
+  - id: Q11
+    topic: "Quote/Order の初期状態生成 CMD の transitions.via 明示"
+    why: "`RequestQuote` で Quote が CALCULATED として生成される遷移、`PlaceOrder` で Order が PLACED として生成される遷移を「null → 初期状態」として明示するか確認（C9 整合性に関連）"
+    status: open
+  - id: Q12
+    topic: "POL 内部 CMD に対応する scenario の追加可否"
+    why: "AuthorizeDifferential / SettleTradeIn / InstructShipment / ReturnTradeInItem / ConvertOrderToFullPurchase / ChargeRemainingAmount は AGG への内部 CMD として実装される前提だが、rules/errs を業務語彙で残しておきたい場合は POL-driven scenario として追加するか、現状（POL 内 note で完結）で OK か方針を確定（C2 整合性に関連）"
+    status: open
+
+# ----------------------------------------------------------------
+# Next Actions（旧 .md §4）
+# ----------------------------------------------------------------
+actions:
+  - id: A1
+    text: "フェーズ 4.5：BC 間で意味が変わる言葉（特に Order / TradeIn / Quote）の lang 充実"
+    done: true
+  - id: A2
+    text: "フェーズ 4.6：各 AGG（Quote/Order/TradeIn/Authorization/Shipment）の purpose / background / constraints を言語化"
+    done: true
+  - id: A3
+    text: "フェーズ 5：scs[].rules / scs[].errs、aggs[].attrs / aggs[].events[].params / aggs[].transitions"
+    done: true
+  - id: A4
+    text: "フェーズ 6：H1〜H6 を decisions[] に昇格"
+    done: true
+  - id: A5
+    text: "§9 リードモデル候補（qrys[]）の充足"
+    done: false
+  - id: A6
+    text: "§5 Q4〜Q12 の業務 WHY 補完"
+    done: false
+  - id: A7
+    text: "スキル改善メモ docs/skill-improvements/eventstorming-facilitator-20260528.md を随時更新"
+    done: false
+
+# ----------------------------------------------------------------
+# Lead Models (QRY) Candidates（旧 .md §9）
+# ----------------------------------------------------------------
+# TODO: 概算買取額計算、査定結果照会、注文サマリなど横断/計算系 QRY を追記する
+qrys: []

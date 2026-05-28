@@ -1,0 +1,155 @@
+# =============================================================================
+# DML テンプレート — 新規 EventStorming セッション
+# =============================================================================
+# このファイルを `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.dml.yaml` に
+# コピーし、必要なセクションのコメントを外しながら埋めていく。
+#
+# .md は廃止。HTML（dist/eventstorming/*.html）は本 YAML のみから自動生成される。
+# AI は `scripts/dmlctl.py view/set/add` を介して必要な観点だけを読み書きする。
+#
+# 構文検証: `python3 scripts/validate_dml.py <this>.dml.yaml`
+# 詳細仕様: `references/dml-spec.md` / `references/dml.schema.yaml`
+#
+# 全フィールドは optional。空 YAML（{} のみ）でも valid（進行中セッション許容）。
+# =============================================================================
+
+# ---------- (A) セッションメタ（旧 .md ヘッダー） ----------
+# session:
+#   id: eventstorming-YYYYMMDD-HHMM
+#   domain: <ドメイン名>                    # 例: trade-in-exchange
+#   status: Phase 1 (スコープ確認中)
+#   goal: <このセッションのゴール>
+#   started_at: YYYY-MM-DDTHH:MM:00+09:00
+#   html_link: ../../dist/eventstorming/eventstorming-YYYYMMDD-HHMM.html
+
+# ---------- (B) Happy Path Story（旧 .md §1） ----------
+# 400〜600 字。{{主人公}}は {{課題}} を抱えていた…で始める散文。
+# 実装詳細（CMD/AGG/POLICY 名）は描かない。
+# story: |
+#   <ハッピーパス散文>
+
+# ---------- (C) 代替シナリオ散文（旧 .md §2） ----------
+# flows[].id と対応する flow_id を必ず指定。HTML §2 で flow ごとに表示される。
+# narratives:
+#   - flow_id: alt-1
+#     title: <シナリオの短い題>
+#     prose: |
+#       <代替シナリオの散文（100〜200字）>
+
+# ---------- (D) ドメイン分類（任意） ----------
+# domains:
+#   - name: <domain-slug>
+#     vision: <ドメインビジョン>
+#     subs:
+#       - { name: <subdomain-slug>, type: CORE_DOMAIN, vision: ... }
+
+# ---------- (E) Bounded Context ----------
+# name / lang（語彙の英→日辞書）/ up / dn / description（旧 .md §7 散文）
+# ctxs:
+#   - name: <bc-slug>                       # lowercase-with-hyphen
+#     type: FEATURE                         # FEATURE / APPLICATION / SYSTEM / MICROSERVICE
+#     description: |                         # 旧 .md §7：境界の理由 / 含むシナリオ / 目的 / 背景 / 制約
+#       <BC 散文>
+#     lang:
+#       aggs:   { AggName: "集約日本語名" }
+#       actors: { ActorName: "アクター日本語名" }
+#       cmds:   { CommandName: "コマンド日本語名" }
+#       evts:   { EventName: "イベント日本語名" }
+#       pols:   { PolicyName: "ポリシー日本語名" }
+#       qrys:   { QryName: "クエリ日本語名" }
+#       vos:    { ValueObjName: "値オブジェクト日本語名" }
+#     up: []                                # upstream BC
+#     dn: []                                # downstream BC（{ ctx, rel: Customer-Supplier, ... }）
+#     aggs: []                              # 所属 AGG 名の軽量名簿（PascalCase 文字列）
+
+# ---------- (F) Aggregate（トップレベル詳細定義） ----------
+# aggs:
+#   - name: <AggName>
+#     ctx: <bc-slug>
+#     purpose: <30 字以上で「この AGG が単一に責任を持つこと」を一文に>
+#     background: <なぜ今この AGG を切り出すか>
+#     constraints:
+#       - <業務 / 法令 / プラットフォーム制約>
+#     states: [DRAFT, FINAL]
+#     transitions:
+#       - { from: DRAFT, to: FINAL, via: <CommandName> }
+#     attrs:
+#       - { name: <fieldName>, type: <type>, required: true }
+#     events:
+#       - name: <EventName>
+#         params:
+#           - { name: <fieldName>, type: <type> }
+
+# ---------- (G) Scenario（CMD 実行ユースケース） ----------
+# scs:
+#   - name: <アクター + 行為（日本語）>
+#     ctx: <bc-slug>
+#     actor: <ActorName>
+#     cmd: <CommandName>
+#     evt: <EventName>
+#     agg: <AggName>
+#     rules:
+#       - { rule: <英語の不変条件>, why: <なぜそれを守るか> }
+#     errs:
+#       - { cond: <エラー条件>, err: <ErrorName>, when: <発生時の補足> }
+
+# ---------- (H) Policy（EVENTUAL-TX） ----------
+# pols:
+#   - name: <PolicyName>
+#     ctx: <bc-slug>
+#     trg: <EventName>                     # 単一トリガー（複数の場合 trgs を使う）
+#     cmd: <CommandName>                   # 副作用専用 POLICY なら省略可
+#     evt: <EventName>                     # 完了イベント名（任意）
+
+# ---------- (I) Flow（happy + alt 各フロー） ----------
+# flows:
+#   - id: happy
+#     title: ハッピーパス
+#     kind: happy
+#     steps:
+#       - <シナリオ name または ポリシー name>
+#   - id: alt-1
+#     title: <代替シナリオの題>
+#     kind: alt
+#     steps:
+#       - <ステップ>
+
+# ---------- (J) 意思決定ログ（旧 .md §6） ----------
+# decisions:
+#   - id: D1
+#     topic: <意思決定のテーマ>
+#     chosen: <採用オプション名>
+#     options:
+#       - { name: <opt-1>, adopted: true,  why: <採用理由> }
+#       - { name: <opt-2>, adopted: false, why_not: <不採用理由> }
+#     affects: [<関連 AGG/BC 名>]
+
+# ---------- (K) オープンクエスチョン（旧 .md §5） ----------
+# questions:
+#   - id: Q1
+#     topic: <確認したい事項>
+#     why: <決まると何が変わるか>
+#     status: open                          # open | closed
+#     # decision_id: D1                      # closed の場合
+
+# ---------- (L) 次のアクション（旧 .md §4） ----------
+# actions:
+#   - id: A1
+#     text: <ステークホルダー向けに何をすればよいか>
+#     owner: <担当者（任意）>
+
+# ---------- (M) リードモデル候補（旧 .md §9） ----------
+# qrys:
+#   - name: <QryName>
+#     ctx: <bc-slug>
+#     purpose: <何を確認して何を決めるか>
+#     users: <利用者（アクター / ポリシー）>
+#     sources:
+#       - <ソース AGG / EVT 等>
+#     formula: <算出条件・絞り込み式>
+
+# =============================================================================
+# 上記をすべてコメントアウトしているので、本ファイルそのものは valid な空 DML。
+# 必要なセクションからコメントを外して埋めていく。
+# =============================================================================
+{}

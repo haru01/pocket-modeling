@@ -1,35 +1,66 @@
-# フロー整合性サブエージェント起動プロンプト
+# 因果整合性サブエージェント起動プロンプト（観点別フィルタ → LLM 方式）
 
-ユーザーが「フロー整合性チェック」「因果チェーンチェック」「整合性チェック」「causal check」などのキーワードを送ったら以下のプロンプトで Agent を起動する：
+ユーザーが「フロー整合性チェック」「因果チェーンチェック」「causal check」を求めたら以下を実行する。
+
+---
+
+## ステップ 1 — 構造チェック（LLM 不要）
+
+```bash
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py check <session>.dml.yaml --check=flow_step_resolution
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py check <session>.dml.yaml --check=unknown_evt_in_policy
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py check <session>.dml.yaml --check=dangling_cmd
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py check <session>.dml.yaml --check=state_reachability
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py check <session>.dml.yaml --check=orphan_event
+```
+
+違反があれば DML を修正してから次へ（意味判定のノイズを減らす）。
+
+---
+
+## ステップ 2 — 意味チェック Agent 起動
 
 ```
 Agent(
-  description: "DMLフロー整合性検査",
+  description: "DML因果整合性検査",
   prompt: """
-EventStorming セッションの DML（兄弟 `.dml.yaml` ファイル・YAML）の
-因果チェーンを検査し、結果をセッション `.md` のオープンクエスチョンに追記してください。
+EventStorming セッションの因果連鎖の業務的整合性を検査してください。
 
-手順:
-1. `<ファイルパス>`（`.md`）と**兄弟 `.dml.yaml`（同名・拡張子 `.dml.yaml`、DML 本体・純 YAML）**を Read で読み込む
-2. `.claude/skills/eventstorming-facilitator/references/causal-check.md` を Read で読み込む
-3. 兄弟 `.dml.yaml`（純 YAML・フェンスなし）を `yaml.safe_load` でパースし、「検査対象の収集」を実施して EVT/CMD/POLICY/TRIGGER/AGG/flows steps/decisions affects のリストを作成する
-4. C1〜C13 を順に検査する
-5. 問題あり・要確認の項目を以下の形式でセクション6（オープンクエスチョン）に追記する（Edit tool）：
-
-   ### 因果チェーン（自動検出）
-   - Q?. 「注文キャンセル」の業務手順がまだ定義されていません — 在庫切れでキャンセルになったとき、顧客への連絡・返金はどの部門が担当し、どの順番で行いますか？
-   - Q?. 「注文承認」の後に何が起きるかが決まっていません — 承認されたら倉庫への指示は自動で飛ぶのか、担当者が手動で操作するのかを確認してください
-
-   ※ Q番号はファイル内の既存Qの続き番号を使う
-   ※ 問題なしの項目（✅）はセクション6に記載しない
-   ※ 「因果チェーン（自動検出）」見出しが既にある場合は上書き更新する
-   ※ **技術用語（CMD, POLICY, TRIGGER, SCENARIO 等）を使わず**、ビジネス・業務の言葉で書く
-
-6. 以下の形式で結果を返す:
-   - 問題なし: 「因果チェック完了：問題なし」
-   - 問題あり: 追記したQ番号と内容のサマリー
+1. `python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py view \
+   <session>.dml.yaml --view=flow-causality` を Bash で実行し、フロー全件スライスを取得
+2. 同コマンドで `--view=policies` も取得
+3. `.claude/skills/eventstorming-facilitator/references/checks/causal-chain-completeness.md` を Read
+4. `.claude/skills/eventstorming-facilitator/references/checks/saga-completeness.md` を Read
+5. 各 .md の「LLM へのプロンプト」と「出力フォーマット」に従い、それぞれ評価
+6. 評価結果をマージし、業務的に途切れている箇所・補償フローが必要な箇所を
+   **ビジネス言語**（CMD/POLICY/TRIGGER などの技術用語を使わない）で列挙する
 """
 )
 ```
 
-サブエージェントの結果を受け取ったら、追記内容をユーザーに1行で報告する。
+---
+
+## ステップ 3 — 所見を questions[] に昇格
+
+Agent の所見のうち、業務判断が必要なものは `questions[]` に追加する：
+
+```bash
+python3 scripts/dmlctl.py add <session>.dml.yaml --to=questions --item='
+  id: Q13
+  topic: "<業務的に未解決な事項>"
+  why: "<決まると何が変わるか>"
+  status: open
+'
+```
+
+`### 因果チェーン（自動検出）` セクションは廃止。`questions[]` に直接追記し、HTML §5 に反映する。
+**技術用語（CMD / POLICY / TRIGGER / SCENARIO 等）を使わず、ビジネス言語で書くこと**。
+
+---
+
+## 結果報告
+
+ファシリテーター本体への返答：
+
+- 問題なし: 「因果チェック完了：問題なし」
+- 問題あり: 追加した Q 番号と要約（1 行）

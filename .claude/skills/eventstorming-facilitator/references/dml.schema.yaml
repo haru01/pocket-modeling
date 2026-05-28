@@ -59,6 +59,22 @@ properties:
   decisions:                                   # 要素⑥・任意（意思決定ログ：採用/不採用理由）
     type: array
     items: { $ref: "#/$defs/decision" }
+  # v5: MD 廃止に伴い散文・セッションメタ・Q/QRY/アクションを DML 内に統合（すべて任意）
+  session:                                     # セッションメタ（旧 .md ヘッダー相当）
+    $ref: "#/$defs/session"
+  story: { type: string }                      # ハッピーパス散文（旧 .md §1）
+  narratives:                                  # 代替シナリオ散文（旧 .md §2）
+    type: array
+    items: { $ref: "#/$defs/narrative" }
+  questions:                                   # オープンクエスチョン（旧 .md §5 / Q1..Qn）
+    type: array
+    items: { $ref: "#/$defs/question" }
+  actions:                                     # 次のアクション（旧 .md §4）
+    type: array
+    items: { $ref: "#/$defs/action" }
+  qrys:                                        # リードモデル候補カード（旧 .md §9）
+    type: array
+    items: { $ref: "#/$defs/qry" }
 
 $defs:
 
@@ -210,7 +226,14 @@ $defs:
       name: { $ref: "#/$defs/contextName" }
       # --- 拡張メタ（要素④・任意） ---
       type: { $ref: "#/$defs/bcType" }
+      label_ja: { type: string }                # v5・BC の日本語短縮名（HTML 見出しで `fulfillment（物流）` のように併記）
       vision: { type: string }
+      description: { type: string }             # v5・BC 散文（旧 .md §7 の「境界の理由・含むシナリオ」用の短い導入）
+      purpose: { type: string }                 # v5・BC の目的（HTML §7 にオレンジ "目的" ブロックで描画）
+      background: { type: string }              # v5・BC の背景（HTML §7 に青 "背景" ブロックで描画）
+      constraints:                              # v5・BC の制約（HTML §7 に紫 "制約" リストで描画）
+        type: array
+        items: { type: string }
       resp:                                     # 文字列 or 文字列配列
         oneOf:
           - type: string
@@ -236,6 +259,7 @@ $defs:
           pols:    { type: object, additionalProperties: { type: string } }
           qrys:    { type: object, additionalProperties: { type: string } }
           vos:     { type: object, additionalProperties: { type: string } }
+          states:  { type: object, additionalProperties: { type: string } }     # v5・AGG 状態名（UPPER_SNAKE）の日本語ラベル
       mod: { type: string }
       up:
         type: array
@@ -401,4 +425,78 @@ $defs:
       affects:                                  # 影響する DML 要素名（任意）
         type: array
         items: { type: string }
+      note: { type: string }
+
+  # ---------- Session（v5・セッションメタ：旧 .md ヘッダー相当） ----------
+  session:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }                      # セッション ID（例: 20260528-1209）
+      domain: { type: string }                  # 対象ドメイン名
+      status: { type: string }                  # フェーズ進捗（自由文字列）
+      goal: { type: string }                    # 当該セッションのゴール
+      started_at: { type: string }              # 開始日時（ISO 8601 推奨）
+      html_link: { type: string }               # 生成 HTML の相対パス（任意）
+      note: { type: string }
+
+  # ---------- Narrative（v5・代替シナリオ散文：旧 .md §2） ----------
+  # 任意で flows[].id と紐づく散文。flow に対応しないユーザー視点の代替シナリオも記述できる。
+  narrative:
+    type: object
+    additionalProperties: false
+    required: [id, prose]
+    properties:
+      id:                                       # 散文識別子（例: alt-1 / cancel-by-customer）
+        $ref: "#/$defs/contextName"
+      flow_id: { $ref: "#/$defs/contextName" }  # 対応する flows[].id（任意）
+      title: { type: string }                   # 表示用見出し（任意・省略時は flows[].title）
+      prose: { type: string }                   # 散文本文
+      note: { type: string }
+
+  # ---------- Question（v5・オープンクエスチョン：旧 .md §5 Q1..Qn） ----------
+  question:
+    type: object
+    additionalProperties: false
+    required: [id, topic]
+    properties:
+      id:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$"  # 例: Q1 / capacity-handover
+      topic: { type: string }                   # 確認したい事項（1 行）
+      why: { type: string }                     # なぜ確認したいか（任意）
+      status:
+        type: string
+        enum: [open, closed]                    # closed のときは decision_id で D{n} を指す
+      decision_id: { type: string }             # closed の場合の対応 decisions[].id
+      note: { type: string }
+
+  # ---------- Action（v5・次のアクション：旧 .md §4） ----------
+  action:
+    type: object
+    additionalProperties: false
+    required: [id, text]
+    properties:
+      id:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$"  # 例: A1 / fill-rules
+      text: { type: string }                    # アクション本文
+      owner: { type: string }                   # 担当者（任意）
+      done: { type: boolean }                   # 完了フラグ（任意・既定 false）
+      note: { type: string }
+
+  # ---------- QRY（v5・リードモデル候補カード：旧 .md §9） ----------
+  qry:
+    type: object
+    additionalProperties: false
+    required: [name, ctx]
+    properties:
+      name: { $ref: "#/$defs/pascalCase" }      # QRY 名（PascalCase）
+      ctx: { $ref: "#/$defs/contextName" }      # 所属 BC
+      purpose: { type: string }                 # 何のために存在する読み取りビューか
+      users: { type: string }                   # 利用者（業務ロール）
+      sources:                                  # ソース AGG / EVT 等
+        type: array
+        items: { type: string }
+      formula: { type: string }                 # 算出式・絞り込み条件（自然文）
       note: { type: string }

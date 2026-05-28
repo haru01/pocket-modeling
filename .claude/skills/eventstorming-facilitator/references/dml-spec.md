@@ -6,6 +6,23 @@ DDD モデリングのための情報圧縮言語。**構文 validity（形が�
 - 検証: `python3 .claude/skills/eventstorming-facilitator/scripts/validate_dml.py docs/eventstorming/<session>.dml.yaml`
 - フル例: [`../examples/sample.dml.yaml`](../examples/sample.dml.yaml)（コミュニティイベント参加ドメイン・`flows[]` / `decisions[]` を含む v4 参照例）
 
+## v5: 散文系トップレベルフィールド
+
+`.md` 廃止に伴い、旧 `.md` セクションが担っていた散文情報を DML 内部に統合した：
+
+| 旧 .md セクション | v5 で追加された DML フィールド |
+|---|---|
+| ヘッダー（Session/Domain/Status/Goal） | `session: { id, domain, goal, status, started_at, html_link }` |
+| §1 Happy Path Story | `story: \|` 散文文字列 |
+| §2 代替シナリオ散文 | `narratives[]`（id 必須、`flow_id` 任意で flows[] と紐付け） |
+| §4 次のアクション | `actions[]: { id, text, owner?, done? }` |
+| §5 オープンクエスチョン | `questions[]: { id, topic, why, status: open\|closed, decision_id? }` |
+| §7 BC 散文 | `ctxs[].description: \|` Markdown 風散文 |
+| §9 リードモデル候補 | `qrys[]: { name, ctx, purpose, users, sources, formula }` |
+
+各フィールドはすべて optional（進行中セッション中は欠落 OK）。AI からの編集は
+`scripts/dmlctl.py` の `set/add/remove` を使うと round-trip でコメント・引用形式を維持できる。
+
 ---
 
 ## 0. 記法の原則

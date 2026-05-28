@@ -2,7 +2,7 @@
 
 EventStorming セッションの全情報を **CSS 付箋風 HTML** として書き出してブラウザでリッチに表示するための仕様。
 
-**重要：AI は HTML を直接編集しない。** Python ビルダー（`.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py`）が `.md` ＋ 兄弟 `.dml.yaml` を解析して HTML を自動生成する。AI が編集するソース・オブ・トゥルースは **`.dml.yaml`（モデル本体・唯一の真実源・`ctxs[].lang` に語彙辞書も集約）** と `.md`（物語・QRY 散文・質問・次アクション・BC 散文）の 2 ファイル。
+**重要：AI は HTML を直接編集しない。** Python ビルダー（`.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py`）が **`.dml.yaml` 1 ファイル** を解析して HTML を自動生成する（v5 で `.md` パース廃止）。AI が編集するソース・オブ・トゥルースは `.dml.yaml`（モデル本体＋散文系フィールド `story`/`narratives`/`actions`/`questions`/`qrys`/`ctxs[].description` の唯一の真実源）。
 
 Claude Code の CLI/PC/スマホアプリではチャット本文の生 `<svg>` も Mermaid フェンスも描画されないため、別ファイル（HTML）として書き出してブラウザに任せる方針。
 
