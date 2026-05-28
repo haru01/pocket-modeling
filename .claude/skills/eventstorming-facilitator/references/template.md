@@ -7,9 +7,9 @@
 - HTML ビュー: [../../dist/eventstorming/{{eventstorming-YYYYMMDD-HHMM}}.html](../../dist/eventstorming/{{eventstorming-YYYYMMDD-HHMM}}.html) （Python ビルダーが自動生成する派生ファイル）
 - DML: [./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml](./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml) （モデル本体・純 YAML。**モデル唯一の真実源**）
 
-> このテンプレートは `.md` 側のセクション構成を示す。**§3（フロー）／§7（意思決定ログ）／§9（集約）の本文はビルダーが `.dml.yaml` から HTML を自動生成するため、`.md` 側には書かない**（注記のみ）。
+> このテンプレートは `.md` 側のセクション構成を示す。**§3（フロー）／§6（意思決定ログ）／§8（集約）の本文はビルダーが `.dml.yaml` から HTML を自動生成するため、`.md` 側には書かない**（注記のみ）。**§7 コンテキスト候補の LANGUAGE / 依存方向も DML `ctxs[].lang` / `up` / `dn` から生成**。
 >
-> セクション順は **「物語（§1〜§3）→ 用語集（§4・前置き）→ 次のアクション（§5・読者の次の動き）→ 横断課題（§6〜§7: 質問・決定）→ モデル層（§8〜§10: BC/AGG/QRY）→ メタ（§11: DML）」**。
+> セクション順は **「物語（§1〜§3）→ 次のアクション（§4・読者の次の動き）→ 横断課題（§5〜§6: 質問・決定）→ モデル層（§7〜§9: BC/AGG/QRY）→ メタ（§10: DML）」**。glossary（語彙の英→日変換）は HTML 上に独立セクションを持たず、DML `ctxs[].lang` を全 BC 走査してフロー図ラベルなどに機械的に適用される。
 
 ---
 
@@ -37,54 +37,16 @@
 
 ---
 
-## 4) 用語集
-
-日本語フロー図ラベルと英語 DML 識別子の対応を一覧で示す。新しい CMD/EVT/POLICY/Actor/AGG を追加したら必ず本表を更新する。
-
-> **§8〜§10（コンテキスト/集約/リードモデル）を読む前の前置き表**。読者が略語と日本語名の対応を把握した状態で後段のモデル層に進めるように、`.md` の早い位置に置く。
-
-### アクター
-| 日本語（フロー図） | 英語（DML） | 備考 |
-|------|------|------|
-| {{例: 主催者}} | {{Organizer}} | |
-
-### コマンド
-| 日本語（フロー図） | 英語（DML） | 備考 |
-|------|------|------|
-| {{例: 参加を申し込む}} | {{ApplyForEvent}} | |
-
-### イベント
-| 日本語（フロー図） | 英語（DML） | 備考 |
-|------|------|------|
-| {{例: 参加申し込みが完了した}} | {{ParticipationApplied}} | |
-
-### ポリシー
-| 日本語（フロー図） | 英語（DML） | 備考 |
-|------|------|------|
-| {{例: キャンセル繰り上げ}} | {{WaitlistPromotion}} | |
-
-### 集約
-| 日本語 | 英語（DML） | コンテキスト | 備考 |
-|------|------|------|------|
-| {{例: イベント}} | {{Event}} | {{event-planning}} | |
-
-### リードモデル
-| 日本語（フロー図） | 英語（DML） | 備考 |
-|------|------|------|
-| {{例: 残席数}} | {{GetRemainingCapacity}} | |
-
----
-
-## 5) 次のアクション
+## 4) 次のアクション
 
 - {{action 1}}
 - {{action 2}}
 
-> 読者（特にステークホルダー）がドキュメントを読んだあと **何をすればよいか** を最上部近くに示す。技術詳細（§6 以降）はオプショナルに読める構造。
+> 読者（特にステークホルダー）がドキュメントを読んだあと **何をすればよいか** を最上部近くに示す。技術詳細（§5 以降）はオプショナルに読める構造。
 
 ---
 
-## 6) オープンクエスチョン
+## 5) オープンクエスチョン
 
 - Q1. {{質問}} — 決まると何が変わるか: {{影響}}
 - Q2. {{質問}} — 決まると何が変わるか: {{影響}}
@@ -92,29 +54,26 @@
 クローズ済み:
 - [CLOSED] Q0. {{質問}} → {{解決内容}}
 
-> 因果チェック（causal-check）の自動検出結果は、本セクション末尾に `### 因果チェーン（自動検出）` 見出しで追記される。
+> 因果チェック（causal-check）の自動検出結果は、本セクション末尾に `### 因果チェーン（自動検出）` 見出しで追記される。**自動生成セクションのため手編集禁止**。DML を更新したうえで causal-check-agent を再実行し、その出力でブロックを置換する。
 
 ---
 
-## 7) 意思決定ログ
+## 6) 意思決定ログ
 
-> **DML 自動生成セクション**。本文は `.md` には書かない。`.dml.yaml` の `decisions[]`（`id`/`topic`/`chosen`/`options[]`/`affects[]`、各 option の `why`/`why_not`）から HTML §7 が **採用（緑）／不採用（灰・取り消し線）の比較カード** を自動描画する。`decisions[]` が空なら HTML §7 は見出しごと非表示。書き方ガイドは `references/dml-spec.md` §9 参照。
+> **DML 自動生成セクション**。本文は `.md` には書かない。`.dml.yaml` の `decisions[]`（`id`/`topic`/`chosen`/`options[]`/`affects[]`、各 option の `why`/`why_not`）から HTML §6 が **採用（緑）／不採用（灰・取り消し線）の比較カード** を自動描画する。`decisions[]` が空なら HTML §6 は見出しごと非表示。書き方ガイドは `references/dml-spec.md` §9 参照。
 
 ---
 
-## 8) コンテキスト候補
+## 7) コンテキスト候補
 
 > **命名規約**: `### english-slug（日本語名）` 形式を必須とする（例: `### store-front（店舗フロント）`）。HTML レンダー時にこの全体が `<h3>` に表示される。
+>
+> **LANGUAGE / 依存方向（UPSTREAM/DOWNSTREAM）は DML `ctxs[].lang` / `up` / `dn` が唯一の真実源**。`.md` 側には書かない（重複管理を避けるため）。ビルダーが DML から merge して HTML §7 に描画する。`.md` 側には散文（境界の理由・含むシナリオ・目的・背景・制約）のみ書く。さらに `ctxs[].lang` には本 BC で扱う AGG/Actor/CMD/EVT/QRY 等の英→日辞書を集約することで、glossary_index も自動生成される。
 
 ### {{english-slug}}（{{日本語名}}）
 
 - 境界の理由: {{なぜここでBCが分かれるか}}
 - 含むシナリオ: {{scenario-1}}, {{scenario-2}}
-- **依存方向**:
-  - UPSTREAM: {{context-A}} ({{Customer-Supplier | Conformist | Shared-Kernel | ACL}})
-  - DOWNSTREAM: {{context-B}} ({{関係タイプ}})
-  - （依存なしの場合は `(none)` を明示）
-- LANGUAGE: `{{言葉}}` — このBCでの意味: {{定義}}
 
 #### 目的
 
@@ -130,9 +89,9 @@
 
 ---
 
-## 9) 集約候補
+## 8) 集約候補
 
-> **DML 自動生成セクション**。本文（属性・状態遷移・不変条件・エラーケース）は `.md` には書かない。`.dml.yaml` の `aggs[]`（`name`/`ctx`/`purpose`/`background`/`constraints[]`/`states`/`transitions[]`/`attrs[]`/`events[]`）と該当 `scs[].rules[]`/`scs[].errs[]` を解析して HTML §9 が **属性表 / イベントペイロード表 / 不変条件（緑）/ エラーケース（赤）/ 状態遷移** を自動描画する。命名規約と書き方ガイドは `references/dml-spec.md` §4 参照。
+> **DML 自動生成セクション**。本文（属性・状態遷移・不変条件・エラーケース）は `.md` には書かない。`.dml.yaml` の `aggs[]`（`name`/`ctx`/`purpose`/`background`/`constraints[]`/`states`/`transitions[]`/`attrs[]`/`events[]`）と該当 `scs[].rules[]`/`scs[].errs[]` を解析して HTML §8 が **属性表 / イベントペイロード表 / 不変条件（緑）/ エラーケース（赤）/ 状態遷移** を自動描画する。命名規約と書き方ガイドは `references/dml-spec.md` §4 参照。
 
 `.md` 側に補足の散文コメントを書きたい場合のみ、以下の形で追記する（必須ではない）。
 
@@ -145,7 +104,7 @@
 
 ---
 
-## 10) リードモデル候補
+## 9) リードモデル候補
 
 ### {{QRYName}}（{{日本語名}}）
 - **利用者**: {{アクター名 または ポリシー名}}
@@ -155,8 +114,8 @@
 
 ---
 
-## 11) DML
+## 10) DML
 
-DML 全文は別ファイル [`./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml`](./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml)（YAML 直書き・フェンス不要）に保持する。`ctxs` / `aggs` / `scs` / `pols` の 4 リスト（任意で `domains` / `flows` / `decisions`）、識別子は英語。トップレベル `aggs[]` に AGG 詳細（`name`/`ctx`/`purpose`/`background`/`constraints`/`states`/`transitions`/`attrs`/`events`）を集約し、`ctxs[].aggs` は AGG 名（PascalCase 文字列）の軽量名簿として保持する。構文の機械検証は `references/dml.schema.yaml`、設計判断・哲学は `references/dml-spec.md`、フル参照例は `examples/sample.dml.yaml`。HTML §11 にはこの `.dml.yaml` の内容が描画される。
+DML 全文は別ファイル [`./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml`](./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml)（YAML 直書き・フェンス不要）に保持する。`ctxs` / `aggs` / `scs` / `pols` の 4 リスト（任意で `domains` / `flows` / `decisions`）、識別子は英語。トップレベル `aggs[]` に AGG 詳細（`name`/`ctx`/`purpose`/`background`/`constraints`/`states`/`transitions`/`attrs`/`events`）を集約し、`ctxs[].aggs` は AGG 名（PascalCase 文字列）の軽量名簿として保持する。`ctxs[].lang` には本 BC で扱う AGG/Actor/CMD/EVT/QRY 等の英→日辞書を集約する（glossary_index がここから自動生成される）。構文の機械検証は `references/dml.schema.yaml`、設計判断・哲学は `references/dml-spec.md`、フル参照例は `examples/sample.dml.yaml`。HTML §10 にはこの `.dml.yaml` の内容が描画される。
 
 > このセクションは `.dml.yaml` へのリンク参照のみとし、DML 本文（YAML）は **埋め込まない**。

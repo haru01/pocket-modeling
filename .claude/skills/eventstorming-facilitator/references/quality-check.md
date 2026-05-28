@@ -63,8 +63,8 @@ decisions[] の各エントリ d について：
 | S4 | `.dml.yaml` の `flows[]` に代替シナリオ（`kind: alt`）が 1 件以上あるか（推奨） |
 | **S5-attr** | **`.dml.yaml` の `aggs[]` 各エントリに `attrs[]` が 1 件以上記述されているか**。未記述はホットスポット候補として返す: `[?] S5-attr_<AggName>: aggs[].attrs[] が未記述` |
 | **S5-evt** | **`.dml.yaml` の `aggs[]` 各エントリに `events[]` が 1 件以上、各 event に `params[]` が記述されているか**。未記述はホットスポット候補として返す: `[?] S5-evt_<AggName>: aggs[].events[] が未記述`、または `[?] S5-evt_<AggName>.<EventName>: params[] が未記述` |
-| S6 | セクション8（コンテキスト候補）の各 BC に「依存方向」項目（UPSTREAM / DOWNSTREAM）が存在するか。**§8 は AI/人間が `.md` 本文を書くセクション**であり、`.dml.yaml` 自動生成マーカーへの上書きは禁止 |
-| S7 | セクション4（用語集）が存在し、`scs[]`/`pols[]`/`aggs[]` で使われている英語識別子（actor / cmd / evt / agg / pol / qry）がすべて登録されているか。用語集は §8〜§10 を読む前の前置き表として §4 に置く |
+| S6 | セクション7（コンテキスト候補）の各 BC が `.dml.yaml` `ctxs[]` に存在し、`up` / `dn`（依存方向）が記述されているか。LANGUAGE / 依存方向は DML が真実源で `.md` §7 には書かない（散文のみ） |
+| S7 | DML `scs[]`/`pols[]`/`aggs[]` で使われている英語識別子（actor / cmd / evt / agg / pol / qry）が **いずれかの `ctxs[].lang`** に日本語ラベル付きで登録されているか。`ctxs[].lang` が glossary_index の真実源（HTML 用語集セクションは廃止済み） |
 | **S8** | **`.dml.yaml` の `aggs[]` 各エントリに `purpose` があり、本文が 30 字以上書かれているか**。空・未記入・短すぎる項目は **自動修正せず**、ホットスポット候補 `[?-WHY] S8_<AggName>: 目的が未記入または短すぎる` として返す |
 | **S9** | **`aggs[].name` で宣言された AGG が `scs[].agg` でも参照されているか（孤立 AGG の検出）／逆に `scs[].agg` が `aggs[].name` に存在するか（未定義 AGG 参照の検出）**。違反は **自動修正せず**、ホットスポット候補として返す: `[?] S9_<AggName>: aggs[] に宣言されているが scs[].agg で未参照（孤立 AGG）` または `[?] S9_<AggName>: scs[].agg で参照されているが aggs[] に未宣言` |
 

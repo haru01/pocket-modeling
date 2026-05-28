@@ -35,11 +35,25 @@ ctxs:
     type: FEATURE
     sub: catalog-and-sales
     vision: "会員向けの新品/中古販売 EC。注文起点で下取りを束ねる"
+    # lang はカテゴリ別 dict-of-dicts。本 BC で扱う語彙を種別ごとに分けて
+    # 英→日ラベル（短い表記）として登録する。HTML §7 のタイプ別表と
+    # glossary_index（フロー図ラベル日本語化）はここから機械的に生成される。
+    # 詳細な説明文は note / purpose / background 等の別フィールドに書く。
     lang:
-      Order: "新品/中古購入と下取りを 1 単位に束ねる注文。下取り進行と支払い進行を統合して追跡する親集約"
-      Quote: "オンライン即時査定で算出される概算買取見積。注文時に確定額の根拠として参照される"
-      Member: "EC 会員。同時に買い手かつ売り手"
-      Item: "新品または中古の商品ライン項目（カタログ商品の参照）"
+      aggs:
+        Order: "注文"
+        Quote: "概算見積"
+        Item: "商品"
+      actors:
+        Member: "会員"
+        System: "システム"
+      cmds:
+        RequestQuote: "概算査定を要求する"
+        PlaceOrder: "注文を確定する"
+        ExpireQuote: "概算見積の有効期限を切る"
+      evts:
+        EstimateCalculated: "概算査定額が算出された"
+        OrderPlaced: "注文された"
     up: []
     dn:
       - { ctx: trade-in,    rel: Customer-Supplier, note: "注文に下取契約を要求" }
@@ -52,11 +66,48 @@ ctxs:
     sub: trade-in-core
     vision: "旧機種の受領から正式査定額確定までを所有"
     lang:
-      TradeIn: "1 件の下取契約。旧機種 1 点と紐づき、linked→shipped→received→inspected→appraised→approved/rejected→settled までライフサイクル全体を保有"
-      Order: "store-front の Order を参照する識別子（こちらでは状態を変更しない）"
-      Appraisal: "TradeIn に内包される正式査定額の確定情報（独立集約ではなく Value Object として保持）"
-      EstimateAmount: "Quote から複製される概算額。受領後に Final と比較される基準値"
-      FinalAmount: "検品後に査定スタッフが確定する正式買取額"
+      aggs:
+        TradeIn: "下取契約"
+      vos:
+        Appraisal: "正式査定"
+        EstimateAmount: "概算額"
+        FinalAmount: "正式買取額"
+      actors:
+        Appraiser: "査定スタッフ"
+        ShippingPartner: "配送業者"
+      cmds:
+        CancelTradeIn: "下取をキャンセルする"
+        ApproveAppraisal: "査定額を承認する"
+        RejectAppraisal: "査定額を拒否する"
+        ShipTradeInItem: "旧機種を発送する"
+        ReceiveTradeInItem: "旧機種を受領する"
+        CompleteInspection: "検品を完了する"
+        DecideFinalAppraisal: "正式査定額を確定する"
+        DetectTradeInTimeout: "下取タイムアウトを検知する"
+        SettleTradeIn: "買取を成立させる"
+        ReturnTradeInItem: "旧機種を返送する"
+      evts:
+        TradeInCancelled: "下取がキャンセルされた"
+        AppraisalApproved: "査定額が承認された"
+        AppraisalRejected: "査定額が拒否された"
+        TradeInItemShipped: "旧機種が発送された"
+        TradeInItemReceived: "旧機種が受領された"
+        InspectionCompleted: "検品が完了した"
+        FinalAppraisalDecided: "正式査定額が確定した"
+        AppraisalResultNotified: "査定結果が通知された"
+        TradeInSettled: "買取が成立した"
+        TradeInTimedOut: "下取がタイムアウトした"
+        TradeInItemReturned: "旧機種が返送された"
+        SuspiciousItemDetected: "偽物・盗品疑いを検出した"
+        FinalAppraisalDecidedWithSignificantReduction: "大幅減額で正式査定額が確定した"
+        SupervisorApprovalRequested: "業務監督者の承認が要求された"
+      pols:
+        NotifyOnAppraisalDecided: "査定確定時に会員へ通知"
+        SettleOnAppraisalApproved: "承認時に買取成立"
+        ReturnOnAppraisalRejected: "拒否時に旧機種返送"
+        HoldNotificationOnSignificantReduction: "大幅減額時に通知保留＋監督者エスカレ"
+        ConvertOnAppraisalRejected: "拒否時に通常購入へ切替"
+        ConvertOnTimeout: "タイムアウト時に通常購入へ切替"
     up:
       - { ctx: store-front, rel: Customer-Supplier }
     dn:
@@ -68,10 +119,22 @@ ctxs:
     sub: payment
     vision: "差額与信から残金請求・返金までの決済責務"
     lang:
-      Authorization: "注文の差額（または通常購入切替後の全額）を支払い保証する与信ホールド"
-      Order: "store-front の Order を参照する識別子。amount の根拠"
-      HoldAmount: "現時点でカード会社に確保している与信金額"
-      CapturedAmount: "実際に請求した金額"
+      aggs:
+        Authorization: "与信"
+      vos:
+        HoldAmount: "与信額"
+        CapturedAmount: "請求済額"
+      cmds:
+        AuthorizeDifferential: "差額を仮押さえする"
+        ConvertOrderToFullPurchase: "注文を通常購入に切り替える"
+        ChargeRemainingAmount: "残金を決済する"
+      evts:
+        DifferentialAuthorized: "差額が仮押さえされた"
+        OrderConvertedToFullPurchase: "注文が通常購入に切り替わった"
+        RemainingChargeSettled: "残金が決済された"
+      pols:
+        AuthorizeOnOrderPlaced: "注文確定時に差額与信"
+        ChargeRemainingOnConverted: "通常購入切替時に残金請求"
     up:
       - { ctx: store-front, rel: Customer-Supplier }
       - { ctx: trade-in, rel: Customer-Supplier }
@@ -82,9 +145,20 @@ ctxs:
     sub: fulfillment
     vision: "新品の出荷指示・配送追跡、および旧機種の返送実行"
     lang:
-      Shipment: "1 商品の出荷単位。outbound（新品の客への発送）と return（旧機種の客への返送）の両方を扱う"
-      Order: "store-front の Order を参照する識別子。出荷品目の根拠"
-      CarrierTrackingId: "外部運送会社が払い出す追跡 ID（一意）"
+      aggs:
+        Shipment: "出荷"
+      vos:
+        CarrierTrackingId: "追跡 ID"
+      cmds:
+        ShipNewItem: "新品を出荷する"
+        ConfirmDelivery: "新品を届ける"
+        InstructShipment: "出荷を指示する"
+      evts:
+        ShipmentInstructed: "出荷が指示された"
+        NewItemShipped: "新品が出荷された"
+        NewItemDelivered: "新品が配送完了した"
+      pols:
+        InstructShipmentOnSettled: "成立時に出荷指示"
     up:
       - { ctx: store-front, rel: Customer-Supplier }
       - { ctx: trade-in, rel: Customer-Supplier }

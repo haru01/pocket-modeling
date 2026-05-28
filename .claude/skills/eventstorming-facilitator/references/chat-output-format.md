@@ -11,7 +11,7 @@ Claude Code（CLI/PCアプリ/スマホアプリ）はインライン `<svg>` / 
 | モード | いつ | 内容 |
 |---|---|---|
 | **フェーズ内往復** | フェーズが完了していない、細かい質問・修正・確認 | Markdown のみ・短く |
-| **フェーズ完了** | フェーズの主要項目が確定 (ユーザー OK or 主要項目揃い) | Markdown + 構造化テーブル + DML 抜粋（`ctxs` / `aggs` / `scs` / `pols` の 4 リストから差分） + 用語集差分 + HTMLパス案内 |
+| **フェーズ完了** | フェーズの主要項目が確定 (ユーザー OK or 主要項目揃い) | Markdown + 構造化テーブル + DML 抜粋（`ctxs` / `aggs` / `scs` / `pols` の 4 リストから差分。`ctxs[].lang` 追加識別子も含む） + HTMLパス案内 |
 
 判定基準は §4。
 
@@ -34,7 +34,6 @@ Claude Code（CLI/PCアプリ/スマホアプリ）はインライン `<svg>` / 
 ルール:
 - **HTML 更新しない**（フェーズ完了まで保留）
 - **DML 抜粋出さない**
-- **用語集出さない**
 - ホットスポット / 未確認事項は **新規・更新があったもののみ** を出す。変化なしならセクションごと省略
 - 本文末尾に問い 1 つで終わる (複数質問はしない)
 - 末尾の `?` シグナル案内は省略可 (毎ターン繰り返さなくていい。初回 + フェーズ完了時のみ)
@@ -67,11 +66,11 @@ Claude Code（CLI/PCアプリ/スマホアプリ）はインライン `<svg>` / 
 トップレベル `aggs[]` には AGG メタ（name/ctx/purpose/states 等）、`ctxs[].aggs` には AGG 名（PascalCase 文字列）の名簿}
 \`\`\`
 
-### 用語集の追加
+### 新規ラベルの追加（DML `ctxs[].lang` への追加分）
 
-| 日本語 | 英語 | 種別 |
-|---|---|---|
-| <jp> | <En> | <kind> |
+| 英語識別子 | 日本語ラベル | 所属 BC | 種別 |
+|---|---|---|---|
+| <EnId> | <jp> | <bc-slug> | <kind> |
 
 ### ホットスポット
 - H{n}. [?] <設計判断>: <理由>
@@ -91,8 +90,8 @@ Claude Code（CLI/PCアプリ/スマホアプリ）はインライン `<svg>` / 
 ルール:
 - **HTML ファイルは Write/Edit で更新** し、チャット本文にはパスのみ案内
 - 代替シナリオがある場合は、テーブル形式のフローを **複数並べる** (ハッピーパス + 代替1 + 代替2)
-- DML 抜粋は §5 の粒度ルールに従う
-- 用語集は **新規追加分のみ**。既出の対応は出さない
+- DML 抜粋は §4 の粒度ルールに従う
+- 新規ラベル（`ctxs[].lang` 追加分）は **新規追加分のみ**。既出の識別子は出さない
 - 表内の付箋ラベルは記号を付けず日本語ラベルそのままで書く。種別は表ヘッダーの絵文字＋カラム名で識別
 
 ### 構造化テーブルの書き方
@@ -161,13 +160,13 @@ DML 抜粋は ` ```dml ` コードブロックで囲む。
 | フェーズ | HTML 操作 |
 |---|---|
 | 1. スコープ | HTML はまだ作らない |
-| 2. ストーリー | `.md` を **Write で新規作成** + `Bash open` で初回起動。HTML §1〜§2 + 進捗バー + 用語集スケルトン入り |
-| 3. イベント発見 | `.dml.yaml` を **Edit で `scs[]` の仮 entries 追加**。HTML §3 はビルダーが自動再生成（`flows[]` が空ならプレースホルダ） |
-| 4. CMD-EVT-POLICY | `.dml.yaml` を **Edit で `scs`/`pols`/`flows[]`（happy + 代替 1〜2）追加** → `.md` §4 用語集を Edit |
-| 4.5. BC 境界 | `.dml.yaml` を **Edit で `lang` 追加**。HTML §8 はビルダーが自動再生成 |
+| 2. ストーリー | `.md` を **Write で新規作成** + `Bash open` で初回起動。HTML §1〜§2 + 進捗バー入り |
+| 3. イベント発見 | `.dml.yaml` を **Edit で `scs[]` の仮 entries ＋ `ctxs[].lang` に新規識別子追加**。HTML §3 はビルダーが自動再生成（`flows[]` が空ならプレースホルダ） |
+| 4. CMD-EVT-POLICY | `.dml.yaml` を **Edit で `scs`/`pols`/`flows[]`（happy + 代替 1〜2）追加 ＋ `ctxs[].lang` 更新**（HTML 用語集セクションは廃止済み） |
+| 4.5. BC 境界 | `.dml.yaml` を **Edit で `lang` 追加**。HTML §7 はビルダーが自動再生成 |
 | 4.6. 目的・背景・制約 | `.dml.yaml` を **Edit で `aggs[]` に `purpose`/`background`/`constraints` 追加** |
-| 5. RULE-ERR + 属性・イベントペイロード | `.dml.yaml` を **Edit で `scs[].rules`/`errs` + `aggs[].attrs`/`events[].params` を追加**。HTML §9 はビルダーが自動再生成 |
-| 6. 意思決定ログ | `.dml.yaml` を **Edit で `decisions[]` 追加**。HTML §7 はビルダーが自動再生成 |
+| 5. RULE-ERR + 属性・イベントペイロード | `.dml.yaml` を **Edit で `scs[].rules`/`errs` + `aggs[].attrs`/`events[].params` を追加**。HTML §8 はビルダーが自動再生成 |
+| 6. 意思決定ログ | `.dml.yaml` を **Edit で `decisions[]` 追加**。HTML §6 はビルダーが自動再生成 |
 | 7. 整合性チェック | HTML を **Edit で全セクション最終化**（実際の Edit は `.md`/`.dml.yaml` 側） |
 
 HTML は MD と並行して常に最新状態を保つ。`open` で起動した外部ブラウザは `<meta http-equiv="refresh">` で 3 秒ごとに自動リロードして反映される。
@@ -193,8 +192,8 @@ HTML は MD と並行して常に最新状態を保つ。`open` で起動した�
 
 | 言い方 | 解釈 | 反映先 |
 |---|---|---|
-| 「E3 を"招待送信済"に変えて」 | EVT のラベル変更 | DML の `evt` リネーム（scs/pols 全箇所）+ `flows[].steps[]` 参照は scs/pols 名なので影響なし。HTML §3 と §4 用語集はビルダーが自動再生成 |
-| 「主催者BCに Admin を追加」 | レーンへの actor 追加 | 該当 scenario に `actor: Admin` + 用語集追加。HTML はビルダーが自動再生成 |
+| 「E3 を"招待送信済"に変えて」 | EVT のラベル変更 | DML の `evt` リネーム（scs/pols 全箇所）＋ `ctxs[].lang` の該当キー更新。`flows[].steps[]` 参照は scs/pols 名なので影響なし。HTML §3 はビルダーが自動再生成 |
+| 「主催者BCに Admin を追加」 | レーンへの actor 追加 | 該当 scenario に `actor: Admin` ＋ 所属 BC の `ctxs[].lang` に `Admin: "管理者"` 追加。HTML はビルダーが自動再生成 |
 | 「C2 と E2 の間に メール送信 を挟んで」 | CMD 挿入 | 該当 scenario に `cmd: SendMail` or 新 scenario 追加 + `flows[].steps[]` に新 step を挿入 |
 | 「E4 を消して」 | 削除 | DML から該当 `evt` 削除 + 該当 scenario の `flows[].steps[]` 参照を更新。下流に影響あれば `[?]` 警告 |
 | 「P1 を notifications BC に動かして」 | POLICY 移動 | policy の `ctx` を変更。`flows[].steps[]` の参照は pols[].name なので影響なし。HTML §3 のレーン分割はビルダーが自動再生成 |
@@ -205,7 +204,7 @@ HTML は MD と並行して常に最新状態を保つ。`open` で起動した�
 
 1. ユーザー指示を **対象アイテム** (A1/C2/E3 や日本語ラベル) と **操作** (追加/削除/変更/移動/リネーム) に分解
 2. **テキストで確認**: 「`E3 = 参加申し込みが完了した` を `招待送信済` に変更し、DML の `evt: ParticipationApplied` を `evt: InvitationSent` にリネームします。OK?」
-3. ユーザー OK → `.dml.yaml`（DML）を先に `Edit` → `.md` の §4 用語集を `Edit` で一貫して更新
+3. ユーザー OK → `.dml.yaml`（DML）を `Edit`（`ctxs[].lang` 含む）で一貫して更新
 4. HTML は触らない（ビルダーが自動再生成）
 5. 品質チェックサブエージェント (`quality-check-agent.md`) を起動（`.md` ＋ 兄弟 `.dml.yaml` を対象。HTML は対象外）
 6. **フェーズ完了相当の変更なら** チャット本文に構造化テーブル付き完了メッセージ。**細かい変更なら** テキスト確認のみ

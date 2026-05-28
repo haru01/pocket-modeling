@@ -452,27 +452,6 @@
     pre.code .v-err { color: #EF9A9A; }              /* 赤: error type */
     pre.code .v-meta { color: #80CBC4; font-style: italic; }  /* 青緑: v2 メタ（type/vision/subdomain 等） */
 
-    /* === 用語集テーブル === */
-    table.glossary {
-      width: 100%; border-collapse: collapse; margin: 8px 0 16px 0;
-      font-size: 15px; background: #FFFFFF;
-      border: 1px solid #CFD8DC; border-radius: 4px; overflow: hidden;
-    }
-    table.glossary th {
-      background: #455A64; color: #FFF; padding: 8px 12px;
-      text-align: left; font-size: 14px;
-    }
-    table.glossary td {
-      padding: 6px 12px; border-top: 1px solid #ECEFF1;
-    }
-    /* code-cell は識別子セル。Command の青と混同しないよう kind-neutral な
-       Blue Gray 900 にする（用語集の各カテゴリ行が全て Command 色になる drift を解消）。 */
-    table.glossary td.code-cell {
-      font-family: 'SF Mono', Menlo, monospace; color: #37474F;
-    }
-    .glossary-section { margin: 12px 0; }
-    .glossary-section h3 { color: #455A64; }
-
     /* === 次のアクション === */
     .next-actions {
       padding: 12px 16px; background: #E8F5E9;
@@ -514,6 +493,36 @@
     }
     .inv-section .why, .err-section .why,
     .agg-subsection .why { color: #607D8B; font-size: 12px; font-style: italic; }
+
+    /* === BC カードの LANGUAGE タイプ別表 === */
+    .lang-section {
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: #FAFAFA;
+      border: 1px solid #ECEFF1;
+      border-radius: 4px;
+    }
+    .lang-section-label { color: #455A64; font-size: 12px; margin-bottom: 6px; }
+    .lang-section-label strong { color: #37474F; letter-spacing: 0.5px; }
+    .lang-cat { margin: 8px 0 12px 0; }
+    .lang-cat h4 {
+      margin: 0 0 4px 0; font-size: 12px; color: #546E7A;
+      text-transform: none; font-weight: 700;
+    }
+    table.lang-table {
+      width: 100%; border-collapse: collapse;
+      font-size: 13px; background: #FFFFFF;
+      border: 1px solid #ECEFF1; border-radius: 3px;
+    }
+    table.lang-table th {
+      background: #ECEFF1; color: #37474F; padding: 4px 10px;
+      text-align: left; font-size: 11px; font-weight: 700;
+    }
+    table.lang-table td { padding: 4px 10px; border-top: 1px solid #ECEFF1; }
+    table.lang-table td.code-cell {
+      font-family: 'SF Mono', Menlo, monospace; color: #37474F;
+      width: 45%;
+    }
 
     /* === 意思決定ログ === */
     /* decision-card は Policy と同じ紫系（note.policy border #7B1FA2）に統一。

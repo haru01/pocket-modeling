@@ -2,7 +2,7 @@
 
 - Session: eventstorming-20260528-1209
 - Domain: タップカメラ（シュッピン株式会社）— 下取交換（新品/中古購入時に旧機種を下取り）
-- Status: **フェーズ 6 完了（意思決定ログ）＋ 分岐 CMD 2 件追加（CompleteInspection / DecideFinalAppraisal）＋ セクション再編 v2（次のアクションを §5 に昇格）**
+- Status: **フェーズ 6 完了（意思決定ログ）＋ 分岐 CMD 2 件追加（CompleteInspection / DecideFinalAppraisal）＋ セクション再編 v3（§4 用語集を廃止し DML `ctxs[].lang` から glossary 自動生成、§5 以降を §4–§10 に繰り上げ）**
 - Goal: EventStorming スキルの動作検証（フェーズ網羅・粒度中・改善メモ並走）
 - HTML ビュー: [../../dist/eventstorming/eventstorming-20260528-1209.html](../../dist/eventstorming/eventstorming-20260528-1209.html) （Python ビルダーが自動生成する派生ファイル）
 - DML: [./eventstorming-20260528-1209.dml.yaml](./eventstorming-20260528-1209.dml.yaml) （モデル本体・純 YAML。**モデル唯一の真実源**）
@@ -51,109 +51,20 @@
 
 ---
 
-## 4) 用語集
-
-日本語フロー図ラベルと英語 DML 識別子の対応を一覧で示す。新しい CMD/EVT/POLICY/Actor を追加したら必ず本表を更新する。**セクション 7〜9（コンテキスト・集約・リードモデル）を読む前に用語の対応を把握するための前置き表**として §4 に配置。
-
-### アクター
-| 日本語（フロー図） | 英語（DML） | 備考 |
-|------|------|------|
-| 会員 | Member | EC 会員。買い手かつ売り手 |
-| 査定スタッフ | Appraiser | 物流センターで検品・査定を行う担当 |
-| システム | System | 自動処理（概算査定・タイムアウト判定・通知・出荷指示） |
-| 配送業者 | ShippingPartner | 外部運送会社。配送状態の追跡イベント供給源 |
-
-### コマンド
-| 日本語（フロー図） | 英語（DML） | 備考 |
-|------|------|------|
-| 概算査定を要求する | RequestQuote | Member 起点 |
-| 注文を確定する | PlaceOrder | Member 起点。下取り付き |
-| 下取をキャンセルする | CancelTradeIn | Member 起点（H6 関連） |
-| 査定額を承認する | ApproveAppraisal | Member 起点 |
-| 査定額を拒否する | RejectAppraisal | Member 起点 |
-| 旧機種を発送する | ShipTradeInItem | Member 起点（伝票登録時刻） |
-| 旧機種を受領する | ReceiveTradeInItem | Appraiser 起点 |
-| 検品を完了する | CompleteInspection | Appraiser 起点（brs 分岐 CMD） |
-| 正式査定額を確定する | DecideFinalAppraisal | Appraiser 起点（brs 分岐 CMD） |
-| 下取タイムアウトを検知する | DetectTradeInTimeout | System timer 起点（H1 関連） |
-| 新品を出荷する | ShipNewItem | 倉庫オペレーション |
-| 新品を届ける | ConfirmDelivery | ShippingPartner 起点 |
-| 差額を仮押さえする | AuthorizeDifferential | POL `AuthorizeOnOrderPlaced` 内 |
-| 買取を成立させる | SettleTradeIn | POL `SettleOnAppraisalApproved` 内 |
-| 出荷を指示する | InstructShipment | POL `InstructShipmentOnSettled` 内 |
-| 旧機種を返送する | ReturnTradeInItem | POL `ReturnOnAppraisalRejected` 内 |
-| 注文を通常購入に切り替える | ConvertOrderToFullPurchase | POL `ConvertOnAppraisalRejected`/`ConvertOnTimeout` 内 |
-| 残金を決済する | ChargeRemainingAmount | POL `ChargeRemainingOnConverted` 内 |
-
-### イベント
-| 日本語（フロー図） | 英語（DML） | 備考 |
-|------|------|------|
-| 概算査定額が算出された | EstimateCalculated | オンライン即時査定の結果 |
-| 注文された | OrderPlaced | 下取付き注文の確定 |
-| 下取がキャンセルされた | TradeInCancelled | 会員主導の下取取消 |
-| 査定額が承認された | AppraisalApproved | 会員が正式査定額を受諾 |
-| 査定額が拒否された | AppraisalRejected | 会員が正式査定額を拒否 |
-| 旧機種が発送された | TradeInItemShipped | 会員→タップカメラ |
-| 旧機種が受領された | TradeInItemReceived | 物流センター着 |
-| 検品が完了した | InspectionCompleted | 動作確認・外観検査の完了 |
-| 正式査定額が確定した | FinalAppraisalDecided | 検品結果に基づく確定額 |
-| 査定結果が通知された | AppraisalResultNotified | 会員への通知（policy 化候補） |
-| 買取が成立した | TradeInSettled | 会員承認後の確定（policy 化候補） |
-| 下取がタイムアウトした | TradeInTimedOut | 旧機種未着の期限超過（H1 関連） |
-| 旧機種が返送された | TradeInItemReturned | 拒否/キャンセル時の返送 |
-| 差額が仮押さえされた | DifferentialAuthorized | 与信ホールド（H2 関連） |
-| 注文が通常購入に切り替わった | OrderConvertedToFullPurchase | 下取失敗時 |
-| 残金が決済された | RemainingChargeSettled | 切替後の追加課金 |
-| 出荷が指示された | ShipmentInstructed | fulfillment への指示（policy 化候補） |
-| 新品が出荷された | NewItemShipped | 倉庫出庫 |
-| 新品が配送完了した | NewItemDelivered | 顧客着（運送会社の追跡イベント） |
-| 偽物・盗品疑いを検出した | SuspiciousItemDetected | **`CompleteInspection` の分岐 EVT #1**（古物営業法 15 条対応） |
-| 大幅減額で正式査定額が確定した | FinalAppraisalDecidedWithSignificantReduction | **`DecideFinalAppraisal` の分岐 EVT #2**（>20% 減額時の社内統制パス） |
-| 業務監督者の承認が要求された | SupervisorApprovalRequested | `HoldNotificationOnSignificantReduction` が emit |
-
-### ポリシー
-| 日本語（フロー図） | 英語（DML） | trg → cmd → evt |
-|------|------|------|
-| 注文確定時に差額与信 | AuthorizeOnOrderPlaced | OrderPlaced → AuthorizeDifferential → DifferentialAuthorized |
-| 査定確定時に会員へ通知 | NotifyOnAppraisalDecided | FinalAppraisalDecided → （cmd 無し）→ AppraisalResultNotified |
-| 承認時に買取成立 | SettleOnAppraisalApproved | AppraisalApproved → SettleTradeIn → TradeInSettled |
-| 成立時に出荷指示 | InstructShipmentOnSettled | TradeInSettled → InstructShipment → ShipmentInstructed |
-| 拒否時に旧機種返送 | ReturnOnAppraisalRejected | AppraisalRejected → ReturnTradeInItem → TradeInItemReturned |
-| 拒否時に通常購入へ切替 | ConvertOnAppraisalRejected | AppraisalRejected → ConvertOrderToFullPurchase → OrderConvertedToFullPurchase |
-| タイムアウト時に通常購入へ切替 | ConvertOnTimeout | TradeInTimedOut → ConvertOrderToFullPurchase → OrderConvertedToFullPurchase |
-| 通常購入切替時に残金請求 | ChargeRemainingOnConverted | OrderConvertedToFullPurchase → ChargeRemainingAmount → RemainingChargeSettled |
-| 大幅減額時に通知保留＋監督者エスカレ | HoldNotificationOnSignificantReduction | FinalAppraisalDecidedWithSignificantReduction → （cmd 無し）→ SupervisorApprovalRequested |
-
-### 集約
-| 日本語 | 英語（DML） | コンテキスト | 備考 |
-|---|---|---|---|
-| 概算見積 | Quote | store-front | 概算査定の結果記録 |
-| 注文 | Order | store-front | 新品/中古購入と下取りを束ねる注文 |
-| 下取契約 | TradeIn | trade-in | 旧機種ライフサイクル全体（受領前後） |
-| 与信 | Authorization | payment | 差額仮押さえ・切替・残金請求 |
-| 出荷 | Shipment | fulfillment | 新品出荷・配送追跡 |
-
-### リードモデル
-| 日本語（フロー図） | 英語（DML） | 備考 |
-|------|------|------|
-| <!-- TODO フェーズ 5 で追記 --> | | |
-
----
-
-## 5) 次のアクション
+## 4) 次のアクション
 
 - フェーズ 4.5：BC 間で意味が変わる言葉（特に `Order` / `TradeIn` / `Quote`）の `lang` 充実 — 完了
 - フェーズ 4.6：各 AGG（`Quote`/`Order`/`TradeIn`/`Authorization`/`Shipment`）の purpose / background / constraints を言語化 — 完了
 - フェーズ 5：`scs[].rules` / `scs[].errs`、`aggs[].attrs` / `aggs[].events[].params` / `aggs[].transitions` — 完了
 - フェーズ 6：H1〜H6 を `decisions[]` に昇格 — 完了（D1〜D6）
-- **残**: §10 リードモデル候補の充足、§6 Q4〜Q12 の業務 WHY 補完
+- **残**: §9 リードモデル候補の充足、§5 Q4〜Q12 の業務 WHY 補完
 - スキル改善メモ `docs/skill-improvements/eventstorming-facilitator-20260528.md` を随時更新
 
-> ステークホルダーが最初に読みたいのは「次に何をすべきか」。§6 以降の技術詳細はオプショナルに読める構造。
+> ステークホルダーが最初に読みたいのは「次に何をすべきか」。§5 以降の技術詳細はオプショナルに読める構造。
 
 ---
 
-## 6) オープンクエスチョン
+## 5) オープンクエスチョン
 
 - Q1. 下取交換のタイムアウト日数は？ — 決まると：Alt-2 の Saga 期限と決済切替トリガーが確定（D1 で 10 日採用済み）
 - Q2. 注文時点の決済モデルは「差額仮押さえ」か「査定確定まで保留」か？ — 決まると：与信のタイミング・通常購入への切替時の追加課金処理が確定（D2 で差額仮押さえ採用済み）
@@ -163,6 +74,9 @@
 - [CLOSED] Q0. モデリングのスコープ・粒度・狙い → 下取交換にフォーカス・中粒度・スキル動作検証（A1+B1+C2）
 
 ### 因果チェーン（自動検出）
+
+> **自動生成セクション・手編集禁止**。DML を更新したうえで causal-check-agent を再実行し、その出力でブロックを置換する。
+
 - Q4. 「買取成立後、新品出荷を倉庫へ自動指示する流れ」がまだ業務的に途切れています — `ShipmentInstructed`（出荷指示が発行された）から `ShipNewItem`（新品を出荷する）への自動受け渡しを誰が担うのか、また倉庫側は指示を受けたら即座に出荷作業へ着手するのか、人手チェックを挟むのかを決めてください
 - Q5. 「会員都合の下取キャンセル」のあとに何が自動で動くかが定義されていません（Alt-3 シナリオ） — 旧機種が未発送のとき／到着後のときで、返送指示・与信解放・通常購入への切替の手順は誰がどの順番で行いますか
 - Q6. 「会員が旧機種を発送した」「物流センターが旧機種を受領した」「検品が完了した」イベントの後に自動で起きる業務（受領通知メール、検品着手のキュー入れ等）が未定義です — 担当部署への自動通知や次工程への自動引き渡しは必要か、必要なら何をトリガーに何を行うかを確認してください
@@ -175,29 +89,22 @@
 
 ---
 
-## 7) 意思決定ログ
+## 6) 意思決定ログ
 
-> **DML 自動生成セクション**。本文は `.md` には書かない。`.dml.yaml` の `decisions[]` から HTML §7 が自動描画される（採用＝緑カード／不採用＝灰・取り消し線カード、各 option の `why`/`why_not` 付き）。D1〜D6 が登録済み。
+> **DML 自動生成セクション**。本文は `.md` には書かない。`.dml.yaml` の `decisions[]` から HTML §6 が自動描画される（採用＝緑カード／不採用＝灰・取り消し線カード、各 option の `why`/`why_not` 付き）。D1〜D6 が登録済み。
 
 ---
 
-## 8) コンテキスト候補
+## 7) コンテキスト候補
 
 下取交換ドメインを 4 BC に分割した。**core は trade-in 1 つ**、他は supporting/generic として外部委譲しやすい構造にする方針。
+
+> LANGUAGE / 依存方向は DML `ctxs[].lang` / `up` / `dn` を真実源とし、ビルダーが HTML §7 に merge して描画する。`.md` 側には散文（境界の理由・含むシナリオ・目的・背景・制約）のみ記述。
 
 ### store-front（店舗フロント）
 
 - 境界の理由: 会員向けの「商品閲覧→注文確定→下取申込」を 1 つの UI/業務文脈で扱う層。下取の業務メカニクスや決済の内部状態を持ち込まず、Order を上流の親として保つ
 - 含むシナリオ: 会員が概算査定を要求する／会員が下取付きで注文を確定する
-- **依存方向**:
-  - UPSTREAM: (none)
-  - DOWNSTREAM: trade-in (Customer-Supplier) — 注文に下取契約を要求
-  - DOWNSTREAM: payment (Customer-Supplier) — 決済処理を依頼
-  - DOWNSTREAM: fulfillment (Customer-Supplier) — 出荷指示を依頼
-- LANGUAGE:
-  - `Order` — 新品/中古購入と下取りを 1 単位に束ねる注文。下取り進行と支払い進行を統合して追跡する親集約
-  - `Quote` — オンライン即時査定で算出される概算買取見積。注文時に確定額の根拠として参照される
-  - `Item` — 新品または中古の商品ライン項目（カタログ商品の参照）
 
 #### 目的
 
@@ -219,16 +126,6 @@ EC・楽天店舗・店頭で見積もり経路が乱立し、会員が「どこ
 
 - 境界の理由: 旧機種の物理的ライフサイクル（受領 → 検品 → 査定 → 承認/拒否 → 成立/返送）を所有する CORE BC。オペレーション業務（査定スタッフ）と社内統制（古物営業法対応）が集約される
 - 含むシナリオ: 会員が下取をキャンセル／旧機種発送 → 受領 → 検品 → 査定確定 → 承認/拒否／システムがタイムアウト検知
-- **依存方向**:
-  - UPSTREAM: store-front (Customer-Supplier) — 親注文の参照を受け取る
-  - DOWNSTREAM: payment (Customer-Supplier) — 成立/失敗を決済に通知
-  - DOWNSTREAM: fulfillment (Customer-Supplier) — 返送を依頼するケースあり
-- LANGUAGE:
-  - `TradeIn` — 1 件の下取契約。旧機種 1 点と紐づき、`LINKED → SHIPPED → RECEIVED → INSPECTED → APPRAISED → APPROVED/REJECTED → SETTLED/RETURNED` までライフサイクル全体を保有（`SUSPENDED`/`TIMED_OUT`/`CANCELLED` を含む）
-  - `Order` — store-front の Order を参照する識別子（こちらでは状態を変更しない）
-  - `Appraisal` — TradeIn に内包される正式査定額の確定情報（独立集約ではなく Value Object として保持）
-  - `EstimateAmount` — Quote から複製される概算額。受領後に Final と比較される基準値
-  - `FinalAmount` — 検品後に査定スタッフが確定する正式買取額
 
 #### 目的
 
@@ -252,14 +149,6 @@ EC・楽天店舗・店頭で見積もり経路が乱立し、会員が「どこ
 - 境界の理由: カード会社 API・PSP との対話を含む副作用層を、業務文脈から切り離した GENERIC BC。下取交換特有の「与信額が確定するまで変動する」課題はあるが、決済プリミティブ自体は標準化された汎用部分として扱う
 - 含むシナリオ: （該当 scs なし — 与信操作はすべて POL → AGG への内部 CMD として実装）
 - 受信する POL: AuthorizeOnOrderPlaced / ConvertOnAppraisalRejected / ConvertOnTimeout / ChargeRemainingOnConverted
-- **依存方向**:
-  - UPSTREAM: store-front (Customer-Supplier) — 注文金額の根拠
-  - UPSTREAM: trade-in (Customer-Supplier) — 成立/失敗の通知
-  - DOWNSTREAM: (none)
-- LANGUAGE:
-  - `Authorization` — 注文の差額（または通常購入切替後の全額）を支払い保証する与信ホールド
-  - `HoldAmount` — 現時点でカード会社に確保している与信金額
-  - `CapturedAmount` — 実際に請求した金額
 
 #### 目的
 
@@ -282,13 +171,6 @@ EC・楽天店舗・店頭で見積もり経路が乱立し、会員が「どこ
 - 境界の理由: 倉庫オペレーション・在庫引当・運送業者連携を扱う GENERIC BC。新品の outbound 出荷と旧機種の return 出荷の両方を kind 属性で区別して保持
 - 含むシナリオ: 物流が新品を出荷する／配送業者が新品を届ける
 - 受信する POL: InstructShipmentOnSettled / ReturnOnAppraisalRejected（trade-in BC 側からも返送実行を受ける）
-- **依存方向**:
-  - UPSTREAM: store-front (Customer-Supplier) — 出荷品目の根拠
-  - UPSTREAM: trade-in (Customer-Supplier) — 返送依頼を受け取る
-  - DOWNSTREAM: (none)
-- LANGUAGE:
-  - `Shipment` — 1 商品の出荷単位。outbound（新品の客への発送）と return（旧機種の客への返送）の両方を扱う
-  - `CarrierTrackingId` — 外部運送会社が払い出す追跡 ID（一意）
 
 #### 目的
 
@@ -306,19 +188,19 @@ EC・楽天店舗・店頭で見積もり経路が乱立し、会員が「どこ
 
 ---
 
-## 9) 集約候補
+## 8) 集約候補
 
-> **DML 自動生成セクション**。本文は `.md` には書かない。`.dml.yaml` の `aggs[]`（`name`/`ctx`/`purpose`/`background`/`constraints[]`/`states`/`transitions[]`/`attrs[]`/`events[]`）から HTML §9 が **属性表 / イベントペイロード表 / 不変条件（緑）/ エラーケース（赤）/ 状態遷移** を自動描画する。
+> **DML 自動生成セクション**。本文は `.md` には書かない。`.dml.yaml` の `aggs[]`（`name`/`ctx`/`purpose`/`background`/`constraints[]`/`states`/`transitions[]`/`attrs[]`/`events[]`）から HTML §8 が **属性表 / イベントペイロード表 / 不変条件（緑）/ エラーケース（赤）/ 状態遷移** を自動描画する。
 
 ---
 
-## 10) リードモデル候補
+## 9) リードモデル候補
 
 <!-- TODO: フェーズ 5 完了後に追記（概算買取額計算、査定結果照会、注文サマリなど横断/計算系 QRY のみ） -->
 
 ---
 
-## 11) DML
+## 10) DML
 
 DML 全文は別ファイル [`./eventstorming-20260528-1209.dml.yaml`](./eventstorming-20260528-1209.dml.yaml)（YAML 直書き・フェンス不要）に保持する。
 

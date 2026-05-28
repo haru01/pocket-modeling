@@ -2,9 +2,10 @@
 """EventStorming MD + DML → HTML ビルダー
 
 DML（`.dml.yaml`）をモデル唯一の真実源とし、HTML §3（イベントフロー）と
-§9（集約カード）と §7（意思決定ログ）を DML から自動生成する。`.md` は物語（§1/§2）と
-用語集（§4・前置き表）・次のアクション（§5）・オープンクエスチョン（§6）・
-コンテキスト候補（§8）・リードモデル（§10）・DML 参照（§11）を保持する。
+§8（集約カード）と §6（意思決定ログ）を DML から自動生成する。`.md` は物語（§1/§2）と
+次のアクション（§4）・オープンクエスチョン（§5）・コンテキスト候補（§7）・
+リードモデル（§9）・DML 参照（§10）を保持する。glossary_index（語彙の英→日変換）は
+DML `ctxs[].lang` を全 BC 走査して機械的に生成する（HTML §4 用語集セクションは廃止）。
 
 使い方:
     python3 scripts/eventstorming_build.py <md_path>              # 個別ビルド
@@ -104,7 +105,6 @@ class MDSections:
     dml: str = ""
     dml_errors: list[str] = field(default_factory=list)
     dml_model: dict | None = None  # yaml.safe_load 結果。None=未読/解析不可（縮退フラグ）
-    glossary: dict = field(default_factory=dict)
 
 
 # ============================================================
@@ -187,7 +187,6 @@ def parse_md(md_text: str) -> MDSections:
         get_section("次のアクション", "Next Actions")
     )
     s.dml = parse_dml(get_section("DML"))
-    s.glossary = parse_glossary(get_section("用語集", "Glossary"))
 
     return s
 
@@ -224,6 +223,12 @@ def parse_scenarios(text: str) -> list[dict]:
 
 
 def parse_bc_cards(text: str) -> list[dict]:
+    """MD §8 から BC カードの散文部分のみを抽出する。
+
+    LANGUAGE / 依存方向（UPSTREAM/DOWNSTREAM）は DML `ctxs[].lang` / `up` / `dn`
+    が唯一の真実源なので **MD からは読まない**。merge_bc_cards_with_dml が
+    DML 側から languages / upstream / downstream / downstream_slugs を補う。
+    """
     cards = []
     parts = re.split(r"^### ", text, flags=re.MULTILINE)
     for part in parts[1:]:
@@ -234,34 +239,117 @@ def parse_bc_cards(text: str) -> list[dict]:
         body = "\n".join(lines[1:]).strip()
 
         reason = ""
-        upstream = ""
-        downstream = ""
-        languages = []
+        scenarios = ""
         for line in body.split("\n"):
             line = line.strip()
             if line.startswith("- 境界の理由:"):
                 reason = line.split(":", 1)[1].strip()
-            elif "UPSTREAM:" in line:
-                upstream = line.split("UPSTREAM:", 1)[1].strip()
-            elif "DOWNSTREAM:" in line:
-                downstream = line.split("DOWNSTREAM:", 1)[1].strip()
-            elif line.startswith("- LANGUAGE:"):
-                languages.append(line.split(":", 1)[1].strip())
+            elif line.startswith("- 含むシナリオ:"):
+                scenarios = line.split(":", 1)[1].strip()
 
         cards.append(
             {
                 "slug": slug,
                 "name": name_line,
                 "reason": reason,
-                "upstream": upstream,
-                "downstream": downstream,
-                "languages": languages,
+                "scenarios": scenarios,
+                "upstream": "",
+                "downstream": "",
+                "downstream_slugs": [],
+                "languages_by_cat": [],
                 "purpose": extract_prose_subsection(body, "目的"),
                 "background": extract_prose_subsection(body, "背景"),
                 "constraints": extract_subsection(body, "制約"),
             }
         )
     return cards
+
+
+def merge_bc_cards_with_dml(
+    md_cards: list[dict], dml_model: dict | None
+) -> list[dict]:
+    """MD §8 BC カードに DML `ctxs[]` の lang / up / dn を merge する。
+
+    - MD 側からは slug / name / reason / scenarios / purpose / background /
+      constraints のみ採用
+    - languages / upstream / downstream / downstream_slugs は DML `ctxs[]`
+      から取得（重複管理を避ける）
+    - DML 未登録の slug は警告し、MD のみで描画（縮退）
+    """
+    if not dml_model:
+        return md_cards
+    ctxs = dml_model.get("ctxs") or []
+    ctx_index = {
+        c.get("name", ""): c for c in ctxs if isinstance(c, dict)
+    }
+
+    merged = []
+    for card in md_cards:
+        slug = card["slug"]
+        ctx = ctx_index.get(slug)
+        if ctx is None:
+            print(
+                f"⚠ BC '{slug}' は DML ctxs[] に未登録 (§8 LANGUAGE/依存方向は空で描画)",
+                file=sys.stderr,
+            )
+            merged.append(card)
+            continue
+
+        # languages_by_cat: [(カテゴリ表示名, [(en, jp), ...]), ...] の順序保持リスト。
+        # 空のカテゴリは含めない。レンダリングはこの順番でカテゴリ別表を描く。
+        languages_by_cat: list[tuple[str, list[tuple[str, str]]]] = []
+        lang_dict = ctx.get("lang") or {}
+        if isinstance(lang_dict, dict):
+            for cat_key, cat_label in LANG_CATEGORIES:
+                cat_dict = lang_dict.get(cat_key) or {}
+                if not isinstance(cat_dict, dict) or not cat_dict:
+                    continue
+                rows: list[tuple[str, str]] = []
+                for term, definition in cat_dict.items():
+                    en = str(term).strip()
+                    jp = str(definition).strip()
+                    if en and jp:
+                        rows.append((en, jp))
+                if rows:
+                    languages_by_cat.append((cat_label, rows))
+
+        upstream_str, _ = _format_dml_deps(ctx.get("up") or [])
+        downstream_str, downstream_slugs = _format_dml_deps(ctx.get("dn") or [])
+
+        merged.append(
+            {
+                **card,
+                "languages_by_cat": languages_by_cat,
+                "upstream": upstream_str,
+                "downstream": downstream_str,
+                "downstream_slugs": downstream_slugs,
+            }
+        )
+    return merged
+
+
+def _format_dml_deps(deps: list) -> tuple[str, list[str]]:
+    """DML `ctxs[].up` / `dn` のリストを表示用文字列と slug リストに変換する。"""
+    if not deps:
+        return "(none)", []
+    parts: list[str] = []
+    slugs: list[str] = []
+    for d in deps:
+        if not isinstance(d, dict):
+            continue
+        ctx_name = str(d.get("ctx", "?"))
+        rel = str(d.get("rel", ""))
+        note = str(d.get("note", ""))
+        s = ctx_name
+        if rel:
+            s += f" ({rel})"
+        if note:
+            s += f" — {note}"
+        parts.append(s)
+        slugs.append(ctx_name)
+    if not parts:
+        return "(none)", []
+    return " · ".join(parts), slugs
 
 
 def parse_agg_cards(text: str) -> list[dict]:
@@ -435,84 +523,6 @@ def parse_dml(text: str) -> str:
     return m.group(1) if m else ""
 
 
-def parse_glossary(text: str) -> dict:
-    """用語集解析。
-
-    対応フォーマット:
-    1. `### カテゴリ名` でカテゴリ別テーブル（テンプレート準拠）
-    2. カテゴリ無し単一テーブル（種別列で自動分類: Actor/Command/Event/Policy/Query）
-    """
-    # 種別列の値 → 表示カテゴリ名（自動分類用）
-    kind_to_category = {
-        "Actor": "アクター",
-        "Command": "コマンド",
-        "Event": "イベント",
-        "Policy": "ポリシー",
-        "Query": "リードモデル",
-        "Read Model": "リードモデル",
-    }
-
-    def parse_row(line: str) -> tuple[str, str, str] | None:
-        line = line.strip()
-        if not line.startswith("|"):
-            return None
-        # ヘッダー行・区切り行を除外
-        if line.startswith("|---") or line.startswith("|--") or line.startswith("|:"):
-            return None
-        # 日本語ヘッダ・英語ヘッダ・カテゴリ名どれも除外
-        lower = line.lower()
-        if "日本語" in line or "英語" in line or "種別" in line or "備考" in line:
-            return None
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if len(cells) < 2 or not cells[0] or cells[0] == "—":
-            return None
-        return (
-            cells[0],
-            cells[1],
-            cells[2] if len(cells) > 2 else "",
-        )
-
-    result: dict[str, list[dict]] = {}
-    cat_re = re.compile(r"^### (.+?)$", re.MULTILINE)
-    matches = list(cat_re.finditer(text))
-
-    if matches:
-        # 形式 1: カテゴリ別テーブル
-        for i, m in enumerate(matches):
-            cat = m.group(1).strip()
-            start = m.end()
-            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-            body = text[start:end].strip()
-            rows = []
-            for line in body.split("\n"):
-                row = parse_row(line)
-                if row:
-                    rows.append({"jp": row[0], "en": row[1], "note": row[2]})
-            result[cat] = rows
-        return result
-
-    # 形式 2: カテゴリ無し単一テーブル — 種別列で自動分類
-    for line in text.split("\n"):
-        row = parse_row(line)
-        if not row:
-            continue
-        jp, en, note = row
-        category = kind_to_category.get(note, "その他")
-        # 単一テーブルでは note 列が種別なので、備考は空にする
-        if category not in result:
-            result[category] = []
-        result[category].append({"jp": jp, "en": en, "note": ""})
-
-    # 表示順を整える(アクター/コマンド/イベント/ポリシー/リードモデル/その他)
-    if result:
-        ordered = {}
-        for cat in ["アクター", "コマンド", "イベント", "ポリシー", "リードモデル", "その他"]:
-            if cat in result:
-                ordered[cat] = result[cat]
-        return ordered
-    return result
-
-
 # ============================================================
 # DML 駆動の生成（フロー / 集約 / 意思決定ログ）
 # ============================================================
@@ -522,8 +532,8 @@ def parse_glossary(text: str) -> dict:
 # 旧来の手書き event-flow-svg DSL や `.md` §5 (旧)= §9 (新) Zod ブロックは廃止。
 #
 # 共有公開関数:
-#   - build_glossary_index(glossary)      → {EN識別子: 日本語ラベル}（フロー描画用）
-#   - localize(identifier, glossary_idx)  → 日本語ラベル or 英語フォールバック
+#   - build_glossary_index_from_dml(model) → {EN識別子: 日本語ラベル}（DML ctxs[].lang 走査）
+#   - localize(identifier, glossary_idx)   → 日本語ラベル or 英語フォールバック
 #   - build_flows_from_dml(model, gloss)  → list[Flow]（render_flow 再利用）
 #   - aggregates_from_dml(model)          → 集約情報（下流スキル to-issues も利用）
 #
@@ -532,19 +542,57 @@ def parse_glossary(text: str) -> dict:
 #   - render_decisions(...)               → HTML 意思決定ログ
 
 
-def build_glossary_index(glossary: dict) -> dict[str, str]:
-    """`parse_glossary` の結果（カテゴリ別テーブル）を `{英語識別子: 日本語ラベル}` に反転。
+# `ctxs[].lang` のカテゴリ別キーと表示名の対応
+LANG_CATEGORIES: list[tuple[str, str]] = [
+    ("aggs", "集約"),
+    ("vos", "値オブジェクト"),
+    ("actors", "アクター"),
+    ("cmds", "コマンド"),
+    ("evts", "イベント"),
+    ("pols", "ポリシー"),
+    ("qrys", "リードモデル"),
+]
 
-    フロー図の付箋ラベル localize（英語識別子 → 日本語）に使う。同じ英語識別子が
-    複数カテゴリに現れた場合は最後の登録で上書き（実運用ではまず起きない）。
+
+def build_glossary_index_from_dml(model: dict | None) -> dict[str, str]:
+    """DML model 全体を走査して `{英語識別子: 日本語ラベル}` を機械的に生成する。
+
+    `ctxs[].lang` はカテゴリ別 dict-of-dicts 構造:
+      lang:
+        aggs:   { EnId: jp, ... }
+        actors: { EnId: jp, ... }
+        cmds:   { EnId: jp, ... }
+        evts:   { EnId: jp, ... }
+        pols:   { EnId: jp, ... }
+        qrys:   { EnId: jp, ... }
+        vos:    { EnId: jp, ... }
+
+    全 BC・全カテゴリを横断して `{en: jp}` の平坦 dict に畳み込む。同一識別子が
+    複数 BC に登場した場合は最初の登録を優先（後勝ちだとフロー描画ラベルが BC 順序
+    依存になり不安定）。HTML §4 用語集セクションは廃止済みで、本 index は
+    フロー図ラベル・§6 意思決定ログの affects 表示で英語識別子を日本語に置換する
+    用途にのみ使う。
     """
     index: dict[str, str] = {}
-    for _cat, rows in (glossary or {}).items():
-        for row in rows:
-            en = (row.get("en") or "").strip()
-            jp = (row.get("jp") or "").strip()
-            if en and jp:
-                index[en] = jp
+    if not model:
+        return index
+    ctxs = model.get("ctxs") or []
+    for ctx in ctxs:
+        if not isinstance(ctx, dict):
+            continue
+        lang = ctx.get("lang") or {}
+        if not isinstance(lang, dict):
+            continue
+        for cat_key, _label in LANG_CATEGORIES:
+            cat_dict = lang.get(cat_key) or {}
+            if not isinstance(cat_dict, dict):
+                continue
+            for term, definition in cat_dict.items():
+                key = str(term).strip()
+                value = str(definition).strip()
+                if not key or not value:
+                    continue
+                index.setdefault(key, value)
     return index
 
 
@@ -978,22 +1026,60 @@ def render_bc_cards(cards: list[dict]) -> str:
         return '<div class="todo-placeholder">TODO: フェーズ4完了後に追記</div>'
     out = []
     for c in cards:
-        lang_html = ""
-        if c["languages"]:
-            lang_items = "<br>".join(esc(lang) for lang in c["languages"])
-            lang_html = f'<div class="dep" style="margin-top: 6px;"><strong>LANGUAGE:</strong> {lang_items}</div>'
+        scenarios_html = (
+            f'<div class="dep" style="margin-top: 4px;">'
+            f'<strong>含むシナリオ:</strong> {esc(c.get("scenarios", ""))}</div>'
+            if c.get("scenarios") else ""
+        )
         intent_html = render_intent_blocks(c)
+        # LANGUAGE はカテゴリ別タイプ表として、目的/背景/制約（intent_html）の **後ろ** に描画。
+        lang_html = _render_bc_languages(c.get("languages_by_cat") or [])
         out.append(
             f'<div class="bc-card">\n'
             f'    <h3>{esc(c["name"])}</h3>\n'
             f"    <p>{esc(c['reason'])}</p>\n"
+            f"    {scenarios_html}\n"
             f'    <div class="dep"><strong>UPSTREAM:</strong> {esc(c["upstream"])} · '
             f'<strong>DOWNSTREAM:</strong> {esc(c["downstream"])}</div>\n'
-            f"    {lang_html}\n"
             f"    {intent_html}\n"
+            f"    {lang_html}\n"
             f"  </div>"
         )
     return "\n  ".join(out)
+
+
+def _render_bc_languages(
+    languages_by_cat: list[tuple[str, list[tuple[str, str]]]]
+) -> str:
+    """BC カードの LANGUAGE をカテゴリ別タイプ表として描画する。
+
+    各カテゴリごとに `日本語ラベル | 英語識別子` の 2 列表を出す。
+    順序は LANG_CATEGORIES の宣言順（集約→VO→Actor→CMD→EVT→POL→QRY）。
+    """
+    if not languages_by_cat:
+        return ""
+    sections: list[str] = []
+    for cat_label, rows in languages_by_cat:
+        body_rows = "\n        ".join(
+            f"<tr><td>{esc(jp)}</td><td class=\"code-cell\">{esc(en)}</td></tr>"
+            for en, jp in rows
+        )
+        sections.append(
+            f'<div class="lang-cat">\n'
+            f"      <h4>{esc(cat_label)}</h4>\n"
+            f'      <table class="lang-table">\n'
+            f"        <thead><tr><th>日本語</th><th>英語</th></tr></thead>\n"
+            f"        <tbody>\n        {body_rows}\n        </tbody>\n"
+            f"      </table>\n"
+            f"    </div>"
+        )
+    body = "\n    ".join(sections)
+    return (
+        f'<div class="lang-section">\n'
+        f'      <div class="lang-section-label"><strong>LANGUAGE</strong></div>\n'
+        f"      {body}\n"
+        f"    </div>"
+    )
 
 
 def render_intent_blocks(card: dict) -> str:
@@ -1061,26 +1147,22 @@ def render_context_map(cards: list[dict]) -> str:
 
     arrows = []
     for c in cards:
-        ds = c["downstream"]
-        # `kitchen (...)` の形式から slug を抽出
-        m = re.match(r"^([\w-]+)", ds)
-        if not m:
-            continue
-        target_slug = m.group(1)
-        if target_slug == "(none)" or target_slug not in bc_y:
-            continue
-        y1 = bc_y[c["slug"]]
-        y2 = bc_y[target_slug]
-        if y1 == y2:
-            continue
-        # 縦の矢印
-        arrows.append(
-            f'<line x1="{cx + box_w // 2 + 10}" y1="{y1}" '
-            f'x2="{cx + box_w // 2 + 10}" y2="{y2}" '
-            f'stroke="#37474F" stroke-width="2" marker-end="url(#cm-arr)"/>'
-            f'<text x="{cx + box_w // 2 + 30}" y="{(y1 + y2) // 2}" '
-            f'font-size="11" fill="#455A64">downstream</text>'
-        )
+        # downstream_slugs（DML `ctxs[].dn` 由来）から全ての矢印を描く。
+        # 複数 DOWNSTREAM がある BC でも全ての関係を表現する。
+        for target_slug in c.get("downstream_slugs") or []:
+            if target_slug not in bc_y:
+                continue
+            y1 = bc_y[c["slug"]]
+            y2 = bc_y[target_slug]
+            if y1 == y2:
+                continue
+            arrows.append(
+                f'<line x1="{cx + box_w // 2 + 10}" y1="{y1}" '
+                f'x2="{cx + box_w // 2 + 10}" y2="{y2}" '
+                f'stroke="#37474F" stroke-width="2" marker-end="url(#cm-arr)"/>'
+                f'<text x="{cx + box_w // 2 + 30}" y="{(y1 + y2) // 2}" '
+                f'font-size="11" fill="#455A64">downstream</text>'
+            )
 
     svg = (
         f'<svg viewBox="0 0 {width} {height}" width="100%" '
@@ -1418,31 +1500,6 @@ def render_dml_banner(dml: str, errors: list[str] | None) -> str:
     return '<div class="dml-banner dml-banner-ok">✅ DML スキーマ OK（構文検証）</div>'
 
 
-def render_glossary(glossary: dict) -> str:
-    if not glossary:
-        return '<div class="todo-placeholder">TODO</div>'
-    sections = []
-    for cat, rows in glossary.items():
-        if not rows:
-            continue
-        body_rows = "\n        ".join(
-            f"<tr><td>{esc(r['jp'])}</td>"
-            f"<td class=\"code-cell\">{esc(r['en'])}</td>"
-            f"<td>{esc(r['note'])}</td></tr>"
-            for r in rows
-        )
-        sections.append(
-            f'<div class="glossary-section">\n'
-            f"    <h3>{esc(cat)}</h3>\n"
-            f'    <table class="glossary">\n'
-            f"      <thead><tr><th>日本語</th><th>英語</th><th>備考</th></tr></thead>\n"
-            f"      <tbody>\n        {body_rows}\n      </tbody>\n"
-            f"    </table>\n"
-            f"  </div>"
-        )
-    return "\n  ".join(sections)
-
-
 # ============================================================
 # シンタックスハイライト
 # ============================================================
@@ -1626,7 +1683,10 @@ def build_body_html(
     progress_html = render_progress(status)
     story_html = render_story(sections.story)
     scenarios_html = render_scenarios(sections.scenarios)
-    glossary_index = build_glossary_index(sections.glossary)
+    # glossary_index は DML `ctxs[].lang` を全 BC 走査して機械的に生成する。
+    # HTML §4「用語集」セクションは廃止済み。本 index はフロー図ラベルや
+    # §6 意思決定ログの affects 表示で英語識別子を日本語に置換する用途のみ。
+    glossary_index = build_glossary_index_from_dml(sections.dml_model)
 
     # DML 解析成功時のみ §3（フロー）・§9（集約）・§7（意思決定ログ）を生成。
     # 失敗時はプレースホルダーで縮退し例外を出さない。
@@ -1648,17 +1708,20 @@ def build_body_html(
             '<div class="todo-placeholder">DML 解析不可 — §11 を参照</div>'
         )
 
-    context_map_html = render_context_map(sections.bc_cards)
-    bc_cards_html = render_bc_cards(sections.bc_cards)
+    # §8 BC カードは MD §8 の散文に DML `ctxs[]` の lang / up / dn を merge して描画。
+    # LANGUAGE / 依存方向は DML 唯一の真実源なので MD 側には書かない（§8 重複防止）。
+    bc_cards_merged = merge_bc_cards_with_dml(sections.bc_cards, sections.dml_model)
+    context_map_html = render_context_map(bc_cards_merged)
+    bc_cards_html = render_bc_cards(bc_cards_merged)
     qry_cards_html = render_qry_cards(sections.qry_cards)
     questions_html = render_questions_hotspots(sections.questions, sections.hotspots)
     actions_html = render_actions(sections.actions, status)
     dml_html = render_dml(sections.dml, sections.dml_errors)
-    glossary_html = render_glossary(sections.glossary)
 
-    # §7 意思決定ログ（次のアクションを §5 に昇格した新順序）。decisions[] が空なら見出しごと非表示
+    # §6 意思決定ログ（§4 用語集セクション廃止に伴い 1 つ繰り上げ）。
+    # decisions[] が空なら見出しごと非表示
     decisions_block = (
-        f"\n  <h2>7. 意思決定ログ</h2>\n  {decisions_html}\n"
+        f"\n  <h2>6. 意思決定ログ</h2>\n  {decisions_html}\n"
         if decisions_html else ""
     )
 
@@ -1683,26 +1746,23 @@ def build_body_html(
   <h2>3. Event Walkthrough</h2>
   {flows_html}
 
-  <h2>4. 用語集</h2>
-  {glossary_html}
-
-  <h2>5. 次のアクション</h2>
+  <h2>4. 次のアクション</h2>
   {actions_html}
 
-  <h2>6. オープンクエスチョン</h2>
+  <h2>5. オープンクエスチョン</h2>
   {questions_html}
 {decisions_block}
-  <h2>8. コンテキスト候補</h2>
+  <h2>7. コンテキスト候補</h2>
   {context_map_html}
   {bc_cards_html}
 
-  <h2>9. 集約候補</h2>
+  <h2>8. 集約候補</h2>
   {agg_cards_html}
 
-  <h2>10. リードモデル候補</h2>
+  <h2>9. リードモデル候補</h2>
   {qry_cards_html}
 
-  <h2>11. DML</h2>
+  <h2>10. DML</h2>
   {dml_html}
 """.strip()
 

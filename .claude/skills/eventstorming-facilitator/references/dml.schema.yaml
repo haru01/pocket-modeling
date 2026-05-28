@@ -222,9 +222,20 @@ $defs:
         type: array
         items: { $ref: "#/$defs/pascalCase" }
       # --- v1 既存 ---
+      # lang は本 BC で扱う語彙の英→日辞書。
+      # カテゴリ別 dict-of-dicts 形式: { aggs / actors / cmds / evts / pols / qrys / vos: { EnId: jp } }。
+      # HTML §7 のタイプ別表と glossary_index（フロー図ラベル日本語化）がここから生成される。
       lang:
         type: object
-        additionalProperties: { type: string }   # EnglishTerm -> 日本語定義
+        additionalProperties: false
+        properties:
+          aggs:    { type: object, additionalProperties: { type: string } }
+          actors:  { type: object, additionalProperties: { type: string } }
+          cmds:    { type: object, additionalProperties: { type: string } }
+          evts:    { type: object, additionalProperties: { type: string } }
+          pols:    { type: object, additionalProperties: { type: string } }
+          qrys:    { type: object, additionalProperties: { type: string } }
+          vos:     { type: object, additionalProperties: { type: string } }
       mod: { type: string }
       up:
         type: array

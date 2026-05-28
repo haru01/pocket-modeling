@@ -2,7 +2,7 @@
 
 EventStorming セッションの全情報を **CSS 付箋風 HTML** として書き出してブラウザでリッチに表示するための仕様。
 
-**重要：AI は HTML を直接編集しない。** Python ビルダー（`.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py`）が `.md` ＋ 兄弟 `.dml.yaml` を解析して HTML を自動生成する。AI が編集するソース・オブ・トゥルースは **`.dml.yaml`（モデル本体・唯一の真実源）** と `.md`（物語・用語集・QRY・質問・次アクション）の 2 ファイル。
+**重要：AI は HTML を直接編集しない。** Python ビルダー（`.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py`）が `.md` ＋ 兄弟 `.dml.yaml` を解析して HTML を自動生成する。AI が編集するソース・オブ・トゥルースは **`.dml.yaml`（モデル本体・唯一の真実源・`ctxs[].lang` に語彙辞書も集約）** と `.md`（物語・QRY 散文・質問・次アクション・BC 散文）の 2 ファイル。
 
 Claude Code の CLI/PC/スマホアプリではチャット本文の生 `<svg>` も Mermaid フェンスも描画されないため、別ファイル（HTML）として書き出してブラウザに任せる方針。
 
@@ -13,7 +13,7 @@ Claude Code の CLI/PC/スマホアプリではチャット本文の生 `<svg>` 
 | ファイル | 役割 |
 |---|---|
 | `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.dml.yaml` | **DML（モデル本体）の唯一の真実源**。純 YAML 直書き（フェンス不要）。フロー図・集約カード・意思決定ログは全てここから生成 |
-| `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md` | 物語（§1〜§2）・用語集（§4）・次のアクション（§5）・質問（§6）・コンテキスト（§8）・リードモデル（§10）。AI と人間がここを編集 |
+| `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md` | 物語（§1〜§2）・次のアクション（§4）・質問（§5）・コンテキスト散文（§7、LANGUAGE/依存方向は DML 駆動）・リードモデル（§9）。AI と人間がここを編集 |
 | `dist/eventstorming/eventstorming-YYYYMMDD-HHMM.html` | Python ビルダーが `.md` ＋ 兄弟 `.dml.yaml` から自動生成する派生ファイル。AI も人間も直接編集しない |
 | `.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py` | MD/DML → HTML 変換スクリプト（Python 3 標準ライブラリ + PyYAML） |
 | `.claude/skills/eventstorming-facilitator/templates/event-flow.html` | テンプレート HTML（CSS とプレースホルダー入り） |
@@ -85,14 +85,13 @@ python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py 
 | 1 | ハッピーパスストーリー | `.md` §1 | `.story` 黄背景の散文 |
 | 2 | 代替シナリオ | `.md` §2 | `.scenario-card` カード（複数） |
 | 3 | Event Walkthrough | **DML** `flows[]` + `scs[]`/`pols[]` | `.flow > .grid` Big Picture 形式（§5 参照） |
-| 4 | 用語集 | `.md` §4 | `table.glossary` カテゴリ別テーブル。**§8〜§10 を読む前の前置き表** |
-| 5 | 次のアクション | `.md` §5 | `.next-actions` 緑カード。**読者の次の動きを最上部近くに置く** |
-| 6 | オープンクエスチョン / ホットスポット | `.md` §6 | `.question`（青）`.hotspot`（赤）、`[CLOSED]` は緑背景 |
-| 7 | 意思決定ログ | **DML** `decisions[]` | `.decision-card`：採用（緑 `.opt.adopted`）／不採用（灰・取り消し線 `.opt.rejected`）の比較カード。`decisions[]` が空なら **見出しごと非表示** |
-| 8 | コンテキスト候補 | `.md` §8 | `.bc-card` ＋ **コンテキストマップ SVG**（UPSTREAM/DOWNSTREAM から自動生成） |
-| 9 | 集約候補 | **DML** `aggs[]` + 該当 `scs[].rules/errs` | `.bc-card` ＋ **属性表 `.attr-table` / イベントペイロード表 `.payload-table` / 不変条件 `.inv-section`（緑）/ エラーケース `.err-section`（赤）/ 状態遷移** |
-| 10 | リードモデル候補 | `.md` §10 | `.bc-card`（緑左ボーダー） |
-| 11 | DML（YAML） | `.dml.yaml` 生 | `pre.code` ダークテーマ + 役割ベース意味色ハイライト |
+| 4 | 次のアクション | `.md` §4 | `.next-actions` 緑カード。**読者の次の動きを最上部近くに置く** |
+| 5 | オープンクエスチョン / ホットスポット | `.md` §5 | `.question`（青）`.hotspot`（赤）、`[CLOSED]` は緑背景 |
+| 6 | 意思決定ログ | **DML** `decisions[]` | `.decision-card`：採用（緑 `.opt.adopted`）／不採用（灰・取り消し線 `.opt.rejected`）の比較カード。`decisions[]` が空なら **見出しごと非表示** |
+| 7 | コンテキスト候補 | `.md` §7（散文）＋ **DML** `ctxs[]`（LANGUAGE / 依存方向） | `.bc-card` ＋ **コンテキストマップ SVG**。LANGUAGE と UPSTREAM/DOWNSTREAM は DML `ctxs[].lang` / `up` / `dn` から merge して描画（MD 側には書かない） |
+| 8 | 集約候補 | **DML** `aggs[]` + 該当 `scs[].rules/errs` | `.bc-card` ＋ **属性表 `.attr-table` / イベントペイロード表 `.payload-table` / 不変条件 `.inv-section`（緑）/ エラーケース `.err-section`（赤）/ 状態遷移** |
+| 9 | リードモデル候補 | `.md` §9 | `.bc-card`（緑左ボーダー） |
+| 10 | DML（YAML） | `.dml.yaml` 生 | `pre.code` ダークテーマ + 役割ベース意味色ハイライト |
 
 未完成セクションは MD で `<!-- TODO: フェーズN完了後に追記 -->` プレースホルダー → HTML 側で `.todo-placeholder` に変換。
 
@@ -122,11 +121,11 @@ python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py 
 
 - **時系列 = 横軸（列）**、**BC = 縦軸（行）**
 - 矢印は **CSS 描画**（`<div>` の塗り + 三角形）で付箋同士を視覚的に繋ぐ
-- ラベル日本語化方針: ビルダーは DML の英語識別子を §4 用語集の glossary_index で日本語ラベルに変換して表示する（DML ファイル側の識別子は英語維持）
+- ラベル日本語化方針: ビルダーは DML の英語識別子を glossary_index で日本語ラベルに変換して表示する。glossary_index は **DML `ctxs[].lang` を全 BC 走査して機械的に生成**（HTML §4 用語集セクションは廃止済み・MD 側にも辞書テーブルは持たない）。識別子は英語のまま DML/HTML に保持される
 
 ### 5-2. 付箋ラベル
 
-種別は `<span class="kind">` のラベル（Actor / Command / Event / Policy / Read Model）と背景色で識別。テキストは **DML の英語識別子 → 用語集索引で日本語化**。
+種別は `<span class="kind">` のラベル（Actor / Command / Event / Policy / Read Model）と背景色で識別。テキストは **DML の英語識別子 → `ctxs[].lang` 起源の glossary_index で日本語化**。
 
 | DML フィールド | HTML 種別 | 種別ラベル |
 |---|---|---|
@@ -195,7 +194,7 @@ BULK POLICY 由来の Note に付くクラス。
 
 ### 6-3.1. 集約カードのサブセクション色（対比表示）
 
-集約 §9 のサブセクションは意味別に色分けする。**§6-1 の付箋色と同じ Material シェードを再利用** することで、目的=Event 橙系・背景=Command 青系・制約=Policy 紫系・不変条件=ReadModel 緑系・エラーケース=赤系という対応を視覚化する：
+集約 §8 のサブセクションは意味別に色分けする。**§6-1 の付箋色と同じ Material シェードを再利用** することで、目的=Event 橙系・背景=Command 青系・制約=Policy 紫系・不変条件=ReadModel 緑系・エラーケース=赤系という対応を視覚化する：
 
 | サブセクション | クラス | 背景 | 左ボーダー | ラベル色 | 絵文字 |
 |---|---|---|---|---|---|
@@ -225,7 +224,6 @@ BULK POLICY 由来の Note に付くクラス。
 | ストーリー / カード本文 | 14-15px |
 | ホットスポット / 質問カード | 15px |
 | DML コードブロック | 14px |
-| 用語集テーブル | 15px |
 
 ---
 
@@ -268,7 +266,7 @@ BULK POLICY 由来の Note に付くクラス。
 ```
 .decision-card
   h3              ← "<id>. <topic>"
-  .dep            ← "採用: <chosen>"、任意で "影響: <affects[]>"（用語集索引で日本語化）
+  .dep            ← "採用: <chosen>"、任意で "影響: <affects[]>"（`ctxs[].lang` 由来の glossary_index で日本語化）
   .decision-options
     .opt.adopted    ← 採用された option（緑系・✓ マーカー）
     .opt.rejected   ← 不採用 option（灰背景・取り消し線）
@@ -324,7 +322,7 @@ Claude Code（CLI/PC/スマホアプリ）の preview panel は **JavaScript / `
 `.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py` は単一ファイル、Python 3 標準ライブラリ + PyYAML で実装。主要関数：
 
 ```
-parse_md(md_text) → MDSections         # MD を §1〜§11 に分割（DML は別ファイル）
+parse_md(md_text) → MDSections         # MD を §1〜§10 に分割（DML は別ファイル）
 _load_dml_model(dml_text) → dict|None  # 兄弟 .dml.yaml を yaml.safe_load
 _validate_dml_warn(dml, path) → list   # JSON Schema 検証で警告一覧
 build_flows_from_dml(model, gloss)     # DML flows[] + scs/pols → Flow / Lane / Note
@@ -351,7 +349,7 @@ watch(in_dir, out_dir)                 # 監視モード
 
 書き込み権限がない、Python 3 や PyYAML が無い等の環境では、ビルダーが動かない（または DML 解析が失敗する）。
 
-- PyYAML 不在 / DML 解析失敗時は、§3・§7・§9 は `.todo-placeholder` で縮退表示し、**例外で停止せず HTML 生成は最後まで継続**
+- PyYAML 不在 / DML 解析失敗時は、§3・§6・§8 は `.todo-placeholder` で縮退表示し、**例外で停止せず HTML 生成は最後まで継続**
 - 手動再実行: `python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <md>`
 - 解決不可ならチャット本文に **構造化テーブル** で代替表示（`chat-output-format.md` §9 参照）
 

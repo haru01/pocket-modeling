@@ -10,7 +10,7 @@ DDD モデリングのための情報圧縮言語。**構文 validity（形が�
 
 ## 0. 記法の原則
 
-- **YAML 直書き・`.md` と兄弟ファイル**: `docs/eventstorming/<session>.dml.yaml` に純 YAML（フェンス不要）。`.md` の §11 はこの `.dml.yaml` へのリンク参照のみ。ビルダーは `.md` + 兄弟 `.dml.yaml` から HTML を生成する
+- **YAML 直書き・`.md` と兄弟ファイル**: `docs/eventstorming/<session>.dml.yaml` に純 YAML（フェンス不要）。`.md` の §10 はこの `.dml.yaml` へのリンク参照のみ。ビルダーは `.md` + 兄弟 `.dml.yaml` から HTML を生成する
 - **トップレベルは 4 リスト + 任意 3 リスト**: `ctxs` / `aggs` / `scs` / `pols` 必須、`domains` / `flows` / `decisions` 任意。コメントによるセクション区切りは使わない（リスト構造で自然に分離される）
 - **識別子は英語 PascalCase**（`cmd` / `evt` / `agg` / `trg` / `qry` の値、`aggs[].name` 等）。`()` や `<<>>` は付けない
 - **`scs[].name` のみ日本語**で「アクター＋行為」を書く（例: `主催者がコミュニティを作成する`）
@@ -42,7 +42,24 @@ DDD モデリングのための情報圧縮言語。**構文 validity（形が�
 - SLA・再送ポリシー・失敗時のフォールバックが業務要件
 - 他 BC から「どの通知を送ったか」を参照される（監査ログ兼用など）
 
-→ `ctxs` に新規 BC を宣言し、`up` / `dn` で他 BC との関係を明示する。
+→ `ctxs` に新規 BC を宣言し、`up` / `dn` で他 BC との関係を明示する。**`ctxs[].lang` / `up` / `dn` は HTML §7 の LANGUAGE / 依存方向、および glossary_index（語彙の英→日変換）の唯一の真実源**（`.md` §7 や別の用語集セクションには書かない）。`.md` §7 は散文（境界の理由・含むシナリオ・目的・背景・制約）のみを担い、ビルダーが merge して描画する。
+
+**`ctxs[].lang` はカテゴリ別 dict-of-dicts**: 本 BC で扱う語彙を種別ごとに分類して英→日ラベル（短い表記）を与える。HTML §7 では制約の下にタイプ別表で描画される。
+
+```yaml
+ctxs:
+  - name: store-front
+    lang:
+      aggs:    { Order: "注文", Quote: "概算見積" }
+      vos:     { HoldAmount: "与信額" }
+      actors:  { Member: "会員", System: "システム" }
+      cmds:    { PlaceOrder: "注文を確定する" }
+      evts:    { OrderPlaced: "注文された" }
+      pols:    { AuthorizeOnOrderPlaced: "注文確定時に差額与信" }
+      qrys:    { GetEstimateAmount: "概算買取額" }
+```
+
+同じ識別子が複数 BC で出る場合は **最初の登録を優先**（後勝ちにすると flow 描画ラベルが BC 順序依存になり不安定）。値は **短い日本語ラベル**（フロー図の付箋ラベルに直接使う）。長い説明文は `purpose` / `background` / `note` 側に書く。
 
 迷う場合は `note: "[?] ..."` で保留し、後続フェーズで再評価する。**「データモデル（テーブル）は存在するが BC として宣言していない」状態は原則 NG**。
 
@@ -142,8 +159,8 @@ v2 までは `ctxs[].aggs[]` 内に集約宣言を持っていたが、**v3 で 
 | `constraints[]` | string list | 業務／法令／プラットフォーム由来の制約（任意・複数可） |
 | `states` | upper_snake list | 状態名（DRAFT / PUBLISHED 等） |
 | `transitions[]` | `{from,to,via,when?}` | 状態遷移。`via` は scs[].cmd と突合 |
-| `attrs[]` | `{name,type,required?,note?}` | AGG ペイロード属性。HTML §9 で属性表として描画 |
-| `events[]` | `{name, params[]?}` | この AGG が emit する EVT 宣言。`params[]` は `attrs[]` と同じ attribute 構造。HTML §9 でイベントペイロード表として描画 |
+| `attrs[]` | `{name,type,required?,note?}` | AGG ペイロード属性。HTML §8 で属性表として描画 |
+| `events[]` | `{name, params[]?}` | この AGG が emit する EVT 宣言。`params[]` は `attrs[]` と同じ attribute 構造。HTML §8 でイベントペイロード表として描画 |
 
 ### 意味整合（quality-check が担保）
 
@@ -198,7 +215,7 @@ scs:
         note: "[?] Event 集約と Participation 集約どちらが定員を持つ？"
 ```
 
-**`[?]` で残した未確定判断は、選択肢が見えてきた段階で `decisions[]` に昇格させる**。`decisions[]` に書くことで「採用したもの / 不採用にしたもの / それぞれの理由」が構造化され、HTML §7 で比較カードとしてレビューできる（§9 参照）。
+**`[?]` で残した未確定判断は、選択肢が見えてきた段階で `decisions[]` に昇格させる**。`decisions[]` に書くことで「採用したもの / 不採用にしたもの / それぞれの理由」が構造化され、HTML §6 で比較カードとしてレビューできる（§9 参照）。
 
 ---
 
@@ -209,7 +226,7 @@ scs:
 | **JSON Schema**（機械・決定論的） | 構文 validity。トップレベル 4 リスト＋任意 `domains`/`flows`/`decisions`、各要素の必須フィールド、型、enum、識別子の PascalCase・lowercase-with-hyphen・UPPER_SNAKE（状態名）・camelCase（属性名）、`evt`↔`brs` 排他、`trg`↔`trgs` 排他、`bulk:true`→`qry` 必須、未知フィールド禁止 | `cmd` が PascalCase か、`sub.type` が enum 値か、`aggs[].states` が UPPER_SNAKE か |
 | **causal-check / quality-check**（LLM・文脈依存） | 意味 validity。参照の実在・因果整合・モデル品質 | `trg` が実在 EVT を指すか、`pol` が実在 POLICY か、up↔dn の双方向一致、`scs[].cmd` ↔ `aggs[].transitions[].via` 整合、`scs[].evt` ↔ `aggs[].events[].name` 整合、`flows[].steps[]` が実在 scs/pols を指すか、`decisions[].affects[]` が実在要素を指すか、分岐の MECE 性、`evt` の過去形・`cmd` の命令形 |
 
-**スキーマ通過は必要条件であって十分条件ではない。** ビルダー（`eventstorming_build.py`）は `.dml.yaml` 読込時に schema 検証し、HTML §11 にバナー（✅ / ⚠ 違反一覧）を描画する。**検証は非ブロッキング**で、違反があっても HTML は生成される。全行コメントのみ（YAML→`None`）や空ファイルは「未記述」として検証対象外（進行中セッション許容）。
+**スキーマ通過は必要条件であって十分条件ではない。** ビルダー（`eventstorming_build.py`）は `.dml.yaml` 読込時に schema 検証し、HTML §10 にバナー（✅ / ⚠ 違反一覧）を描画する。**検証は非ブロッキング**で、違反があっても HTML は生成される。全行コメントのみ（YAML→`None`）や空ファイルは「未記述」として検証対象外（進行中セッション許容）。
 
 ---
 
@@ -219,7 +236,14 @@ scs:
 ctxs:
   - name: community-events
     lang:
-      Event: "コミュニティが主催する集会・勉強会"
+      aggs:
+        Event: "イベント"
+      actors:
+        Organizer: "主催者"
+      cmds:
+        PublishEvent: "イベントを公開する"
+      evts:
+        EventPublished: "イベントが公開された"
     mod: community-events
     up: []
     dn: []

@@ -5,7 +5,7 @@ description: Facilitate DDD domain modeling sessions via EventStorming conversat
 
 # EventStorming + DDD モデリング ファシリテーター
 
-会話でドメインイベントを発見し DML（Domain Modeling Language）に情報圧縮する。**`docs/eventstorming/<session>.dml.yaml` がモデル唯一の真実源**。`.md` は物語（§1 ハッピーパス / §2 代替シナリオ）・用語集（§4）・次のアクション（§5）・オープンクエスチョン（§6）・コンテキスト候補（§8）・リードモデル（§10）など、**散文と用語の補足を担う**。フロー図（§3）・意思決定ログ（§7）・集約カード（§9・属性/イベントペイロード/不変条件/エラー）はビルダーが **`.dml.yaml` から自動生成**する。
+会話でドメインイベントを発見し DML（Domain Modeling Language）に情報圧縮する。**`docs/eventstorming/<session>.dml.yaml` がモデル唯一の真実源**。`.md` は物語（§1 ハッピーパス / §2 代替シナリオ）・次のアクション（§4）・オープンクエスチョン（§5）・コンテキスト散文（§7 の境界の理由/目的/背景/制約）・リードモデル（§9）など、**散文の補足を担う**。フロー図（§3）・意思決定ログ（§6）・集約カード（§8・属性/イベントペイロード/不変条件/エラー）・**コンテキスト LANGUAGE と依存方向（§7 の `lang` / `up` / `dn`）** はビルダーが **`.dml.yaml` から自動生成**する。glossary（語彙の英→日辞書）は HTML 上に独立セクションを持たず、DML `ctxs[].lang` を全 BC 走査してフロー図ラベルなどに機械的に適用される。
 
 AI は `.md` と `.dml.yaml` の 2 ファイルを `Write`/`Edit` し、PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/eventstorming/<session>.html` を再生成する（**AI は HTML を直接編集しない**）。**書き込み順は `.dml.yaml` を先・`.md` を後**（モデル拡張は DML 側だけで完結することが多い）。チャットには DML 全文を流さず、構造化テーブル＋HTML パス案内に留める（Claude Code のチャット本文では SVG/Mermaid が描画されないため）。
 
@@ -59,9 +59,9 @@ AI は `.md` と `.dml.yaml` の 2 ファイルを `Write`/`Edit` し、PostTool
 - Q{n}. <項目>：<確認したいこと>
 ```
 
-HTML 更新・DML 抜粋・用語集は出さない。本文末尾は問い 1 つで終わる。
+HTML 更新・DML 抜粋は出さない。本文末尾は問い 1 つで終わる。
 
-**(b) フェーズ完了** — Markdown + 構造化テーブル + DML 抜粋 + 用語集差分 + HTML パス案内：
+**(b) フェーズ完了** — Markdown + 構造化テーブル + DML 抜粋（`ctxs[].lang` の追加識別子も含む）+ HTML パス案内：
 
 ```
 **フェーズ{N} 完了: <フェーズ名>** ✅
@@ -84,9 +84,9 @@ HTML 更新・DML 抜粋・用語集は出さない。本文末尾は問い 1 �
 <該当フェーズで確定した ctxs/aggs/scs/pols/flows/decisions のみ（YAML）>
 ```
 
-### 用語集の追加
-| 日本語 | 英語 | 種別 |
-|---|---|---|
+### 新規ラベルの追加（DML `ctxs[].lang`）
+| 英語識別子 | 日本語ラベル | 所属 BC | 種別 |
+|---|---|---|---|
 
 ### ホットスポット
 - H{n}. [?] <設計判断>：<理由>
@@ -118,8 +118,8 @@ HTML 更新・DML 抜粋・用語集は出さない。本文末尾は問い 1 �
 
 ### ④ MD / DML ファイル管理
 
-- アクティブ: `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md`（物語・用語集）＋兄弟 `eventstorming-YYYYMMDD-HHMM.dml.yaml`（モデル本体・純 YAML）
-- **モデル拡張は基本的に `.dml.yaml` だけを編集する**。`.md` を編集するのは §1 / §2 / §4 / §5 / §6 / §8 / §10（物語・用語集・次アクション・質問・BC・QRY）のみ
+- アクティブ: `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md`（物語・散文）＋兄弟 `eventstorming-YYYYMMDD-HHMM.dml.yaml`（モデル本体・純 YAML、語彙辞書 `ctxs[].lang` も含む）
+- **モデル拡張は基本的に `.dml.yaml` だけを編集する**。`.md` を編集するのは §1 / §2 / §4 / §5 / §7 / §9（物語・次アクション・質問・BC散文・QRY）のみ
 - フェーズ2で `.md` を `Write`、以降は両ファイルとも `Edit` で差分更新（**`.dml.yaml` を先に書いてから `.md` を編集**）
 - 書き出し後は **必ず** Agent tool で品質チェックを起動（`references/quality-check-agent.md`）。HTML は派生物なのでチェック不要
 - **ユーザーが MD/DML を直接編集した場合**: 次ターン応答前に `Read` で再読み込みし兄弟 `.dml.yaml` を照合。差分があれば `Edit` で同期し品質チェック起動
@@ -159,7 +159,7 @@ flows:
 
 ## DML 記述ルール（要点）
 
-DML は **`.md` とは別の兄弟ファイル `docs/eventstorming/<session>.dml.yaml`** に **YAML 直書き**（フェンス不要）で書く。`.md` の §11 はこの `.dml.yaml` へのリンク参照のみ。構文は `references/dml.schema.yaml`（JSON Schema）で機械検証。設計判断・哲学は `references/dml-spec.md`。
+DML は **`.md` とは別の兄弟ファイル `docs/eventstorming/<session>.dml.yaml`** に **YAML 直書き**（フェンス不要）で書く。`.md` の §10 はこの `.dml.yaml` へのリンク参照のみ。構文は `references/dml.schema.yaml`（JSON Schema）で機械検証。設計判断・哲学は `references/dml-spec.md`。
 
 - **トップレベルは `ctxs` / `aggs` / `scs` / `pols` の 4 リスト**（任意で `domains` / **`flows` / `decisions`**）。`#` によるセクション区切りは使わない。`scs`/`pols`/`aggs` の各要素は `ctx:` で所属 BC を参照
 - **AGG 詳細はトップレベル `aggs[]` に集約**：`name`（必須）／`ctx`（必須）／`purpose`／`background`／`constraints[]`／`states`／`transitions[]`（`from`/`to`/`via`/`when`）／`attrs[]`（`name`/`type`/`required`/`note`）／`events[]`（`name`/`params[]`）。`ctxs[].aggs` は AGG 名（PascalCase 文字列）の軽量名簿
@@ -178,16 +178,16 @@ DML は **`.md` とは別の兄弟ファイル `docs/eventstorming/<session>.dml
 
 ## MD / DML 出力タイミング
 
-**モデル拡張は基本的に `.dml.yaml` だけを Edit する**。`.md` の編集は §1〜§2 の物語、§4（用語集）、§5（次アクション）、§6（質問）、§8（BC）、§10（QRY）に絞られる。
+**モデル拡張は基本的に `.dml.yaml` だけを Edit する**。`.md` の編集は §1〜§2 の物語、§4（次アクション）、§5（質問）、§7（BC 散文）、§9（QRY）に絞られる。新規 CMD/EVT/POL/Actor/QRY を発見したら、その英→日ラベルは `.dml.yaml` の所属 BC の `ctxs[].lang` に追加する（`.md` 側に用語集テーブルは持たない）。
 
 | タイミング | 操作 |
 |-----------|------|
-| フェーズ2完了 | `.md` を `Write` 新規作成（§1〜§2 ＋ §4/§5/§6/§8/§10 のスケルトン。§3/§7/§9/§11 は DML 駆動で空 or リンク参照のみ）→ `Bash open <session>.html` 初回起動 |
-| フェーズ3完了 | `.dml.yaml` を `Write`/`Edit`（scs[] 仮 entries）→ `.md` §4（用語集）を `Edit` |
-| フェーズ4完了 | `.dml.yaml` を `Edit`（scs/pols/`flows[]` の happy + 代替 1〜2）→ `.md` §4（用語集）・§8（BC）を `Edit` |
+| フェーズ2完了 | `.md` を `Write` 新規作成（§1〜§2 ＋ §4/§5/§7/§9 のスケルトン。§3/§6/§8/§10 は DML 駆動で空 or リンク参照のみ）→ `Bash open <session>.html` 初回起動 |
+| フェーズ3完了 | `.dml.yaml` を `Write`/`Edit`（scs[] 仮 entries ＋ `ctxs[].lang` に新規識別子の英→日ラベル追加） |
+| フェーズ4完了 | `.dml.yaml` を `Edit`（scs/pols/`flows[]` の happy + 代替 1〜2、`ctxs[].lang` 充実）→ `.md` §7（BC 散文）を `Edit` |
 | フェーズ4.5完了 | `.dml.yaml`（`lang`）を `Edit` |
 | **フェーズ4.6完了** | **`.dml.yaml` のトップレベル `aggs[]` に `name`/`ctx`/`purpose`/`background`/`constraints[]`/`states` を、`ctxs[].aggs` に AGG 名（PascalCase）を追加** |
-| **フェーズ5完了** | **`.dml.yaml` に `scs[].rules[]`（`rule`/`why`）／`scs[].errs[]`（`cond`/`err`/`when`）／`aggs[].transitions[]`／`aggs[].attrs[]`／`aggs[].events[].params[]` を追加** → `.md` §10（QRY カード）を `Edit` |
+| **フェーズ5完了** | **`.dml.yaml` に `scs[].rules[]`（`rule`/`why`）／`scs[].errs[]`（`cond`/`err`/`when`）／`aggs[].transitions[]`／`aggs[].attrs[]`／`aggs[].events[].params[]` を追加** → `.md` §9（QRY カード）を `Edit` |
 | **フェーズ6完了（意思決定ログ）** | **`.dml.yaml` に `decisions[]` を追加**（id/topic/chosen/options/affects・options ごとに why/why_not） |
 | フェーズ7（最終） | `.dml.yaml` 完成版 → `.md` 全セクション完成版を `Edit` |
 | ユーザーが「保存して」 | 即座に `.dml.yaml` → `.md` の順で書き出す |
@@ -200,25 +200,24 @@ DML は **`.md` とは別の兄弟ファイル `docs/eventstorming/<session>.dml
 
 ### MD セクション構成
 
-完全テンプレ: `references/template.md`。**§3 / §7 / §9 は `.dml.yaml` から HTML が自動生成するため、`.md` には書かない**（リンク参照や注記のみ）。
+完全テンプレ: `references/template.md`。**§3 / §6 / §8 は `.dml.yaml` から HTML が自動生成するため、`.md` には書かない**（リンク参照や注記のみ）。**§7 コンテキスト候補の LANGUAGE / 依存方向と、フロー図の英→日ラベル変換（glossary_index）も DML `ctxs[].lang` から機械生成**。
 
-セクション順は **「物語 → 用語集 → 次のアクション（読者の次の動き）→ 横断課題（オープン Q／意思決定）→ モデル層（BC／AGG／QRY）→ メタ（DML）」** という読者導線に沿う。
+セクション順は **「物語 → 次のアクション（読者の次の動き）→ 横断課題（オープン Q／意思決定）→ モデル層（BC／AGG／QRY）→ メタ（DML）」** という読者導線に沿う。用語集セクションは廃止し、語彙の英→日変換は DML `ctxs[].lang` を全 BC 走査して自動生成する。
 
 | # | セクション | 編集者 | 内容 |
 |---|-----------|--------|------|
 | 1 | ハッピーパスストーリー（400〜600字） | AI/人間 | `.md` に散文 |
 | 2 | 代替シナリオ（散文のみ） | AI/人間 | `.md` に散文（図は §3 が DML から生成） |
 | 3 | Event Walkthrough | **DML 生成** | `.md` には注記のみ。`.dml.yaml` の `flows[]` + `scs[]`/`pols[]` から HTML §3 が自動生成 |
-| 4 | 用語集（日本語 ↔ 英語 DML 識別子） | AI/人間 | `.md` にカテゴリ別テーブル。**§8〜§10 を読む前の前置き表** |
-| 5 | 次のアクション | AI/人間 | `.md` に箇条書き。**読者の次の動きをトップ近くに置く** |
-| 6 | オープンクエスチョン | AI/人間 | `.md` に Q 番号で列挙。因果チェック自動検出分も追記 |
-| 7 | 意思決定ログ | **DML 生成** | `.md` には注記のみ。HTML §7 が `decisions[]` から採用/不採用の比較カードを自動描画。`decisions[]` が空なら HTML §7 は非表示 |
-| 8 | コンテキスト候補 | AI/人間 | `### english-slug（日本語名）`、`UPSTREAM`/`DOWNSTREAM` 必須、任意で `#### 目的/背景/制約` |
-| 9 | 集約候補 | **DML 生成** | `.md` には注記のみ。HTML §9 が `aggs[]` から属性表・ペイロード表・不変条件・エラー・状態遷移を自動描画 |
-| 10 | リードモデル候補（`### QRYName（日本語名）`） | AI/人間 | `.md` に詳細（QRY は scs[].qry に紐づく Read Model の説明） |
-| 11 | DML | `.dml.yaml` へのリンク参照のみ | DML 全文は別ファイル |
+| 4 | 次のアクション | AI/人間 | `.md` に箇条書き。**読者の次の動きをトップ近くに置く** |
+| 5 | オープンクエスチョン | AI/人間 | `.md` に Q 番号で列挙。`### 因果チェーン（自動検出）` 配下は causal-check-agent の出力で **手編集禁止**（DML を直し再生成で置換） |
+| 6 | 意思決定ログ | **DML 生成** | `.md` には注記のみ。HTML §6 が `decisions[]` から採用/不採用の比較カードを自動描画。`decisions[]` が空なら HTML §6 は非表示 |
+| 7 | コンテキスト候補 | AI/人間（散文）＋ **DML 生成**（用語/依存） | `### english-slug（日本語名）`、`- 境界の理由:` / `- 含むシナリオ:` ＋ 任意 `#### 目的/背景/制約`。**LANGUAGE / 依存方向（UPSTREAM/DOWNSTREAM）と語彙ラベルは DML `ctxs[].lang` / `up` / `dn` が真実源**で `.md` には書かない。`ctxs[].lang` は本 BC で扱う AGG/Actor/CMD/EVT/QRY 等の英→日辞書を集約 |
+| 8 | 集約候補 | **DML 生成** | `.md` には注記のみ。HTML §8 が `aggs[]` から属性表・ペイロード表・不変条件・エラー・状態遷移を自動描画 |
+| 9 | リードモデル候補（`### QRYName（日本語名）`） | AI/人間 | `.md` に詳細（QRY は scs[].qry に紐づく Read Model の説明） |
+| 10 | DML | `.dml.yaml` へのリンク参照のみ | DML 全文は別ファイル |
 
-**§10 リードモデル候補**: 単一集約への単純ルックアップは省略し、(a) 計算値を含む / (b) 複数集約・複数 BC を横断 / (c) BULK クエリ（一覧取得）のいずれかのみ記載。
+**§9 リードモデル候補**: 単一集約への単純ルックアップは省略し、(a) 計算値を含む / (b) 複数集約・複数 BC を横断 / (c) BULK クエリ（一覧取得）のいずれかのみ記載。
 
 未完成セクションは `<!-- TODO: フェーズN完了後に追記 -->` で保持（HTML 側 `.todo-placeholder` 表示）。
 
