@@ -1,6 +1,7 @@
 # DML (Domain Modeling Language) JSON Schema — Draft 2020-12
 #
-# DML は YAML 形式のドメインモデル（ctxs / scs / pols の 3 リスト + 任意の domains）。
+# DML は YAML 形式のドメインモデル（ctxs / aggs / scs / pols の 4 リスト + 任意の domains）。
+# v3 で AGG をトップレベル `aggs[]` に切り出した（旧 v2 の `ctxs[].aggs[]` 内 dict 形式は廃止）。
 # このスキーマは「構文 validity（形が正しいか）」のみを機械検証する。
 # 「意味 validity（参照の実在・因果整合・モデル品質）」は causal-check / quality-check が担う。
 # スキーマ通過は必要条件であって十分条件ではない。
@@ -11,12 +12,17 @@
 #   doc = yaml.safe_load(open("docs/eventstorming/<session>.dml.yaml"))  # None も許容
 #   list(Draft202012Validator(schema).iter_errors(doc))
 #
-# 後方互換: 拡張フィールド（type/vision/resp/aggs/sub/roles/
-# prRoles/brMode/trgs/domains）はすべて optional。v1 記法は永続的に valid。
+# 構造の要点:
+#   - `ctxs[].aggs` は AGG 名の軽量名簿（PascalCase 文字列のリスト）
+#   - 詳細はトップレベル `aggs[]` に集約: name / ctx（所属 BC）/ purpose / states /
+#     transitions（from→to via cmd）/ attrs（ペイロード属性）/ events（emit する EVT 宣言）
+#
+# 拡張フィールド（type/vision/resp/sub/roles/prRoles/brMode/trgs/domains 等）はすべて optional。
+# 進行中セッション（多くの項目が空）でも valid。
 #
 # 略語化方針: 長いキー名は略語化、短いキー名（name/type/vision/note/lang/mod/qry/cmd/evt/agg/pol 等）は維持。
 # 主な略語: ctxs / scs / pols / ctx / aggs / sub(s) / up / dn / rel / prRoles / brMode / brs /
-#          cond / err / errs / resp / tech / trg / trgs / evts / lang / mod
+#          cond / err / errs / resp / tech / trg / trgs / evts / lang / mod / via
 
 $schema: "https://json-schema.org/draft/2020-12/schema"
 $id: "https://pocket-modeling/schemas/dml.schema.yaml"
@@ -35,6 +41,9 @@ properties:
   ctxs:
     type: array
     items: { $ref: "#/$defs/context" }
+  aggs:
+    type: array
+    items: { $ref: "#/$defs/aggregate" }
   scs:
     type: array
     items: { $ref: "#/$defs/scenario" }
@@ -115,17 +124,69 @@ $defs:
         items: { $ref: "#/$defs/relationshipRole" }
       note: { type: string }
 
-  # ---------- 集約メタ（要素④・任意） ----------
-  aggregateMeta:
+  # ---------- 属性（AGG / EVT のペイロード要素） ----------
+  attribute:
+    type: object
+    additionalProperties: false
+    required: [name]
+    properties:
+      name:
+        type: string
+        pattern: "^[a-z][A-Za-z0-9]*$"        # camelCase（slug ではなくフィールド名）
+      type: { type: string }                   # string / int / date / <AggName>Id 等（自由文字列）
+      required: { type: boolean }
+      note: { type: string }
+
+  # ---------- 状態遷移 ----------
+  transition:
+    type: object
+    additionalProperties: false
+    required: [from, to, via]
+    properties:
+      from: { $ref: "#/$defs/upperSnake" }
+      to:                                       # 単一 or 配列（分岐先）
+        oneOf:
+          - { $ref: "#/$defs/upperSnake" }
+          - type: array
+            items: { $ref: "#/$defs/upperSnake" }
+      via: { $ref: "#/$defs/pascalCase" }       # トリガー CMD（scs[].cmd と一致）
+      when: { type: string }                    # 日本語補足
+      note: { type: string }
+
+  # ---------- AGG が emit するイベント宣言 ----------
+  eventMeta:
     type: object
     additionalProperties: false
     required: [name]
     properties:
       name: { $ref: "#/$defs/pascalCase" }
+      params:
+        type: array
+        items: { $ref: "#/$defs/attribute" }
+      note: { type: string }
+
+  # ---------- Aggregate（トップレベル `aggs` の要素） ----------
+  aggregate:
+    type: object
+    additionalProperties: false
+    required: [name, ctx]
+    properties:
+      name: { $ref: "#/$defs/pascalCase" }
+      ctx: { $ref: "#/$defs/contextName" }     # 所属 BC（必須・ctxs[].aggs と双方向参照）
       purpose: { type: string }
       states:
         type: array
         items: { $ref: "#/$defs/upperSnake" }
+      transitions:
+        type: array
+        items: { $ref: "#/$defs/transition" }
+      attrs:
+        type: array
+        items: { $ref: "#/$defs/attribute" }
+      events:                                   # この AGG が emit する EVT 宣言
+        type: array
+        items: { $ref: "#/$defs/eventMeta" }
+      note: { type: string }
 
   # ---------- Context（BC 宣言） ----------
   context:
@@ -144,9 +205,9 @@ $defs:
             items: { type: string }
       tech: { type: string }
       sub: { $ref: "#/$defs/contextName" }      # 要素②・軽量参照
-      aggs:
+      aggs:                                     # AGG 名の軽量名簿（詳細はトップレベル aggs[] へ）
         type: array
-        items: { $ref: "#/$defs/aggregateMeta" }
+        items: { $ref: "#/$defs/pascalCase" }
       # --- v1 既存 ---
       lang:
         type: object

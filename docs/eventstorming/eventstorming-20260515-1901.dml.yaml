@@ -1,706 +1,698 @@
 ctxs:
-  - name: community
-    lang:
-      Community: "コミュニティの永続的なグループ（メンバー・主催者・公開設定）"
-      Membership: "メンバーがコミュニティに属している状態"
-    mod: community
-    up: []
-    dn: []
-    aggs:
-      - name: Community
-        purpose: "コミュニティの永続的なグループ（メンバー・主催者・公開設定）の単一の真実源"
-        states: [DRAFT, PUBLISHED, ARCHIVED]
-    note: "Ticket がメンバー状態をスナップショット保持するため伝播不要"
-
-  - name: event-planning
-    lang:
-      Event: "単発の開催単位（タイトル・日時・会場・定員・料金）"
-      Capacity: "会場枠とオンライン枠の独立管理単位"
-    mod: event-planning
-    up:
-      - ctx: community
-        rel: Customer-Supplier
-    dn:
-      - ctx: registration
-        rel: Customer-Supplier
-      - ctx: ticketing
-        rel: Customer-Supplier
-      - ctx: attendance
-        rel: Customer-Supplier
-    aggs:
-      - name: Event
-        purpose: "イベントのライフサイクル（企画→公開→変更/中止→完了）とキャパシティの単一の真実源"
-        states: [DRAFT, PUBLISHED, CANCELLATION_REQUESTED, CANCELLED, COMPLETED]
-
-  - name: registration
-    lang:
-      Application: "参加申込の状態を保持するエンティティ"
-      Waitlist: "participationType 単位のキャンセル待ち順序付きキュー"
-    mod: registration
-    up:
-      - ctx: event-planning
-        rel: Customer-Supplier
-    dn:
-      - ctx: ticketing
-        rel: Customer-Supplier
-    aggs:
-      - name: Application
-        purpose: "参加申込の状態機械（申込→確定→キャンセル/期限切れ）とキャンセル待ち順序の単一の真実源"
-        states: [APPLIED, CONFIRMED, WAITLISTED, PROMOTED, PENDING_RECONFIRMATION, CANCELLATION_REQUESTED, CANCELLED, EXPIRED]
-
-  - name: ticketing
-    lang:
-      Ticket: "確定参加権の証憑（priceSnapshot, memberAtPurchase 凍結）"
-      Payment: "外部決済の試行記録"
-      Refund: "返金の試行記録"
-    mod: ticketing
-    up:
-      - ctx: event-planning
-        rel: Customer-Supplier
-        note: "料金参照"
-      - ctx: registration
-        rel: Customer-Supplier
-        note: "ApplicationSubmitted 受信"
-    dn:
-      - ctx: registration
-        rel: Customer-Supplier
-        note: "確定/キャンセル完了を逆方向通知"
-      - ctx: attendance
-        rel: Customer-Supplier
-        note: "Ticket 参照"
-    aggs:
-      - name: Payment
-        purpose: "外部決済の試行記録と決済状態（保留→成功/失敗）の単一の真実源"
-        states: [PENDING, COMPLETED, FAILED]
-      - name: Refund
-        purpose: "返金の試行記録と返金状態（保留→成功/失敗）の単一の真実源"
-        states: [PENDING, COMPLETED, FAILED]
-      - name: Ticket
-        purpose: "確定参加権の証憑（priceSnapshot・memberAtPurchase を凍結保持）の単一の真実源"
-        states: [ISSUED, USED, REFUNDED]
-
-  - name: attendance
-    lang:
-      Attendance: "当日の参加確認記録（会場 or オンライン）"
-      CheckIn: "会場チェックイン"
-      OnlineJoin: "オンライン参加記録"
-    mod: attendance
-    up:
-      - ctx: ticketing
-        rel: Customer-Supplier
-      - ctx: event-planning
-        rel: Customer-Supplier
-    dn: []
-    aggs:
-      - name: Attendance
-        purpose: "開催当日の参加確認記録（会場チェックイン / オンライン参加）の単一の真実源"
-
+- name: community
+  lang:
+    Community: コミュニティの永続的なグループ（メンバー・主催者・公開設定）
+    Membership: メンバーがコミュニティに属している状態
+  mod: community
+  up: []
+  dn: []
+  aggs:
+  - Community
+  note: Ticket がメンバー状態をスナップショット保持するため伝播不要
+- name: event-planning
+  lang:
+    Event: 単発の開催単位（タイトル・日時・会場・定員・料金）
+    Capacity: 会場枠とオンライン枠の独立管理単位
+  mod: event-planning
+  up:
+  - ctx: community
+    rel: Customer-Supplier
+  dn:
+  - ctx: registration
+    rel: Customer-Supplier
+  - ctx: ticketing
+    rel: Customer-Supplier
+  - ctx: attendance
+    rel: Customer-Supplier
+  aggs:
+  - Event
+- name: registration
+  lang:
+    Application: 参加申込の状態を保持するエンティティ
+    Waitlist: participationType 単位のキャンセル待ち順序付きキュー
+  mod: registration
+  up:
+  - ctx: event-planning
+    rel: Customer-Supplier
+  dn:
+  - ctx: ticketing
+    rel: Customer-Supplier
+  aggs:
+  - Application
+- name: ticketing
+  lang:
+    Ticket: 確定参加権の証憑（priceSnapshot, memberAtPurchase 凍結）
+    Payment: 外部決済の試行記録
+    Refund: 返金の試行記録
+  mod: ticketing
+  up:
+  - ctx: event-planning
+    rel: Customer-Supplier
+    note: 料金参照
+  - ctx: registration
+    rel: Customer-Supplier
+    note: ApplicationSubmitted 受信
+  dn:
+  - ctx: registration
+    rel: Customer-Supplier
+    note: 確定/キャンセル完了を逆方向通知
+  - ctx: attendance
+    rel: Customer-Supplier
+    note: Ticket 参照
+  aggs:
+  - Payment
+  - Refund
+  - Ticket
+- name: attendance
+  lang:
+    Attendance: 当日の参加確認記録（会場 or オンライン）
+    CheckIn: 会場チェックイン
+    OnlineJoin: オンライン参加記録
+  mod: attendance
+  up:
+  - ctx: ticketing
+    rel: Customer-Supplier
+  - ctx: event-planning
+    rel: Customer-Supplier
+  dn: []
+  aggs:
+  - Attendance
+aggs:
+- name: Community
+  ctx: community
+  purpose: コミュニティの永続的なグループ（メンバー・主催者・公開設定）の単一の真実源
+  states:
+  - DRAFT
+  - PUBLISHED
+  - ARCHIVED
+- name: Event
+  ctx: event-planning
+  purpose: イベントのライフサイクル（企画→公開→変更/中止→完了）とキャパシティの単一の真実源
+  states:
+  - DRAFT
+  - PUBLISHED
+  - CANCELLATION_REQUESTED
+  - CANCELLED
+  - COMPLETED
+- name: Application
+  ctx: registration
+  purpose: 参加申込の状態機械（申込→確定→キャンセル/期限切れ）とキャンセル待ち順序の単一の真実源
+  states:
+  - APPLIED
+  - CONFIRMED
+  - WAITLISTED
+  - PROMOTED
+  - PENDING_RECONFIRMATION
+  - CANCELLATION_REQUESTED
+  - CANCELLED
+  - EXPIRED
+- name: Payment
+  ctx: ticketing
+  purpose: 外部決済の試行記録と決済状態（保留→成功/失敗）の単一の真実源
+  states:
+  - PENDING
+  - COMPLETED
+  - FAILED
+- name: Refund
+  ctx: ticketing
+  purpose: 返金の試行記録と返金状態（保留→成功/失敗）の単一の真実源
+  states:
+  - PENDING
+  - COMPLETED
+  - FAILED
+- name: Ticket
+  ctx: ticketing
+  purpose: 確定参加権の証憑（priceSnapshot・memberAtPurchase を凍結保持）の単一の真実源
+  states:
+  - ISSUED
+  - USED
+  - REFUNDED
+- name: Attendance
+  ctx: attendance
+  purpose: 開催当日の参加確認記録（会場チェックイン / オンライン参加）の単一の真実源
 scs:
-  - name: 主催者がコミュニティを作成する
-    ctx: community
-    actor: Organizer
-    cmd: CreateCommunity
-    evt: CommunityCreated
-    agg: Community
-    rules:
-      - rule: communityName must be unique system-wide
-        why: "コミュニティ名はシステム全体で一意"
-      - rule: name and description must not be empty
-        why: "名前と説明は空にできない"
-    errs:
-      - cond: duplicateName
-        err: DuplicateCommunityNameError
-      - cond: emptyName
-        err: InvalidCommunityDataError
-
-  - name: 参加者がコミュニティに参加する
-    ctx: community
-    actor: Member
-    cmd: JoinCommunity
-    evt: MemberJoined
-    agg: Community
-    rules:
-      - rule: community must be in PUBLISHED status
-        why: "公開済みコミュニティに対してのみ参加可能"
-      - rule: member must not already be a member
-        why: "既存メンバーの二重参加を禁止"
-    errs:
-      - cond: notPublished
-        err: CommunityNotAvailableError
-      - cond: duplicateMember
-        err: AlreadyMemberError
-
-  - name: メンバーがコミュニティを退会する
-    ctx: community
-    actor: Member
-    cmd: LeaveCommunity
-    evt: MemberLeft
-    agg: Community
-    rules:
-      - rule: member must be an active member and not the owner
-        why: "主催者は退会できない（先に ARCHIVE）"
-    errs:
-      - cond: notMember
-        err: NotMemberError
-      - cond: isOwner
-        err: OwnerCannotLeaveError
-    note: "既存 Ticket は memberAtPurchase で凍結保持されるため、退会の伝播は不要（POLICY なし）"
-
-  - name: 主催者がイベントを作成する
-    ctx: event-planning
-    actor: Organizer
-    cmd: CreateEvent
-    evt: EventCreated
-    agg: Event
-    rules:
-      - rule: event must belong to an existing community
-        why: "既存コミュニティに紐づく"
-      - rule: venueCapacity and onlineCapacity must be non-negative
-        why: "定員は非負、両方0は禁止"
-      - rule: at least one of venueCapacity or onlineCapacity must be positive
-      - rule: startDateTime must be in the future
-        why: "開催日時は未来"
-      - rule: memberPrice must be less than or equal to generalPrice
-        why: "メンバー料金 ≤ 一般料金"
-    errs:
-      - cond: communityNotFound
-        err: CommunityNotFoundError
-      - cond: invalidCapacity
-        err: InvalidCapacityError
-      - cond: pastDateTime
-        err: InvalidScheduleError
-
-  - name: 主催者がイベントを公開する
-    ctx: event-planning
-    actor: Organizer
-    cmd: PublishEvent
-    evt: EventPublished
-    agg: Event
-    rules:
-      - rule: event must be in DRAFT status
-        why: "DRAFT 状態のみ公開可能"
-      - rule: all required fields must be filled
-        why: "必須項目が揃っていること（onlineCapacity > 0 なら streamUrl 必須など）"
-    errs:
-      - cond: alreadyPublished
-        err: InvalidStatusTransitionError
-      - cond: incompleteData
-        err: InvalidEventDataError
-
-  - name: 主催者が定員を増やす
-    ctx: event-planning
-    actor: Organizer
-    cmd: IncreaseCapacity
-    evt: CapacityIncreased
-    agg: Event
-    rules:
-      - rule: event must be PUBLISHED and not CANCELLED
-        why: "PUBLISHED 状態かつ未中止"
-      - rule: new capacity must be greater than current capacity
-        why: "新定員は現定員より大きい（減少不可）"
-    errs:
-      - cond: invalidStatus
-        err: InvalidStatusTransitionError
-      - cond: notIncrease
-        err: InvalidCapacityError
-    pol:
-      - PromoteWaitlistOnCapacityIncrease
-
-  - name: 主催者が日時を変更する
-    ctx: event-planning
-    actor: Organizer
-    cmd: RescheduleEvent
-    evt: EventRescheduled
-    agg: Event
-    rules:
-      - rule: event must be PUBLISHED and not started
-        why: "開催前のみ変更可"
-      - rule: new dateTime must be in the future
-        why: "新日時は未来"
-    errs:
-      - cond: invalidStatus
-        err: InvalidStatusTransitionError
-      - cond: pastDateTime
-        err: InvalidScheduleError
-    pol:
-      - ReconfirmOnEventReschedule
-
-  - name: 主催者が会場を変更する
-    ctx: event-planning
-    actor: Organizer
-    cmd: RelocateEvent
-    evt: EventRelocated
-    agg: Event
-    rules:
-      - rule: event must be PUBLISHED and not started
-        why: "開催前のみ変更可"
-      - rule: must not change participation type composition
-        why: "participationType 構成（会場枠/オンライン枠）の変更は不可"
-    errs:
-      - cond: invalidStatus
-        err: InvalidStatusTransitionError
-      - cond: typeChange
-        err: ParticipationTypeChangeNotAllowedError
-    pol:
-      - NotifyOnEventRelocation
-
-  - name: 主催者が料金を変更する
-    ctx: event-planning
-    actor: Organizer
-    cmd: RepriceEvent
-    evt: EventRepriced
-    agg: Event
-    rules:
-      - rule: event must be PUBLISHED and not started
-        why: "開催前のみ変更可"
-      - rule: price change applies only to future applications
-        why: "既存申込の Ticket は priceSnapshot で凍結、変更は新規申込にのみ適用"
-    errs:
-      - cond: invalidStatus
-        err: InvalidStatusTransitionError
-    pol:
-      - ReconfirmOnEventReprice
-
-  - name: 主催者がイベント中止を要求する
-    ctx: event-planning
-    actor: Organizer
-    cmd: RequestEventCancellation
-    evt: EventCancellationRequested
-    agg: Event
-    rules:
-      - rule: event must not have already occurred
-        why: "開催済み・既中止は不可"
-      - rule: event must not be already CANCELLED
-    errs:
-      - cond: eventAlreadyOccurred
-        err: EventAlreadyOccurredError
-      - cond: alreadyCancelled
-        err: EventAlreadyCancelledError
-    pol:
-      - RefundAllOnEventCancellation
-
-  - name: システムが全返金完了でイベント中止を確定する
-    ctx: event-planning
-    actor: System
-    cmd: CompleteEventCancellation
-    evt: EventCancellationCompleted
-    agg: Event
-    rules:
-      - rule: all confirmed applications must have been refunded
-        why: "全 confirmed 申込の返金が完了している"
-    errs:
-      - cond: pendingRefunds
-        err: RefundsPendingError
-
-  - name: 主催者がイベントを開催完了にする
-    ctx: event-planning
-    actor: Organizer
-    cmd: CompleteEvent
-    evt: EventCompleted
-    agg: Event
-    rules:
-      - rule: event start dateTime must have passed
-        why: "開催日時通過後のみ完了可"
-      - rule: event must be PUBLISHED (not CANCELLED)
-        why: "PUBLISHED 状態のみ完了可"
-    errs:
-      - cond: notYetStarted
-        err: EventNotStartedYetError
-      - cond: invalidStatus
-        err: InvalidStatusTransitionError
-
-  - name: 参加者がイベント詳細を確認して参加を申し込む
-    ctx: registration
-    actor: Member
-    qry:
-      - GetEventDetails
-      - GetRemainingCapacity
-    cmd: ApplyForEvent
-    agg: Application
-    rules:
-      - rule: event must be PUBLISHED
-        why: "公開済みイベントのみ"
-      - rule: member must not have existing active application for same event
-        why: "同一イベントへの active 申込は1つまで"
-      - rule: participationType must match an available capacity type
-        why: "選択した participationType の枠が存在する"
-    errs:
-      - cond: eventNotPublished
-        err: EventNotAvailableError
-      - cond: duplicateApplication
-        err: AlreadyAppliedError
-      - cond: noSuchCapacityType
-        err: InvalidParticipationTypeError
-    brs:
-      - cond: "remainingCapacity > 0"
-        evt: ApplicationSubmitted
-        pol: ProcessPaymentForApplication
-      - cond: "remainingCapacity = 0"
-        evt: ApplicationWaitlisted
-    note: "枠あり → APPLIED、枠なし → WAITLISTED（同一トランザクション）"
-
-  - name: 参加者がキャンセルを要求する
-    ctx: registration
-    actor: Member
-    cmd: RequestApplicationCancellation
-    evt: ApplicationCancellationRequested
-    agg: Application
-    rules:
-      - rule: application must be in CONFIRMED or PENDING_RECONFIRMATION status
-        why: "CONFIRMED または PENDING_RECONFIRMATION のみキャンセル要求可"
-      - rule: event must not have already started
-        why: "開催開始後は不可"
-    errs:
-      - cond: invalidStatus
-        err: InvalidStatusTransitionError
-      - cond: eventAlreadyStarted
-        err: EventAlreadyStartedError
-    pol:
-      - RefundOnApplicationCancellation
-
-  - name: 参加者がキャンセル待ちを取下げる
-    ctx: registration
-    actor: Member
-    cmd: WithdrawFromWaitlist
-    evt: WaitlistEntryRemoved
-    agg: Application
-    rules:
-      - rule: application must be in WAITLISTED status
-        why: "WAITLISTED 状態のみ取下げ可（決済前なので返金不要）"
-    errs:
-      - cond: invalidStatus
-        err: InvalidStatusTransitionError
-
-  - name: システムが返金完了をうけてキャンセルを確定する
-    ctx: registration
-    actor: System
-    cmd: CompleteApplicationCancellation
-    evt: ApplicationCancellationCompleted
-    agg: Application
-    rules:
-      - rule: refund must have been completed with reason = MEMBER_CANCEL
-        why: "個別キャンセル経由の返金完了でのみ発火（イベント中止経由は別 POLICY が処理）"
-    pol:
-      - PromoteWaitlistOnCancellation
-
-  - name: システムがキャンセル待ちを繰り上げる
-    ctx: registration
-    actor: System
-    cmd: PromoteWaitlistEntry
-    evt: WaitlistPromoted
-    agg: Application
-    rules:
-      - rule: application must be in WAITLISTED status
-        why: "WAITLISTED 状態のみ"
-      - rule: paymentDeadline is set to 24 hours after promotion
-        why: "繰り上げ後は PROMOTED 状態に遷移し、24h の決済期限を設定"
-    errs:
-      - cond: invalidStatus
-        err: InvalidStatusTransitionError
-    pol:
-      - ProcessPaymentForPromotion
-
-  - name: 参加者が変更通知を受けて継続参加を選択する
-    ctx: registration
-    actor: Member
-    cmd: ConfirmContinuation
-    evt: ContinuationConfirmed
-    agg: Application
-    rules:
-      - rule: application must be in PENDING_RECONFIRMATION status
-        why: "再同意待ち状態のみ"
-    errs:
-      - cond: invalidStatus
-        err: InvalidStatusTransitionError
-
-  - name: システムが再同意を要求する
-    ctx: registration
-    actor: System
-    cmd: RequestReconfirmation
-    evt: ReconfirmationRequested
-    agg: Application
-    rules:
-      - rule: application must be in CONFIRMED status
-        why: "対象は CONFIRMED 状態の Application"
-      - rule: status transitions from CONFIRMED to PENDING_RECONFIRMATION
-        why: "CONFIRMED → PENDING_RECONFIRMATION へ状態遷移"
-    errs:
-      - cond: invalidStatus
-        err: InvalidStatusTransitionError
-
-  - name: システムがイベント中止に伴い申込をキャンセルする
-    ctx: registration
-    actor: System
-    cmd: CancelApplicationDueToEventCancel
-    evt: ApplicationCancelledDueToEventCancel
-    agg: Application
-    rules:
-      - rule: application must be in CONFIRMED status
-        why: "対象は CONFIRMED 状態の Application"
-    errs:
-      - cond: invalidStatus
-        err: InvalidStatusTransitionError
-    note: "status を CANCELLED に遷移（繰り上げ POLICY は発火しない別 EVT）"
-
-  - name: システムが決済を実行する
-    ctx: ticketing
-    actor: System
-    cmd: ExecutePayment
-    agg: Payment
-    rules:
-      - rule: payment amount must match expected price
-        why: "金額は Ticket の priceSnapshot（または Event 料金）と一致"
-      - rule: must not have existing COMPLETED Payment for same Application
-        why: "Application が参照する Payment は最大1つの COMPLETED まで"
-    errs:
-      - cond: amountMismatch
-        err: PaymentAmountMismatchError
-      - cond: alreadyCompleted
-        err: PaymentAlreadyCompletedError
-    brs:
-      - cond: cardValid
-        evt: PaymentCompleted
-        pol: IssueTicketOnPaymentSuccess
-      - cond: cardInvalid
-        evt: PaymentFailed
-        pol: ExpireApplicationOnPaymentFailure
-    note: "カード成功 → PaymentCompleted、カード失敗 → PaymentFailed（同一TX）"
-
-  - name: システムがチケットを発行する
-    ctx: ticketing
-    actor: System
-    cmd: IssueTicket
-    evt: TicketIssued
-    agg: Ticket
-    rules:
-      - rule: payment must have been completed
-        why: "対応する Payment が COMPLETED"
-      - rule: ticket must capture priceSnapshot and memberAtPurchase
-        why: "発行時の priceSnapshot と memberAtPurchase を凍結保持"
-    pol:
-      - ConfirmApplicationOnTicketIssued
-
-  - name: システムが申込を確定する
-    ctx: ticketing
-    actor: System
-    cmd: ConfirmApplication
-    evt: ApplicationConfirmed
-    agg: Application
-    rules:
-      - rule: application must be in APPLIED or PROMOTED status
-        why: "APPLIED または PROMOTED 状態のみ確定可"
-      - rule: matching ISSUED Ticket must exist
-        why: "対応する Ticket が ISSUED 状態で存在する"
-    errs:
-      - cond: invalidStatus
-        err: InvalidStatusTransitionError
-
-  - name: システムが返金を実行する
-    ctx: ticketing
-    actor: System
-    cmd: ExecuteRefund
-    agg: Refund
-    rules:
-      - rule: original Ticket must exist and not already refunded
-        why: "元 Ticket が存在し、まだ返金されていない"
-      - rule: refund amount must equal Ticket.priceSnapshot
-        why: "返金額は priceSnapshot と一致"
-    errs:
-      - cond: alreadyRefunded
-        err: RefundAlreadyProcessedError
-      - cond: ticketNotFound
-        err: TicketNotFoundError
-    brs:
-      - cond: "reason = MEMBER_CANCEL"
-        evt: MemberRefundCompleted
-        pol: CompleteCancellationOnMemberRefund
-      - cond: "reason = EVENT_CANCEL"
-        evt: EventRefundCompleted
-        pol: CompleteEventCancellationOnAllRefunded
-    note: "reason 別に異なる EVT を発行し、後続 POLICY を分岐"
-
-  - name: システムが期限切れの申込を取消す
-    ctx: ticketing
-    actor: System
-    cmd: ExpireApplication
-    evt: ApplicationExpired
-    agg: Application
-    rules:
-      - rule: application must be in APPLIED or PROMOTED status
-        why: "APPLIED または PROMOTED 状態"
-      - rule: paymentDeadline must have passed
-        why: "決済期限を過ぎている"
-    errs:
-      - cond: invalidStatus
-        err: InvalidStatusTransitionError
-    pol:
-      - PromoteWaitlistOnExpiration
-
-  - name: 参加者が会場で受付する
-    ctx: attendance
-    actor: Member
-    cmd: CheckInAtVenue
-    evt: CheckedIn
-    agg: Attendance
-    rules:
-      - rule: Ticket must be valid and matching event
-        why: "Ticket が有効"
-      - rule: Ticket.participationType must be VENUE
-        why: "participationType が VENUE"
-      - rule: recordedAt must be within event time window
-        why: "受付時刻がイベント開催時間帯"
-      - rule: Ticket must not already have Attendance
-        why: "二重受付禁止"
-    errs:
-      - cond: invalidTicket
-        err: InvalidTicketError
-      - cond: wrongType
-        err: ParticipationTypeMismatchError
-      - cond: wrongTime
-        err: NotTodayError
-      - cond: alreadyCheckedIn
-        err: AlreadyCheckedInError
-
-  - name: 参加者がオンラインで参加する
-    ctx: attendance
-    actor: Member
-    qry:
-      - GetStreamUrl
-    cmd: JoinOnline
-    evt: JoinedOnline
-    agg: Attendance
-    rules:
-      - rule: Ticket must be valid and matching event
-        why: "Ticket が有効"
-      - rule: Ticket.participationType must be ONLINE
-        why: "participationType が ONLINE"
-      - rule: recordedAt must be within event time window
-        why: "開催時間帯内"
-    errs:
-      - cond: invalidTicket
-        err: InvalidTicketError
-      - cond: wrongType
-        err: ParticipationTypeMismatchError
-      - cond: wrongTime
-        err: NotTodayError
-
+- name: 主催者がコミュニティを作成する
+  ctx: community
+  actor: Organizer
+  cmd: CreateCommunity
+  evt: CommunityCreated
+  agg: Community
+  rules:
+  - rule: communityName must be unique system-wide
+    why: コミュニティ名はシステム全体で一意
+  - rule: name and description must not be empty
+    why: 名前と説明は空にできない
+  errs:
+  - cond: duplicateName
+    err: DuplicateCommunityNameError
+  - cond: emptyName
+    err: InvalidCommunityDataError
+- name: 参加者がコミュニティに参加する
+  ctx: community
+  actor: Member
+  cmd: JoinCommunity
+  evt: MemberJoined
+  agg: Community
+  rules:
+  - rule: community must be in PUBLISHED status
+    why: 公開済みコミュニティに対してのみ参加可能
+  - rule: member must not already be a member
+    why: 既存メンバーの二重参加を禁止
+  errs:
+  - cond: notPublished
+    err: CommunityNotAvailableError
+  - cond: duplicateMember
+    err: AlreadyMemberError
+- name: メンバーがコミュニティを退会する
+  ctx: community
+  actor: Member
+  cmd: LeaveCommunity
+  evt: MemberLeft
+  agg: Community
+  rules:
+  - rule: member must be an active member and not the owner
+    why: 主催者は退会できない（先に ARCHIVE）
+  errs:
+  - cond: notMember
+    err: NotMemberError
+  - cond: isOwner
+    err: OwnerCannotLeaveError
+  note: 既存 Ticket は memberAtPurchase で凍結保持されるため、退会の伝播は不要（POLICY なし）
+- name: 主催者がイベントを作成する
+  ctx: event-planning
+  actor: Organizer
+  cmd: CreateEvent
+  evt: EventCreated
+  agg: Event
+  rules:
+  - rule: event must belong to an existing community
+    why: 既存コミュニティに紐づく
+  - rule: venueCapacity and onlineCapacity must be non-negative
+    why: 定員は非負、両方0は禁止
+  - rule: at least one of venueCapacity or onlineCapacity must be positive
+  - rule: startDateTime must be in the future
+    why: 開催日時は未来
+  - rule: memberPrice must be less than or equal to generalPrice
+    why: メンバー料金 ≤ 一般料金
+  errs:
+  - cond: communityNotFound
+    err: CommunityNotFoundError
+  - cond: invalidCapacity
+    err: InvalidCapacityError
+  - cond: pastDateTime
+    err: InvalidScheduleError
+- name: 主催者がイベントを公開する
+  ctx: event-planning
+  actor: Organizer
+  cmd: PublishEvent
+  evt: EventPublished
+  agg: Event
+  rules:
+  - rule: event must be in DRAFT status
+    why: DRAFT 状態のみ公開可能
+  - rule: all required fields must be filled
+    why: 必須項目が揃っていること（onlineCapacity > 0 なら streamUrl 必須など）
+  errs:
+  - cond: alreadyPublished
+    err: InvalidStatusTransitionError
+  - cond: incompleteData
+    err: InvalidEventDataError
+- name: 主催者が定員を増やす
+  ctx: event-planning
+  actor: Organizer
+  cmd: IncreaseCapacity
+  evt: CapacityIncreased
+  agg: Event
+  rules:
+  - rule: event must be PUBLISHED and not CANCELLED
+    why: PUBLISHED 状態かつ未中止
+  - rule: new capacity must be greater than current capacity
+    why: 新定員は現定員より大きい（減少不可）
+  errs:
+  - cond: invalidStatus
+    err: InvalidStatusTransitionError
+  - cond: notIncrease
+    err: InvalidCapacityError
+  pol:
+  - PromoteWaitlistOnCapacityIncrease
+- name: 主催者が日時を変更する
+  ctx: event-planning
+  actor: Organizer
+  cmd: RescheduleEvent
+  evt: EventRescheduled
+  agg: Event
+  rules:
+  - rule: event must be PUBLISHED and not started
+    why: 開催前のみ変更可
+  - rule: new dateTime must be in the future
+    why: 新日時は未来
+  errs:
+  - cond: invalidStatus
+    err: InvalidStatusTransitionError
+  - cond: pastDateTime
+    err: InvalidScheduleError
+  pol:
+  - ReconfirmOnEventReschedule
+- name: 主催者が会場を変更する
+  ctx: event-planning
+  actor: Organizer
+  cmd: RelocateEvent
+  evt: EventRelocated
+  agg: Event
+  rules:
+  - rule: event must be PUBLISHED and not started
+    why: 開催前のみ変更可
+  - rule: must not change participation type composition
+    why: participationType 構成（会場枠/オンライン枠）の変更は不可
+  errs:
+  - cond: invalidStatus
+    err: InvalidStatusTransitionError
+  - cond: typeChange
+    err: ParticipationTypeChangeNotAllowedError
+  pol:
+  - NotifyOnEventRelocation
+- name: 主催者が料金を変更する
+  ctx: event-planning
+  actor: Organizer
+  cmd: RepriceEvent
+  evt: EventRepriced
+  agg: Event
+  rules:
+  - rule: event must be PUBLISHED and not started
+    why: 開催前のみ変更可
+  - rule: price change applies only to future applications
+    why: 既存申込の Ticket は priceSnapshot で凍結、変更は新規申込にのみ適用
+  errs:
+  - cond: invalidStatus
+    err: InvalidStatusTransitionError
+  pol:
+  - ReconfirmOnEventReprice
+- name: 主催者がイベント中止を要求する
+  ctx: event-planning
+  actor: Organizer
+  cmd: RequestEventCancellation
+  evt: EventCancellationRequested
+  agg: Event
+  rules:
+  - rule: event must not have already occurred
+    why: 開催済み・既中止は不可
+  - rule: event must not be already CANCELLED
+  errs:
+  - cond: eventAlreadyOccurred
+    err: EventAlreadyOccurredError
+  - cond: alreadyCancelled
+    err: EventAlreadyCancelledError
+  pol:
+  - RefundAllOnEventCancellation
+- name: システムが全返金完了でイベント中止を確定する
+  ctx: event-planning
+  actor: System
+  cmd: CompleteEventCancellation
+  evt: EventCancellationCompleted
+  agg: Event
+  rules:
+  - rule: all confirmed applications must have been refunded
+    why: 全 confirmed 申込の返金が完了している
+  errs:
+  - cond: pendingRefunds
+    err: RefundsPendingError
+- name: 主催者がイベントを開催完了にする
+  ctx: event-planning
+  actor: Organizer
+  cmd: CompleteEvent
+  evt: EventCompleted
+  agg: Event
+  rules:
+  - rule: event start dateTime must have passed
+    why: 開催日時通過後のみ完了可
+  - rule: event must be PUBLISHED (not CANCELLED)
+    why: PUBLISHED 状態のみ完了可
+  errs:
+  - cond: notYetStarted
+    err: EventNotStartedYetError
+  - cond: invalidStatus
+    err: InvalidStatusTransitionError
+- name: 参加者がイベント詳細を確認して参加を申し込む
+  ctx: registration
+  actor: Member
+  qry:
+  - GetEventDetails
+  - GetRemainingCapacity
+  cmd: ApplyForEvent
+  agg: Application
+  rules:
+  - rule: event must be PUBLISHED
+    why: 公開済みイベントのみ
+  - rule: member must not have existing active application for same event
+    why: 同一イベントへの active 申込は1つまで
+  - rule: participationType must match an available capacity type
+    why: 選択した participationType の枠が存在する
+  errs:
+  - cond: eventNotPublished
+    err: EventNotAvailableError
+  - cond: duplicateApplication
+    err: AlreadyAppliedError
+  - cond: noSuchCapacityType
+    err: InvalidParticipationTypeError
+  brs:
+  - cond: remainingCapacity > 0
+    evt: ApplicationSubmitted
+    pol: ProcessPaymentForApplication
+  - cond: remainingCapacity = 0
+    evt: ApplicationWaitlisted
+  note: 枠あり → APPLIED、枠なし → WAITLISTED（同一トランザクション）
+- name: 参加者がキャンセルを要求する
+  ctx: registration
+  actor: Member
+  cmd: RequestApplicationCancellation
+  evt: ApplicationCancellationRequested
+  agg: Application
+  rules:
+  - rule: application must be in CONFIRMED or PENDING_RECONFIRMATION status
+    why: CONFIRMED または PENDING_RECONFIRMATION のみキャンセル要求可
+  - rule: event must not have already started
+    why: 開催開始後は不可
+  errs:
+  - cond: invalidStatus
+    err: InvalidStatusTransitionError
+  - cond: eventAlreadyStarted
+    err: EventAlreadyStartedError
+  pol:
+  - RefundOnApplicationCancellation
+- name: 参加者がキャンセル待ちを取下げる
+  ctx: registration
+  actor: Member
+  cmd: WithdrawFromWaitlist
+  evt: WaitlistEntryRemoved
+  agg: Application
+  rules:
+  - rule: application must be in WAITLISTED status
+    why: WAITLISTED 状態のみ取下げ可（決済前なので返金不要）
+  errs:
+  - cond: invalidStatus
+    err: InvalidStatusTransitionError
+- name: システムが返金完了をうけてキャンセルを確定する
+  ctx: registration
+  actor: System
+  cmd: CompleteApplicationCancellation
+  evt: ApplicationCancellationCompleted
+  agg: Application
+  rules:
+  - rule: refund must have been completed with reason = MEMBER_CANCEL
+    why: 個別キャンセル経由の返金完了でのみ発火（イベント中止経由は別 POLICY が処理）
+  pol:
+  - PromoteWaitlistOnCancellation
+- name: システムがキャンセル待ちを繰り上げる
+  ctx: registration
+  actor: System
+  cmd: PromoteWaitlistEntry
+  evt: WaitlistPromoted
+  agg: Application
+  rules:
+  - rule: application must be in WAITLISTED status
+    why: WAITLISTED 状態のみ
+  - rule: paymentDeadline is set to 24 hours after promotion
+    why: 繰り上げ後は PROMOTED 状態に遷移し、24h の決済期限を設定
+  errs:
+  - cond: invalidStatus
+    err: InvalidStatusTransitionError
+  pol:
+  - ProcessPaymentForPromotion
+- name: 参加者が変更通知を受けて継続参加を選択する
+  ctx: registration
+  actor: Member
+  cmd: ConfirmContinuation
+  evt: ContinuationConfirmed
+  agg: Application
+  rules:
+  - rule: application must be in PENDING_RECONFIRMATION status
+    why: 再同意待ち状態のみ
+  errs:
+  - cond: invalidStatus
+    err: InvalidStatusTransitionError
+- name: システムが再同意を要求する
+  ctx: registration
+  actor: System
+  cmd: RequestReconfirmation
+  evt: ReconfirmationRequested
+  agg: Application
+  rules:
+  - rule: application must be in CONFIRMED status
+    why: 対象は CONFIRMED 状態の Application
+  - rule: status transitions from CONFIRMED to PENDING_RECONFIRMATION
+    why: CONFIRMED → PENDING_RECONFIRMATION へ状態遷移
+  errs:
+  - cond: invalidStatus
+    err: InvalidStatusTransitionError
+- name: システムがイベント中止に伴い申込をキャンセルする
+  ctx: registration
+  actor: System
+  cmd: CancelApplicationDueToEventCancel
+  evt: ApplicationCancelledDueToEventCancel
+  agg: Application
+  rules:
+  - rule: application must be in CONFIRMED status
+    why: 対象は CONFIRMED 状態の Application
+  errs:
+  - cond: invalidStatus
+    err: InvalidStatusTransitionError
+  note: status を CANCELLED に遷移（繰り上げ POLICY は発火しない別 EVT）
+- name: システムが決済を実行する
+  ctx: ticketing
+  actor: System
+  cmd: ExecutePayment
+  agg: Payment
+  rules:
+  - rule: payment amount must match expected price
+    why: 金額は Ticket の priceSnapshot（または Event 料金）と一致
+  - rule: must not have existing COMPLETED Payment for same Application
+    why: Application が参照する Payment は最大1つの COMPLETED まで
+  errs:
+  - cond: amountMismatch
+    err: PaymentAmountMismatchError
+  - cond: alreadyCompleted
+    err: PaymentAlreadyCompletedError
+  brs:
+  - cond: cardValid
+    evt: PaymentCompleted
+    pol: IssueTicketOnPaymentSuccess
+  - cond: cardInvalid
+    evt: PaymentFailed
+    pol: ExpireApplicationOnPaymentFailure
+  note: カード成功 → PaymentCompleted、カード失敗 → PaymentFailed（同一TX）
+- name: システムがチケットを発行する
+  ctx: ticketing
+  actor: System
+  cmd: IssueTicket
+  evt: TicketIssued
+  agg: Ticket
+  rules:
+  - rule: payment must have been completed
+    why: 対応する Payment が COMPLETED
+  - rule: ticket must capture priceSnapshot and memberAtPurchase
+    why: 発行時の priceSnapshot と memberAtPurchase を凍結保持
+  pol:
+  - ConfirmApplicationOnTicketIssued
+- name: システムが申込を確定する
+  ctx: ticketing
+  actor: System
+  cmd: ConfirmApplication
+  evt: ApplicationConfirmed
+  agg: Application
+  rules:
+  - rule: application must be in APPLIED or PROMOTED status
+    why: APPLIED または PROMOTED 状態のみ確定可
+  - rule: matching ISSUED Ticket must exist
+    why: 対応する Ticket が ISSUED 状態で存在する
+  errs:
+  - cond: invalidStatus
+    err: InvalidStatusTransitionError
+- name: システムが返金を実行する
+  ctx: ticketing
+  actor: System
+  cmd: ExecuteRefund
+  agg: Refund
+  rules:
+  - rule: original Ticket must exist and not already refunded
+    why: 元 Ticket が存在し、まだ返金されていない
+  - rule: refund amount must equal Ticket.priceSnapshot
+    why: 返金額は priceSnapshot と一致
+  errs:
+  - cond: alreadyRefunded
+    err: RefundAlreadyProcessedError
+  - cond: ticketNotFound
+    err: TicketNotFoundError
+  brs:
+  - cond: reason = MEMBER_CANCEL
+    evt: MemberRefundCompleted
+    pol: CompleteCancellationOnMemberRefund
+  - cond: reason = EVENT_CANCEL
+    evt: EventRefundCompleted
+    pol: CompleteEventCancellationOnAllRefunded
+  note: reason 別に異なる EVT を発行し、後続 POLICY を分岐
+- name: システムが期限切れの申込を取消す
+  ctx: ticketing
+  actor: System
+  cmd: ExpireApplication
+  evt: ApplicationExpired
+  agg: Application
+  rules:
+  - rule: application must be in APPLIED or PROMOTED status
+    why: APPLIED または PROMOTED 状態
+  - rule: paymentDeadline must have passed
+    why: 決済期限を過ぎている
+  errs:
+  - cond: invalidStatus
+    err: InvalidStatusTransitionError
+  pol:
+  - PromoteWaitlistOnExpiration
+- name: 参加者が会場で受付する
+  ctx: attendance
+  actor: Member
+  cmd: CheckInAtVenue
+  evt: CheckedIn
+  agg: Attendance
+  rules:
+  - rule: Ticket must be valid and matching event
+    why: Ticket が有効
+  - rule: Ticket.participationType must be VENUE
+    why: participationType が VENUE
+  - rule: recordedAt must be within event time window
+    why: 受付時刻がイベント開催時間帯
+  - rule: Ticket must not already have Attendance
+    why: 二重受付禁止
+  errs:
+  - cond: invalidTicket
+    err: InvalidTicketError
+  - cond: wrongType
+    err: ParticipationTypeMismatchError
+  - cond: wrongTime
+    err: NotTodayError
+  - cond: alreadyCheckedIn
+    err: AlreadyCheckedInError
+- name: 参加者がオンラインで参加する
+  ctx: attendance
+  actor: Member
+  qry:
+  - GetStreamUrl
+  cmd: JoinOnline
+  evt: JoinedOnline
+  agg: Attendance
+  rules:
+  - rule: Ticket must be valid and matching event
+    why: Ticket が有効
+  - rule: Ticket.participationType must be ONLINE
+    why: participationType が ONLINE
+  - rule: recordedAt must be within event time window
+    why: 開催時間帯内
+  errs:
+  - cond: invalidTicket
+    err: InvalidTicketError
+  - cond: wrongType
+    err: ParticipationTypeMismatchError
+  - cond: wrongTime
+    err: NotTodayError
 pols:
-  - name: PromoteWaitlistOnCapacityIncrease
-    ctx: event-planning
-    trg: CapacityIncreased
-    qry: GetWaitlistedApplications
-    cmd: PromoteWaitlistEntry
-    bulk: true
-    evt: WaitlistPromoted
-    note: "定員増枠でキャンセル待ちを BULK 繰り上げ"
-
-  - name: ReconfirmOnEventReschedule
-    ctx: event-planning
-    trg: EventRescheduled
-    qry: GetConfirmedApplications
-    cmd: RequestReconfirmation
-    bulk: true
-    evt: ReconfirmationRequested
-    note: "日時変更で confirmed 申込へ再同意を BULK 要求"
-
-  - name: NotifyOnEventRelocation
-    ctx: event-planning
-    trg: EventRelocated
-    qry: GetConfirmedApplications
-    bulk: true
-    evt: ChangeNotified
-    note: "会場変更は通知のみ（再同意不要）。副作用専用 POLICY: 外部通知サービス（メール / プッシュ）を recipient ごとに呼び出す。AGG 更新は伴わないため CMD / SCENARIO は宣言せず、ChangeNotified を観測用に発行するのみ。"
-
-  - name: ReconfirmOnEventReprice
-    ctx: event-planning
-    trg: EventRepriced
-    qry: GetConfirmedApplications
-    cmd: RequestReconfirmation
-    bulk: true
-    evt: ReconfirmationRequested
-    note: "料金変更で confirmed 申込へ再同意を BULK 要求"
-
-  - name: RefundAllOnEventCancellation
-    ctx: event-planning
-    trg: EventCancellationRequested
-    qry: GetConfirmedApplications
-    cmd: ExecuteRefund
-    bulk: true
-    note: "イベント中止で全 confirmed 申込を BULK 返金（reason = EVENT_CANCEL）"
-
-  - name: CompleteEventCancellationOnAllRefunded
-    ctx: event-planning
-    trg: EventRefundCompleted
-    qry: GetPendingRefundsForEvent
-    cmd: CompleteEventCancellation
-    note: "全 confirmed 申込の返金完了でイベント中止を確定。[?] Saga インスタンス管理: eventId 単位で EventRefundCompleted を累積し、QRY で残返金件数を確認 → ゼロ件で CompleteEventCancellation を発行"
-
-  - name: RefundOnApplicationCancellation
-    ctx: registration
-    trg: ApplicationCancellationRequested
-    cmd: ExecuteRefund
-    note: "キャンセル要求を受けて返金処理を起動（CMD ExecuteRefund は reason = MEMBER_CANCEL で発行）"
-
-  - name: PromoteWaitlistOnCancellation
-    ctx: registration
-    trg: ApplicationCancellationCompleted
-    qry: GetNextWaitlistedApplication
-    cmd: PromoteWaitlistEntry
-    note: "個別キャンセル経由のキャンセル確定で空席発生 → 1 名繰り上げ"
-
-  - name: PromoteWaitlistOnExpiration
-    ctx: registration
-    trg: ApplicationExpired
-    qry: GetNextWaitlistedApplication
-    cmd: PromoteWaitlistEntry
-    note: "決済期限切れによる失効でも空席発生 → 1 名繰り上げ"
-
-  - name: CancelApplicationsOnEventCancellation
-    ctx: registration
-    trg: EventCancellationCompleted
-    qry: GetConfirmedApplications
-    cmd: CancelApplicationDueToEventCancel
-    bulk: true
-    note: "イベント中止確定で関連 confirmed 申込を一括 CANCELLED に（BULK・繰り上げ抑止）"
-
-  - name: ProcessPaymentForApplication
-    ctx: ticketing
-    trg: ApplicationSubmitted
-    cmd: ExecutePayment
-    note: "申込発生で決済 Saga を開始"
-
-  - name: ProcessPaymentForPromotion
-    ctx: ticketing
-    trg: WaitlistPromoted
-    cmd: ExecutePayment
-    note: "繰り上げ通知で決済 Saga を開始（24h 期限付き）"
-
-  - name: IssueTicketOnPaymentSuccess
-    ctx: ticketing
-    trg: PaymentCompleted
-    cmd: IssueTicket
-    note: "決済成功でチケット発行"
-
-  - name: ExpireApplicationOnPaymentFailure
-    ctx: ticketing
-    trg: PaymentFailed
-    cmd: ExpireApplication
-    note: "決済失敗で申込を即時失効"
-
-  - name: ConfirmApplicationOnTicketIssued
-    ctx: ticketing
-    trg: TicketIssued
-    cmd: ConfirmApplication
-    note: "チケット発行で申込を確定状態に"
-
-  - name: CompleteCancellationOnMemberRefund
-    ctx: ticketing
-    trg: MemberRefundCompleted
-    cmd: CompleteApplicationCancellation
-    note: "個別キャンセル経由の返金完了でキャンセル状態を確定"
-
-  - name: ExpireApplicationOnPaymentDeadline
-    ctx: ticketing
-    trg: PaymentDeadlinePassed
-    cmd: ExpireApplication
-    note: "スケジューラが決済期限経過を検知して申込を失効させる。[?] PaymentDeadlinePassed の発行元（cron / Temporal / 単体スケジューラ）は実装フェーズで決定"
+- name: PromoteWaitlistOnCapacityIncrease
+  ctx: event-planning
+  trg: CapacityIncreased
+  qry: GetWaitlistedApplications
+  cmd: PromoteWaitlistEntry
+  bulk: true
+  evt: WaitlistPromoted
+  note: 定員増枠でキャンセル待ちを BULK 繰り上げ
+- name: ReconfirmOnEventReschedule
+  ctx: event-planning
+  trg: EventRescheduled
+  qry: GetConfirmedApplications
+  cmd: RequestReconfirmation
+  bulk: true
+  evt: ReconfirmationRequested
+  note: 日時変更で confirmed 申込へ再同意を BULK 要求
+- name: NotifyOnEventRelocation
+  ctx: event-planning
+  trg: EventRelocated
+  qry: GetConfirmedApplications
+  bulk: true
+  evt: ChangeNotified
+  note: '会場変更は通知のみ（再同意不要）。副作用専用 POLICY: 外部通知サービス（メール / プッシュ）を recipient ごとに呼び出す。AGG 更新は伴わないため CMD / SCENARIO は宣言せず、ChangeNotified を観測用に発行するのみ。'
+- name: ReconfirmOnEventReprice
+  ctx: event-planning
+  trg: EventRepriced
+  qry: GetConfirmedApplications
+  cmd: RequestReconfirmation
+  bulk: true
+  evt: ReconfirmationRequested
+  note: 料金変更で confirmed 申込へ再同意を BULK 要求
+- name: RefundAllOnEventCancellation
+  ctx: event-planning
+  trg: EventCancellationRequested
+  qry: GetConfirmedApplications
+  cmd: ExecuteRefund
+  bulk: true
+  note: イベント中止で全 confirmed 申込を BULK 返金（reason = EVENT_CANCEL）
+- name: CompleteEventCancellationOnAllRefunded
+  ctx: event-planning
+  trg: EventRefundCompleted
+  qry: GetPendingRefundsForEvent
+  cmd: CompleteEventCancellation
+  note: '全 confirmed 申込の返金完了でイベント中止を確定。[?] Saga インスタンス管理: eventId 単位で EventRefundCompleted を累積し、QRY で残返金件数を確認 → ゼロ件で CompleteEventCancellation を発行'
+- name: RefundOnApplicationCancellation
+  ctx: registration
+  trg: ApplicationCancellationRequested
+  cmd: ExecuteRefund
+  note: キャンセル要求を受けて返金処理を起動（CMD ExecuteRefund は reason = MEMBER_CANCEL で発行）
+- name: PromoteWaitlistOnCancellation
+  ctx: registration
+  trg: ApplicationCancellationCompleted
+  qry: GetNextWaitlistedApplication
+  cmd: PromoteWaitlistEntry
+  note: 個別キャンセル経由のキャンセル確定で空席発生 → 1 名繰り上げ
+- name: PromoteWaitlistOnExpiration
+  ctx: registration
+  trg: ApplicationExpired
+  qry: GetNextWaitlistedApplication
+  cmd: PromoteWaitlistEntry
+  note: 決済期限切れによる失効でも空席発生 → 1 名繰り上げ
+- name: CancelApplicationsOnEventCancellation
+  ctx: registration
+  trg: EventCancellationCompleted
+  qry: GetConfirmedApplications
+  cmd: CancelApplicationDueToEventCancel
+  bulk: true
+  note: イベント中止確定で関連 confirmed 申込を一括 CANCELLED に（BULK・繰り上げ抑止）
+- name: ProcessPaymentForApplication
+  ctx: ticketing
+  trg: ApplicationSubmitted
+  cmd: ExecutePayment
+  note: 申込発生で決済 Saga を開始
+- name: ProcessPaymentForPromotion
+  ctx: ticketing
+  trg: WaitlistPromoted
+  cmd: ExecutePayment
+  note: 繰り上げ通知で決済 Saga を開始（24h 期限付き）
+- name: IssueTicketOnPaymentSuccess
+  ctx: ticketing
+  trg: PaymentCompleted
+  cmd: IssueTicket
+  note: 決済成功でチケット発行
+- name: ExpireApplicationOnPaymentFailure
+  ctx: ticketing
+  trg: PaymentFailed
+  cmd: ExpireApplication
+  note: 決済失敗で申込を即時失効
+- name: ConfirmApplicationOnTicketIssued
+  ctx: ticketing
+  trg: TicketIssued
+  cmd: ConfirmApplication
+  note: チケット発行で申込を確定状態に
+- name: CompleteCancellationOnMemberRefund
+  ctx: ticketing
+  trg: MemberRefundCompleted
+  cmd: CompleteApplicationCancellation
+  note: 個別キャンセル経由の返金完了でキャンセル状態を確定
+- name: ExpireApplicationOnPaymentDeadline
+  ctx: ticketing
+  trg: PaymentDeadlinePassed
+  cmd: ExpireApplication
+  note: スケジューラが決済期限経過を検知して申込を失効させる。[?] PaymentDeadlinePassed の発行元（cron / Temporal / 単体スケジューラ）は実装フェーズで決定

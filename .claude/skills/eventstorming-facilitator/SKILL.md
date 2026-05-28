@@ -20,7 +20,7 @@ description: Facilitate DDD domain modeling sessions via EventStorming conversat
 | 3. イベント発見 | `references/domain-starters.md` から候補提示。追加・削除を確認 |
 | 4. CMD→EVT→POLICY チェーン | フロー全体を1本ずつ確認。AGG・BC 境界も同時に拾う |
 | 4.5. BC 境界 | 文脈で意味が変わる言葉を `LANGUAGE` として記録 |
-| **4.6. 目的・背景・制約** | **各 AGG の `#### 目的`（必須・30字以上）／`#### 背景`／`#### 制約` を 3 つの問いで言語化。RULE/ERR の前に意図を固める。BC レベルは任意。詳細: `references/session-guide.md`** |
+| **4.6. 目的・背景・制約** | **各 AGG の `#### 目的`（必須・30字以上）／`#### 背景`／`#### 制約` を 3 つの問いで言語化し、`.dml.yaml` の `aggs[]` にも `name`/`ctx`/`purpose`/`states` を反映（`.dml.yaml` を先、`.md` を後）。RULE/ERR の前に意図を固める。BC レベルは任意。詳細: `references/session-guide.md`** |
 | 5. RULE・ERR | 各 AGG の不変条件・エラーケースを掘る。`rules[].why`・`errs[].when` 併記（推奨） |
 | 6. 整合性チェック → 出力 | DML 整合性を確認し Markdown レポートを最終更新 |
 
@@ -163,7 +163,8 @@ flow:
 
 DML は **MD とは別の兄弟ファイル `docs/eventstorming/<session>.dml.yaml`** に **YAML 直書き**（フェンス不要）で書く。`.md` の §9 はこの `.dml.yaml` へのリンク参照のみ。完全仕様: `references/dml-spec.md`。
 
-- **トップレベルは `ctxs` / `scs` / `pols` の 3 リスト**。`#` によるセクション区切りは使わない（リスト構造で分離）。`scs`/`pols` の各要素は `ctx:` で所属 BC を参照
+- **トップレベルは `ctxs` / `aggs` / `scs` / `pols` の 4 リスト**（任意で `domains`）。`#` によるセクション区切りは使わない（リスト構造で分離）。`scs`/`pols`/`aggs` の各要素は `ctx:` で所属 BC を参照
+- **AGG 詳細はトップレベル `aggs[]` に書き、`ctxs[].aggs` は AGG 名（PascalCase 文字列）のリスト**（軽量名簿）。`aggs[]` の各要素は `name`（必須）／`ctx`（必須・所属 BC）／`purpose`／`states`／`transitions[]`（`from`/`to`/`via`/`when`）／`attrs[]`（`name`/`type`/`required`）／`events[]`（`name`/`params`）
 - **`scs[].name` は日本語**でアクター＋行為（例：`name: 主催者がコミュニティを作成する`）。`actor` 必須（典型値: `Organizer` `Member` `System`）
 - **キー順 `name → ctx → actor → qry → cmd → evt|brs → agg → rules → errs → pol`** を推奨
 - **`cmd/evt/agg/trg/emits/qry` の値は英語識別子**（`()` や `<<>>` 不要）。日本語補足は `rules[].why`・`errs[].when`・`note` の構造化フィールドへ（`#` 行コメントは使わない）
@@ -186,8 +187,8 @@ DML は **MD とは別の兄弟ファイル `docs/eventstorming/<session>.dml.ya
 | フェーズ3完了 | `.dml.yaml` を `Write`/`Edit` → `.md` の §3・§10 を `Edit` |
 | フェーズ4完了 | `.dml.yaml` を `Edit` → `.md` の §3・§4・§10 を `Edit` |
 | フェーズ4.5完了 | `.dml.yaml`（lang）を `Edit` → `.md` の §4 を `Edit` |
-| **フェーズ4.6完了** | **`.dml.yaml` の `ctxs[].aggs` に AGG メタ（`name`必須・`purpose`・`states`）を反映 → `Edit` で §4（BC `#### 目的/背景/制約` 任意）・§5（AGG `#### 目的`必須/`#### 背景`/`#### 制約`）** |
-| フェーズ5完了 | `.dml.yaml`（`why`/`when` 併記）を `Edit` → `.md` の §5（Zod・rules/errs）・§6 を `Edit` |
+| **フェーズ4.6完了** | **`.dml.yaml` のトップレベル `aggs[]` に AGG メタ（`name`必須・`ctx`必須・`purpose`・`states`）を、所属 BC 側には `ctxs[].aggs` に AGG 名（PascalCase 文字列）を追加 → `Edit` で §4（BC `#### 目的/背景/制約` 任意）・§5（AGG `#### 目的`必須/`#### 背景`/`#### 制約`）** |
+| フェーズ5完了 | `.dml.yaml`（`why`/`when` 併記、任意で `aggs[].transitions[]`（`from`/`to`/`via`）・`aggs[].attrs[]`・`aggs[].events[]`）を `Edit` → `.md` の §5（Zod・rules/errs）・§6 を `Edit` |
 | フェーズ6（最終） | `.dml.yaml` 完成版 → `.md` 全セクション完成版を `Edit` |
 | ユーザーが「保存して」 | 即座に `.dml.yaml` → `.md` の順で書き出す |
 

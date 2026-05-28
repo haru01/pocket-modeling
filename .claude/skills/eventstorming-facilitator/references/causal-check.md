@@ -17,6 +17,12 @@ DML は兄弟 `<session>.dml.yaml` ファイル（純 YAML・フェンスなし�
 | **TRIGGER一覧** | 全 `pols[].trg` |
 | **POLICY発行CMD一覧** | 全 `pols[].cmd` |
 | **SCENARIO参照POL一覧** | 全 `scs[].pol` + `scs[].brs[].pol` |
+| **AGG一覧（トップレベル宣言）** | 全 `aggs[].name`（PascalCase） |
+| **SCENARIO参照AGG一覧** | 全 `scs[].agg` |
+| **AGG所属マップ（aggs 側）** | 全 `aggs[].ctx` |
+| **AGG所属マップ（ctxs 側）** | 全 `ctxs[].aggs[]`（PascalCase 名簿） |
+| **AGG transitions via CMD一覧** | 全 `aggs[].transitions[].via` |
+| **AGG events一覧** | 全 `aggs[].events[].name` |
 
 ---
 
@@ -32,6 +38,9 @@ DML は兄弟 `<session>.dml.yaml` ファイル（純 YAML・フェンスなし�
 | **C6** | `brs` の全パスに `evt`（必要なら `pol`）が揃っているか | 成功パスのみ pol 定義、失敗パスが未接続 |
 | **C7** | 循環参照の検出 | A→B→C→A のような無限ループになるPOLICYチェーン |
 | **C8** | `ctxs[].up` / `dn` の `ctx` 参照が実在する `ctxs[].name` を指しているか | 未定義 BC を依存先に指定したタイプミス・古い名前の残存 |
+| **C9** | `scs[].cmd` の AGG（`scs[].agg`）の `aggs[].transitions[].via` に同じ cmd が存在するか | SCENARIO の CMD が AGG 側で状態遷移トリガーとして宣言されていない（実装漏れ・命名揺れの検出） |
+| **C10** | `scs[].evt` が AGG（`scs[].agg`）の `aggs[].events[]` に宣言されているか | AGG が emit する EVT 宣言と SCENARIO 発火 EVT の不一致 |
+| **C11** | `ctxs[].aggs` 名簿と `aggs[].ctx` の双方向参照整合 | (a) `ctxs[].aggs` に並ぶ名前で `aggs[]` 側に該当 `name` が無い (b) `aggs[].ctx` が指す BC の `ctxs[].aggs` 名簿にその AGG 名が無い |
 
 ---
 
@@ -97,6 +106,38 @@ POLICYグラフを構築:
 深さ優先探索で訪問済みノードを記録し、再訪したら循環として報告。
 ```
 
+### C9: AGG transitions via CMD 整合チェック
+
+```
+各 SCENARIO Y（agg: A, cmd: V）について：
+→ aggs[] から name == A のエントリを取得
+→ そのエントリの transitions[] に via == V が存在するか？
+→ NOなら: 「SCENARIO Y の CMD V は AGG A の transitions に未宣言（状態遷移トリガーが定義されていない）」
+```
+
+### C10: AGG events 宣言整合チェック
+
+```
+各 SCENARIO Y（agg: A, evt: E）について：
+→ aggs[] から name == A のエントリを取得
+→ そのエントリの events[] に name == E が存在するか？
+→ NOなら: 「SCENARIO Y の EVT E は AGG A の events に未宣言」
+```
+
+### C11: ctxs[].aggs ⇔ aggs[].ctx 双方向参照チェック
+
+```
+ctxs 側 → aggs 側：
+各 ctxs[X].aggs[] の AGG 名 N について：
+→ aggs[] に name == N かつ ctx == X のエントリが存在するか？
+→ NOなら: 「BC X の aggs 名簿に N があるが、トップレベル aggs[] に未宣言（あるいは ctx が一致しない）」
+
+aggs 側 → ctxs 側：
+各 aggs[].name == N, ctx == X について：
+→ ctxs[X].aggs[] に N が含まれるか？
+→ NOなら: 「AGG N は ctx: X と宣言されているが、BC X の aggs 名簿に登録されていない」
+```
+
 ---
 
 ## 出力フォーマット
@@ -123,7 +164,7 @@ POLICYグラフを構築:
 
 1. MDファイルを Read で読み込む
 2. 上記「検査対象の収集」を実施してリストを作る
-3. C1〜C7 を順に検査する
+3. C1〜C11 を順に検査する
 4. **問題あり・要確認** の項目をセクション6（オープンクエスチョン）に追記する（Edit tool）
 
 ### セクション6への追記ルール

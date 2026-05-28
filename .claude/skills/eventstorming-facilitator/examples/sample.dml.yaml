@@ -1,12 +1,14 @@
 # yaml-language-server: $schema=../references/dml.schema.yaml
 # ============================================================
-# サンプル DML：コミュニティイベント参加ドメイン（v2 文法の参照例）
+# サンプル DML：コミュニティイベント参加ドメイン（v3 文法の参照例）
 # ============================================================
-# ContextMapper 由来の v2 拡張を網羅したショーケース:
-#   ① リレーション語彙の拡充（roles / partnerRoles、relationship enum 追加）
-#   ② Domain / Subdomain 分類（domains + contexts[].subdomain）
-#   ③ フロー分岐セマンティクス（branchMode / policies[].triggers）
-#   ④ BC / 集約メタデータ（type / vision / responsibilities / 各 context に aggregates）
+# ContextMapper 由来の v2 拡張 + v3 で AGG をトップレベル化:
+#   ① リレーション語彙の拡充（roles / prRoles、rel enum 追加）
+#   ② Domain / Subdomain 分類（domains + ctxs[].sub）
+#   ③ フロー分岐セマンティクス（brMode / pols[].trgs）
+#   ④ BC メタデータ（type / vision / resp / ctxs[].aggs は名前リスト）
+#   ⑤ AGG はトップレベル `aggs:` に集約（ctx 参照で BC と紐付け）
+#      → states / transitions(from→to via cmd) / attrs / events を 1 ブロックで宣言
 # 拡張フィールドはすべて optional（省略すれば v1 記法のまま valid）。
 # ============================================================
 
@@ -22,7 +24,7 @@ domains:
         vision: "決済・返金。外部 PSP に委譲する汎用領域"
 
 ctxs:
-  # ④ BC メタ + ① roles/partnerRoles を使う BC
+  # ④ BC メタ + ① roles / prRoles を使う BC
   - name: event-planning
     type: FEATURE
     vision: "イベントのライフサイクルとキャパシティを所有する"
@@ -38,10 +40,7 @@ ctxs:
       - ctx: participation
         rel: Customer-Supplier
         note: "Event を下流 BC が参照"
-    aggs:
-      - name: Event
-        purpose: "イベントのライフサイクル（企画→公開→変更/中止）とキャパシティの単一の真実源"
-        states: [DRAFT, PUBLISHED, CANCELLED, COMPLETED]
+    aggs: [Event]                  # ⑤ AGG 名簿（詳細はトップレベル aggs[] へ）
 
   - name: participation
     type: FEATURE
@@ -59,10 +58,7 @@ ctxs:
         roles: [OHS, PL]
         prRoles: [ACL]
         note: "決済 BC へ確定申込を公開"
-    aggs:
-      - name: Participation
-        purpose: "参加申込の状態（申込/承認/キャンセル/繰上）の単一の真実源"
-        states: [APPLIED, WAITLISTED, APPROVED, CANCELLED]
+    aggs: [Participation]
 
   - name: payment
     sub: payment
@@ -73,10 +69,57 @@ ctxs:
       - ctx: participation
         rel: Customer-Supplier
     dn: []
-    aggs:
-      - name: Payment
-        purpose: "参加費の決済状態（保留→完了→返金）の単一の真実源"
-        states: [PENDING, COMPLETED, REFUNDED]
+    aggs: [Payment]
+
+# ⑤ Aggregate（トップレベル）— ctx 参照で BC と紐付く。
+# states / transitions / attrs / events をフラットに 1 ブロックで宣言。
+aggs:
+  - name: Event
+    ctx: event-planning
+    purpose: "イベントのライフサイクル（企画→公開→変更/中止）とキャパシティの単一の真実源"
+    states: [DRAFT, PUBLISHED, CANCELLED, COMPLETED]
+    transitions:
+      - { from: DRAFT,     to: PUBLISHED, via: PublishEvent, when: "必須項目が揃いキャパシティ > 0" }
+      - { from: PUBLISHED, to: CANCELLED, via: CancelEvent }
+      - { from: PUBLISHED, to: COMPLETED, via: CompleteEvent, when: "開催日時通過後の主催者確定" }
+    attrs:
+      - { name: title,    type: string, required: true }
+      - { name: capacity, type: int,    required: true, note: "1 以上" }
+      - { name: startsAt, type: date,   required: true }
+    events:
+      - name: EventCreated
+        params:
+          - { name: eventId,  type: EventId }
+          - { name: title,    type: string }
+          - { name: capacity, type: int }
+      - name: EventPublished
+      - name: EventCancelled
+        params: [{ name: eventId, type: EventId }, { name: reason, type: string }]
+
+  - name: Participation
+    ctx: participation
+    purpose: "参加申込の状態（申込/承認/キャンセル/繰上）の単一の真実源"
+    states: [APPLIED, WAITLISTED, APPROVED, CANCELLED]
+    transitions:
+      - { from: APPLIED,    to: [APPROVED, WAITLISTED], via: ApplyForEvent, when: "残席判定で確定 or 繰上待ち" }
+      - { from: WAITLISTED, to: APPROVED, via: ConfirmParticipation, when: "繰上時" }
+      - { from: APPROVED,   to: CANCELLED, via: CancelParticipation }
+    events:
+      - name: ParticipationApplied
+      - name: ParticipationWaitlisted
+      - name: ParticipationConfirmed
+      - name: ParticipationApproved
+
+  - name: Payment
+    ctx: payment
+    purpose: "参加費の決済状態（保留→完了→返金）の単一の真実源"
+    states: [PENDING, COMPLETED, REFUNDED]
+    transitions:
+      - { from: PENDING,   to: COMPLETED, via: ExecutePayment }
+      - { from: COMPLETED, to: REFUNDED,  via: RefundPayment }
+    events:
+      - name: PaymentCompleted
+      - name: PaymentRefunded
 
 scs:
   - name: 主催者がイベントを作成する
@@ -93,12 +136,11 @@ scs:
         err: InvalidCapacityError
         when: "定員が 0 以下"
 
-  # ③ branchMode: exclusive（既定だが明示）— SAME-TX 排他分岐
+  # ③ brMode: exclusive（既定だが明示）— SAME-TX 排他分岐
   - name: 参加者がイベントに参加申込する
     ctx: participation
     actor: Member
-    qry:
-      - GetRemainingCapacity
+    qry: [GetRemainingCapacity]
     cmd: ApplyForEvent
     agg: Participation
     brMode: exclusive
@@ -109,7 +151,7 @@ scs:
       - cond: "remainingCapacity = 0"
         evt: ParticipationWaitlisted
 
-  # ③ branchMode: concurrent — 複数イベントを同時発火（condition 省略）
+  # ③ brMode: concurrent — 複数イベントを同時発火（cond 省略）
   - name: システムが申込を確定し監査記録する
     ctx: participation
     actor: System
@@ -129,7 +171,7 @@ pols:
     cmd: ExecutePayment
     note: "申込確定で決済を開始"
 
-  # ③ triggers（join）— 複数イベントが揃って起動
+  # ③ trgs（join）— 複数イベントが揃って起動
   - name: FinalizeOnPaymentAndApproval
     ctx: payment
     trgs:

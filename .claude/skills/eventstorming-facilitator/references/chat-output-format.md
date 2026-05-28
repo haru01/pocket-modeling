@@ -11,7 +11,7 @@ Claude Code（CLI/PCアプリ/スマホアプリ）はインライン `<svg>` / 
 | モード | いつ | 内容 |
 |---|---|---|
 | **フェーズ内往復** | フェーズが完了していない、細かい質問・修正・確認 | Markdown のみ・短く |
-| **フェーズ完了** | フェーズの主要項目が確定 (ユーザー OK or 主要項目揃い) | Markdown + 構造化テーブル + DML 抜粋 + 用語集差分 + HTMLパス案内 |
+| **フェーズ完了** | フェーズの主要項目が確定 (ユーザー OK or 主要項目揃い) | Markdown + 構造化テーブル + DML 抜粋（`ctxs` / `aggs` / `scs` / `pols` の 4 リストから差分） + 用語集差分 + HTMLパス案内 |
 
 判定基準は §4。
 
@@ -63,7 +63,8 @@ Claude Code（CLI/PCアプリ/スマホアプリ）はインライン `<svg>` / 
 ### 追加された DML
 
 \`\`\`dml
-{該当フェーズで確定した ctxs / scs / pols のみ（YAML）}
+{該当フェーズで確定した ctxs / aggs / scs / pols のみ（YAML）。
+トップレベル `aggs[]` には AGG メタ（name/ctx/purpose/states 等）、`ctxs[].aggs` には AGG 名（PascalCase 文字列）の名簿}
 \`\`\`
 
 ### 用語集の追加
@@ -145,8 +146,8 @@ assistant が自己判断する。
 | フェーズ3完了 | 新規追加された scenario の `name` / `actor` / `evt` のみ (cmd/rules は未確定) |
 | フェーズ4完了 | 該当フェーズで追加・確定した scenario 全文 (cmd/evt/agg/rules 入り) |
 | フェーズ4.5完了 | `lang` + `ctxs` の追加分 |
-| **フェーズ4.6完了** | **DML 抜粋は出さない (DML 構文は不変)。代わりに「### AGG 目的・背景・制約サマリ」テーブルを出して各 AGG の `#### 目的` 1 行と制約件数を 1 表で示す** |
-| フェーズ5完了 | 新規 rules/errs が追加された scenario 全文 + pols 要素 (新規分) + **集約の Zod スキーマ**。`rules[].why`、`errs[].when` がある分は併記 |
+| **フェーズ4.6完了** | **トップレベル `aggs[]` の新規エントリ（`name`/`ctx`/`purpose`/`states`）と `ctxs[].aggs` 名簿の追加分のみ。加えて「### AGG 目的・背景・制約サマリ」テーブルで各 AGG の `#### 目的` 1 行と制約件数を 1 表で示す** |
+| フェーズ5完了 | 新規 rules/errs が追加された scenario 全文 + pols 要素 (新規分) + `aggs[].transitions[]`/`attrs[]`/`events[]` の追加分 + **集約の Zod スキーマ**。`rules[].why`、`errs[].when` がある分は併記 |
 | フェーズ6完了 | **新規分の抜粋のみ + MD/HTML ファイルパスを案内**。DML 全文は別ファイル `<session>.dml.yaml` に保持、チャットには流さない |
 
 DML 抜粋は ` ```dml ` コードブロックで囲む。

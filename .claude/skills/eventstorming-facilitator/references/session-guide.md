@@ -128,7 +128,18 @@ Zod スキーマで「形」を固めた直後、**不変条件（RULE）と例�
 
 **不足検知：** 全 AGG の `#### 目的` が 30 字以上書かれているか確認。空・短すぎる項目はホットスポット `H-WHY` 候補としてマークし、`references/quality-check.md` の S8 で再走時に検出される。
 
-**DML への反映（必須）：** §5 で確定した AGG メタを `.dml.yaml` の `ctxs[].aggs[]` にも反映する。各エントリは `name`（必須・PascalCase）・`purpose`（推奨・MD §5 の `#### 目的` 1 文を要約）・`states`（推奨・MD の `#### 状態遷移` から拾った upper-snake 状態名の配列）。AGG は所有 BC（`ctx`）の `aggs` に置く（複数 BC で参照される AGG でも所有 BC は 1 つ）。これにより quality-check が「scs の `agg:` 参照」「rules/brs の状態名」「`aggs[].states` 宣言」の三者整合を検証できる。
+**DML への反映（必須）：** §5 で確定した AGG メタを `.dml.yaml` のトップレベル `aggs[]` に追加する。各エントリは `name`（必須・PascalCase）・`ctx`（必須・所属 BC の `ctxs[].name`）・`purpose`（推奨・MD §5 の `#### 目的` 1 文を要約）・`states`（推奨・MD の `#### 状態遷移` から拾った upper-snake 状態名の配列）。AGG は所有 BC は 1 つ（複数 BC で参照される AGG でも `ctx` は 1 つに決める）。同時に、所属 BC の `ctxs[].aggs` には AGG 名（PascalCase 文字列）を**軽量名簿**として追加する（詳細を持たない）。
+
+**推奨追加項目（フェーズ5でもよい）：**
+- `aggs[].transitions[]`: 1〜2 件、`from`/`to`/`via`（scs[].cmd と一致するトリガー CMD 名）／必要なら `when`
+- `aggs[].events[]`: AGG が emit する EVT を `name`／`params` で列挙
+- `aggs[].attrs[]`: ペイロード属性を `name`／`type`／`required` で
+
+これにより quality-check / causal-check が以下の四者整合を検証できる：
+- `scs[].agg` ⇔ `aggs[].name`（孤立 AGG / 未定義 AGG 参照の検出）
+- `scs[].cmd` ⇔ `aggs[].transitions[].via`（CMD が AGG 状態遷移に紐付くか）
+- `scs[].evt` ⇔ `aggs[].events[].name`（EVT が AGG の宣言済み発火イベントか）
+- `ctxs[].aggs` 名簿 ⇔ `aggs[].ctx`（双方向参照の整合）
 
 ## 85〜90分：クローズと次のアクション
 

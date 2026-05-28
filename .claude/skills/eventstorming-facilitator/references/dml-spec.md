@@ -1,22 +1,23 @@
 # DML（Domain Modeling Language）記法仕様
 
 DDDモデリングのための情報圧縮言語。**YAML フォーマット**で記述する。
-`ctxs`（BC 宣言）・`scs`（EVT を起点にした業務シナリオ）・`pols`（EVENTUAL-TX）の
-3 つのトップレベルリストで 1 ドメインを表す。
+`ctxs`（BC 宣言）・`aggs`（AGG 宣言）・`scs`（EVT を起点にした業務シナリオ）・`pols`（EVENTUAL-TX）の
+4 つのトップレベルリストで 1 ドメインを表す（任意で `domains` を加えられる）。
 
 **記法の原則**
 - DML は **MD とは別の兄弟ファイル `docs/eventstorming/<session>.dml.yaml`** に **YAML 直書き**（フェンス不要）で保存する。`.md` の §9 はこの `.dml.yaml` へのリンク参照のみ。ビルダーは `.md` ＋ 兄弟 `.dml.yaml` から HTML を生成する。
   - （本仕様書内の ` ```dml ` フェンスは YAML 例の表示目的。実アーティファクトはフェンスなしの `.dml.yaml` ファイル。）
-- トップレベルは `ctxs` / `scs` / `pols` の 3 リスト。**コメントによるセクション区切りは使わない**（リスト構造で自然に分離される）。
-- `scs` / `pols` の各要素は `ctx:` フィールドで所属 BC を参照する。
-- **識別子（`cmd` / `evt` / `agg` / `trg` / `emits` / `qry` の値）は英語 PascalCase**。`()` や `<<>>` は付けない。
+- トップレベルは `ctxs` / `aggs` / `scs` / `pols` の 4 リスト。**コメントによるセクション区切りは使わない**（リスト構造で自然に分離される）。
+- `aggs` / `scs` / `pols` の各要素は `ctx:` フィールドで所属 BC を参照する。
+- **識別子（`cmd` / `evt` / `agg` / `trg` / `emits` / `qry` の値、`aggs[].name` 等）は英語 PascalCase**。`()` や `<<>>` は付けない。
 - **`scs[].name` は日本語**で「アクター＋行為」を書く（例：`主催者がコミュニティを作成する`）。
 - **`rules[].rule` の不変条件は英語**。日本語の補足は `why` / `when` / `note` の**構造化フィールド**へ書く（`#` 行コメントによる補足慣習は廃止）。
 - BC（`ctxs[].name`）は `lowercase-with-hyphen` 形式、略さずに書く。
-- キー順の推奨: `name → ctx → actor → qry → cmd → evt|brs → agg → rules → errs → pol`（YAML では強制ではないがスタイルとして統一する）。
+- キー順の推奨（`scs`）: `name → ctx → actor → qry → cmd → evt|brs → agg → rules → errs → pol`（YAML では強制ではないがスタイルとして統一する）。
 
-**バージョンと後方互換（DML v2）**
-- 本仕様は ContextMapper（CML）を参考にした **v2 拡張**を含む。拡張フィールド（`type` / `vision` / `resp` / `tech` / `sub` / `aggs` / `roles` / `prRoles` / `brMode` / `trgs` / トップレベル `domains`）は**すべて optional**。v1 記法（`ctxs` / `scs` / `pols` の 3 リストと既存フィールド）は **v2 でもそのまま永続的に valid**。
+**バージョンと後方互換（DML v3）**
+- 本仕様は ContextMapper（CML）を参考にした **v3 拡張（AGG トップレベル化）**を含む。v2 で `ctxs[].aggs[]` 内に集約宣言を持っていた書式は **v3 で廃止**し、AGG は新トップレベル `aggs[]` で宣言する。`ctxs[].aggs` は **AGG 名の軽量名簿（PascalCase 文字列リスト）** に変わった。
+- v2 までの拡張フィールド（`type` / `vision` / `resp` / `tech` / `sub` / `roles` / `prRoles` / `brMode` / `trgs` / トップレベル `domains`）はそのまま optional として残る。
 - 文法は **JSON Schema（Draft 2020-12）で機械検証**できる。スキーマ本体は [`./dml.schema.yaml`](./dml.schema.yaml)。検証は構文 validity のみを保証する（意味検証は causal-check / quality-check が担う。§9 参照）。
 
 ---
@@ -36,6 +37,7 @@ ctxs:
     dn:                                # この BC に依存される側（このモデルを参照する下流）
       - ctx: <context-name>
         rel: Customer-Supplier
+    aggs: [<AggregateName>, ...]       # 任意。この BC が所有する AGG の名前リスト
 ```
 
 `lang` でユビキタス言語を定義する。
@@ -56,6 +58,7 @@ ctxs:
       - ctx: participation
         rel: Customer-Supplier
         note: "Event を下流 BC が参照"
+    aggs: [Community, Event]
 
   - name: participation
     lang:
@@ -67,6 +70,7 @@ ctxs:
     dn:
       - ctx: checkin
         rel: Customer-Supplier
+    aggs: [Participation]
 
   - name: checkin
     lang:
@@ -76,6 +80,7 @@ ctxs:
       - ctx: participation
         rel: Customer-Supplier
     dn: []
+    aggs: [CheckIn]
 ```
 
 ### 1.1 リレーション語彙の拡充（v2・任意）
@@ -103,7 +108,7 @@ up:
 `Partnership` / `Upstream-Downstream` / `Open-Host-Service` / `Published-Language` を追加。
 **`rel` と `roles` はどちらか一方で十分**（両者の意味整合は quality-check が確認する）。
 
-### 1.2 BC / 集約メタデータ（v2・任意）
+### 1.2 BC メタデータ（v2・任意）
 
 `.md` 側（§4 の目的/背景、§5 の集約）にあった情報を DML に構造化できる。すべて optional。
 
@@ -120,14 +125,10 @@ ctxs:
     mod: event-planning
     up: []
     dn: []
-    aggs:                         # 任意。scs の agg を集約宣言で補足
-      - name: Event
-        purpose: "イベントのライフサイクルとキャパシティの単一の真実源"
-        states: [DRAFT, PUBLISHED, CANCELLED, COMPLETED]     # 状態名は UPPER_SNAKE
+    aggs: [Event, Capacity]       # この BC が所有する AGG の名前リスト（詳細は §1.6 の aggs[]）
 ```
 
-`aggs[].states` を宣言すると、scs の rules / brs が参照する状態名との整合を
-quality-check が検証できる。
+**重要（v3 変更点）：** v2 で `ctxs[].aggs[]` 内に持っていた集約メタデータ（`purpose` / `states` 等の dict 形式）は **v3 で廃止**。AGG の詳細はトップレベル `aggs[]` に宣言する（§1.6）。`ctxs[].aggs` は **AGG 名の軽量名簿（PascalCase 文字列リスト）** のみを持つ。
 
 ---
 
@@ -152,6 +153,86 @@ domains:
 
 `subs[].name` と `ctxs[].sub` は同じ `lowercase-with-hyphen` 名前空間。
 両者の突合（参照の実在）は quality-check が確認する。
+
+---
+
+## 1.6 AGGREGATE 宣言（`aggs[]`・v3 新規）
+
+集約（AGG）はトップレベル `aggs[]` で宣言する。各要素は **所属 BC の `ctx` を持ち**、状態遷移・属性・発火イベントを構造化して持てる。すべて optional フィールドは省略可だが、`name` と `ctx` は必須。
+
+```dml
+aggs:
+  - name: <PascalCase>             # 必須。AGG 名（PascalCase）
+    ctx: <context-name>            # 必須。所属 BC（ctxs[].name を参照）
+    purpose: "<この集約の責務（日本語可）>"      # 任意
+    states: [UPPER_SNAKE, ...]                # 任意。状態名（UPPER_SNAKE）
+    transitions:                              # 任意。状態遷移
+      - from: <UPPER_SNAKE>                   # 遷移元状態（必須）
+        to: <UPPER_SNAKE> | [<UPPER_SNAKE>, ...]  # 遷移先（単一 or 配列）。必須
+        via: <PascalCase>                     # トリガー CMD（PascalCase）。scs[].cmd と一致すべき
+        when: "<日本語補足（任意）>"
+    attrs:                                    # 任意。AGG のペイロード属性
+      - name: <camelCase>                     # フィールド名
+        type: <string|int|date|EventId|...>   # 自由文字列
+        required: true                        # 任意（boolean）
+    events:                                   # 任意。AGG が emit するイベント宣言
+      - name: <PascalCase>                    # scs[].evt と一致すべき
+        params:                               # 任意。attribute と同じ形
+          - { name: <camelCase>, type: <type> }
+    note: "<任意の補足>"
+```
+
+### 1.6.1 `transitions[]`（状態遷移）
+
+最も重要な新フィールド。`from` → `to` の遷移を引き起こす CMD を `via` で宣言することで、
+**「scs[].cmd の対象 AGG が aggs[].transitions[].via に存在するか」を quality-check で機械検証**できる。
+
+```dml
+aggs:
+  - name: Event
+    ctx: community-events
+    states: [DRAFT, PUBLISHED, CANCELLED, COMPLETED]
+    transitions:
+      - { from: DRAFT,     to: PUBLISHED,              via: PublishEvent, when: "必須項目が揃いキャパシティ > 0" }
+      - { from: PUBLISHED, to: [CANCELLED, COMPLETED], via: CancelEvent }   # to は単一 or 配列（分岐先）
+```
+
+- `from` / `to`: 状態名（UPPER_SNAKE）。`to` は単一 or 配列。**配列は「同一 `via` CMD で複数の遷移先が起こりうる」ことを示す**（実際の選択は `scs[].brs[].cond` で決まる。`scs[].brMode`（exclusive/concurrent/inclusive）との MECE 整合は quality-check で確認）。
+- `via`: トリガー CMD（PascalCase）。`scs[].cmd` と一致すべき（実在性は quality-check）。
+- `when`: 日本語の遷移条件補足（任意・自然文）。
+
+### 1.6.2 `attrs[]`（属性）
+
+```dml
+aggs:
+  - name: Event
+    ctx: community-events
+    attrs:
+      - { name: title,    type: string, required: true }
+      - { name: capacity, type: int }
+      - { name: eventId,  type: EventId, required: true }
+```
+
+- `name`: camelCase（フィールド名）。
+- `type`: 自由文字列（`string` / `int` / `date` / `EventId` などのドメイン型を許容）。
+- `required`: 必須かどうか（任意・boolean）。
+
+### 1.6.3 `events[]`（発火イベント宣言）
+
+```dml
+aggs:
+  - name: Event
+    ctx: community-events
+    events:
+      - name: EventCreated
+        params:
+          - { name: eventId, type: EventId }
+          - { name: title,   type: string }
+      - name: EventPublished       # params は省略可
+```
+
+- `name`: PascalCase（`scs[].evt` と一致すべき。実在性は quality-check）。
+- `params`: イベントペイロード（`attrs[]` と同じ形）。省略可。
 
 ---
 
@@ -331,11 +412,12 @@ DML（YAML）の値は HTML レンダリング時に**役割ベースの意味�
 | フィールド | 意味 | 付箋色 / 値の色 |
 |------|------|--------|
 | `evt` / `trg` / `emits` | ドメインイベント（起きた事実・過去形） | 橙 |
-| `cmd` | コマンド（操作・意図） | 青 |
-| `agg` / `actor` | 集約 / アクター | 黄 |
+| `cmd` / `via` | コマンド（操作・意図） | 青 |
+| `agg` / `actor` / `aggs[].name` | 集約 / アクター | 黄 |
 | `qry` | Read Model（CMD 発行前に参照するビュー） | 緑 |
 | `pol` / POLICY の `name` | ポリシー | 紫 |
 | `errs[].err` | エラー型（不変条件違反） | 赤 |
+| `states` / `from` / `to` | 状態名（UPPER_SNAKE） | 黄（淡） |
 | キー名 | YAML キー | 淡い灰緑 |
 | `note: "[?] ..."` | 未確認・迷い・設計判断が必要な箇所 | — |
 
@@ -380,14 +462,15 @@ scs:
 
 ## 7. 記述ルール
 
-1. **トップレベルは `ctxs` / `scs` / `pols` の 3 リスト**。セクション区切りコメントは使わない。
-2. **キー順を推奨順で統一**: `name → ctx → actor → qry → cmd → evt|brs → agg → rules → errs → pol`。
+1. **トップレベルは `ctxs` / `aggs` / `scs` / `pols` の 4 リスト**（任意で `domains`）。セクション区切りコメントは使わない。
+2. **キー順を推奨順で統一**（`scs`）: `name → ctx → actor → qry → cmd → evt|brs → agg → rules → errs → pol`。
 3. **省略可能フィールド**: `qry` / `brs` / `bulk` / `pol` は必要なときだけ書く。
 4. **qry は「判断に必要なデータ」にのみ書く**: アクター（「このコマンドを発行するか」）またはポリシー（「どのコマンドを発行するか・誰に対して」）が判断するために必要なデータのみ。コマンド実装内部で必要なデータ（BULK の実行対象リストなど）は `qry` に書かない。
 5. **errs は積極的に書く**: 「起きない条件」を毎回確認して `errs` に記録する — エラーが AGG の不変条件を明らかにする。
 6. **日本語補足は構造化フィールドへ**: `rules[].why` / `errs[].when` / `pols[].note` / 各要素の `note` に書く。`#` 行コメントによる補足は使わない。
 7. **`why` は業務・UX 文脈に翻訳**: rule の言い換えではなく「なぜ必要か」を書く。
 8. **完成時の発火/起動の明示**: 完成した SCENARIO は `evt` か `brs` の**いずれか一方**を、完成した POLICY は `trg` か `trgs` の**いずれか一方**を持つ（副作用専用 POLICY の cmd 省略は §4 のとおり別途許容）。スキーマは進行中セッションを許容するため両方欠如でも valid だが、完成版では必ず明示する。
+9. **AGG は `aggs[]` に集約**: `ctxs[].aggs` は名前リストのみ。詳細（`transitions` / `attrs` / `events`）はトップレベル `aggs[]` に書く。
 
 ---
 
@@ -404,6 +487,7 @@ ctxs:
     dn:
       - ctx: participation
         rel: Customer-Supplier
+    aggs: [Community, Event]
 
   - name: participation
     lang:
@@ -414,6 +498,66 @@ ctxs:
       - ctx: community-events
         rel: Customer-Supplier
     dn: []
+    aggs: [Participation]
+
+aggs:
+  - name: Community
+    ctx: community-events
+    purpose: "コミュニティのアイデンティティとオーナーシップを管理する"
+    states: [ACTIVE, ARCHIVED]
+    transitions:
+      - { from: ACTIVE, to: ARCHIVED, via: ArchiveCommunity, when: "オーナーがアーカイブを選択" }
+    attrs:
+      - { name: communityId,   type: CommunityId, required: true }
+      - { name: communityName, type: string,      required: true }
+      - { name: description,   type: string,      required: true }
+      - { name: ownerId,       type: UserId,      required: true }
+    events:
+      - name: CommunityCreated
+        params:
+          - { name: communityId,   type: CommunityId }
+          - { name: communityName, type: string }
+          - { name: ownerId,       type: UserId }
+
+  - name: Event
+    ctx: community-events
+    purpose: "イベントのライフサイクルとキャパシティの単一の真実源"
+    states: [DRAFT, PUBLISHED, CANCELLED, COMPLETED]
+    transitions:
+      - { from: DRAFT,     to: PUBLISHED,              via: PublishEvent, when: "必須項目が揃いキャパシティ > 0" }
+      - { from: PUBLISHED, to: [CANCELLED, COMPLETED], via: CancelEvent }
+    attrs:
+      - { name: eventId,  type: EventId, required: true }
+      - { name: title,    type: string,  required: true }
+      - { name: capacity, type: int,     required: true }
+      - { name: heldAt,   type: date }
+    events:
+      - name: EventCreated
+        params:
+          - { name: eventId, type: EventId }
+          - { name: title,   type: string }
+      - name: EventPublished
+      - name: EventCancelled
+        params:
+          - { name: eventId, type: EventId }
+
+  - name: Participation
+    ctx: participation
+    purpose: "イベント参加の申込・承認・キャンセルを追跡する"
+    states: [APPLIED, APPROVED, CANCELLED, WAITLISTED]
+    transitions:
+      - { from: APPLIED,   to: APPROVED,  via: ApproveParticipation }
+      - { from: APPLIED,   to: CANCELLED, via: CancelParticipation }
+      - { from: APPROVED,  to: CANCELLED, via: CancelParticipation }
+    attrs:
+      - { name: participationId, type: ParticipationId, required: true }
+      - { name: eventId,         type: EventId,         required: true }
+      - { name: memberId,        type: UserId,          required: true }
+    events:
+      - name: ParticipationApplied
+      - name: ParticipationWaitlisted
+      - name: ParticipationApproved
+      - name: ParticipationCancelled
 
 scs:
   - name: 主催者がコミュニティを作成する
@@ -563,8 +707,8 @@ python3 .claude/skills/eventstorming-facilitator/scripts/validate_dml.py docs/ev
 
 | レイヤ | 担保するもの | 例 |
 |------|------|------|
-| **JSON Schema**（機械・決定論的） | 構文 validity。トップレベル 3 リスト＋任意 `domains`、各要素の必須フィールド、型、enum（rel / subdomainType / bcType / brMode）、識別子の PascalCase・lowercase-with-hyphen、`evt`↔`brs` 排他、`trg`↔`trgs` 排他、`bulk:true`→`qry` 必須、未知フィールド禁止 | `cmd` が PascalCase か、`sub.type` が enum 値か |
-| **causal-check / quality-check**（LLM・文脈依存） | 意味 validity。参照の実在・因果整合・モデル品質 | `trg` が実在 EVT を指すか、`pol` が実在 POLICY か、up↔dn の双方向一致、`sub` 参照の突合、`aggs[].states` と分岐の整合、`rel` と `roles` の意味矛盾、分岐の MECE 性、`evt` の過去形・`cmd` の命令形 |
+| **JSON Schema**（機械・決定論的） | 構文 validity。トップレベル 4 リスト（`ctxs` / `aggs` / `scs` / `pols`）＋任意 `domains`、各要素の必須フィールド、型、enum（rel / subdomainType / bcType / brMode）、識別子の PascalCase・lowercase-with-hyphen・UPPER_SNAKE（状態名）・camelCase（attrs/params 名）、`evt`↔`brs` 排他、`trg`↔`trgs` 排他、`bulk:true`→`qry` 必須、未知フィールド禁止 | `cmd` が PascalCase か、`sub.type` が enum 値か、`aggs[].states` が UPPER_SNAKE か |
+| **causal-check / quality-check**（LLM・文脈依存） | 意味 validity。参照の実在・因果整合・モデル品質 | `trg` が実在 EVT を指すか、`pol` が実在 POLICY か、up↔dn の双方向一致、`sub` 参照の突合、`scs[].cmd` ↔ `aggs[].transitions[].via` 整合、`scs[].evt` ↔ `aggs[].events[].name` 整合、`scs[].agg` ↔ `aggs[].name` 整合、`ctxs[].aggs`（名前リスト）↔ `aggs[].ctx` 双方向参照、`aggs[].transitions[].from`/`to` ↔ `states` 整合、`rel` と `roles` の意味矛盾、分岐の MECE 性、`evt` の過去形・`cmd` の命令形 |
 
 **スキーマ通過は必要条件であって十分条件ではない。** 「形が正しい」ことを Schema が、
 「意味が正しい」ことを causal-check / quality-check が担保する。

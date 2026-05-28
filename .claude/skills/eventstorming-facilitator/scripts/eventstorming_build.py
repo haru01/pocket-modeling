@@ -1112,6 +1112,10 @@ DML_VALUE_CLASS_BY_KEY = {
     "purpose": "v-meta",
     "brMode": "v-meta",
     "mode": "v-meta",
+    # v3: AGG トップレベル化（aggs[].{transitions, attrs, events}）
+    "via": "v-cmd",         # transition のトリガー CMD
+    "from": "v-meta",       # 状態遷移の起点（upperSnake）
+    "to": "v-meta",         # 状態遷移の終点
 }
 
 _YAML_KEY_RE = re.compile(r"^([\w-]+):(\s*)(.*)$")
@@ -1195,7 +1199,7 @@ def highlight_dml(dml: str) -> str:
 
         if indent == 0:
             mb = _YAML_BLOCK_KEY_RE.match(body)
-            if mb and mb.group(1) in ("ctxs", "scs", "pols"):
+            if mb and mb.group(1) in ("ctxs", "aggs", "scs", "pols"):
                 section = mb.group(1)
 
         body_html = _render_yaml_body(body, stack, section)

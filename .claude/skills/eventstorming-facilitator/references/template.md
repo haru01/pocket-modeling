@@ -171,7 +171,7 @@ export type {{AggregateName}} = z.infer<typeof {{AggregateName}}Schema>;
 
 ## 9) DML
 
-DML 全文は別ファイル [`./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml`](./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml)（YAML 直書き・フェンス不要）に保持する。`ctxs` / `scs` / `pols` の 3 リスト、識別子は英語。`.dml.yaml` の記述形式・フル例は `references/dml-spec.md` を参照。HTML §9 にはこの `.dml.yaml` の内容が描画される。
+DML 全文は別ファイル [`./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml`](./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml)（YAML 直書き・フェンス不要）に保持する。`ctxs` / `aggs` / `scs` / `pols` の 4 リスト（任意で `domains`）、識別子は英語。トップレベル `aggs[]` に AGG 詳細（`name`/`ctx`/`purpose`/`states`/`transitions`/`attrs`/`events`）を集約し、`ctxs[].aggs` は AGG 名（PascalCase 文字列）の軽量名簿として保持する。`.dml.yaml` の記述形式・フル例は `references/dml-spec.md` を参照。HTML §9 にはこの `.dml.yaml` の内容が描画される。
 
 > このセクションは `.dml.yaml` へのリンク参照のみとし、DML 本文（YAML）は **埋め込まない**。
 
