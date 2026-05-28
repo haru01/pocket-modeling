@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""EventStorming MD → HTML ビルダー
+"""EventStorming MD + DML → HTML ビルダー
+
+DML（`.dml.yaml`）をモデル唯一の真実源とし、HTML §3（イベントフロー）と
+§5（集約カード）と意思決定ログを DML から自動生成する。`.md` は物語（§1/§2）と
+用語集（§10）・リードモデル（§6）・次アクション・オープンクエスチョンのみ保持する。
 
 使い方:
     python3 scripts/eventstorming_build.py <md_path>              # 個別ビルド
@@ -20,6 +24,13 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+try:
+    # DML を構造化して読むためのオプション依存（validate_dml.py と同じ依存）。
+    # 不在時は §3/§5/意思決定ログは描画スキップ（§9 の生 DML 表示にフォールバック）。
+    import yaml
+except ImportError:  # pragma: no cover
+    yaml = None  # type: ignore[assignment]
+
 # このスクリプトは .claude/skills/eventstorming-facilitator/scripts/ に配置されている想定
 # SCRIPT_DIR = scripts/ なので SCRIPT_DIR.parents:
 #   [0]=eventstorming-facilitator, [1]=skills, [2]=.claude, [3]=プロジェクトルート
@@ -30,7 +41,6 @@ DEFAULT_INPUT_DIR = PROJECT_ROOT / "docs" / "eventstorming"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "dist" / "eventstorming"
 TEMPLATE_PATH = SKILL_ROOT / "templates" / "event-flow.html"
 
-DSL_PREFIX_TO_KIND = {"@": "actor", "!": "command", "$": "policy", "?": "readmodel"}
 KIND_LABEL = {
     "actor": "Actor",
     "command": "Command",
@@ -38,6 +48,9 @@ KIND_LABEL = {
     "policy": "Policy",
     "readmodel": "Read Model",
 }
+# アクター名が `System` のシナリオでは actor 付箋を省略して図のノイズを減らす
+# （ポリシー駆動の連鎖は前段のポリシー付箋で文脈が伝わるため）。
+SKIP_SYSTEM_ACTOR = True
 LANE_COLOR_CLASSES = [
     "bc-default-1",
     "bc-default-2",
@@ -79,7 +92,8 @@ class MDSections:
     header: dict = field(default_factory=dict)
     story: str = ""
     scenarios: list[dict] = field(default_factory=list)
-    flows: list[Flow] = field(default_factory=list)
+    # `agg_cards` は parse_md の互換 shim として残置（旧 .md §5 を読む下流スキル用）。
+    # HTML §5 の描画は DML aggs[] を使うため、ビルダーはこのフィールドを参照しない。
     bc_cards: list[dict] = field(default_factory=list)
     agg_cards: list[dict] = field(default_factory=list)
     qry_cards: list[dict] = field(default_factory=list)
@@ -88,6 +102,7 @@ class MDSections:
     actions: list[str] = field(default_factory=list)
     dml: str = ""
     dml_errors: list[str] = field(default_factory=list)
+    dml_model: dict | None = None  # yaml.safe_load 結果。None=未読/解析不可（縮退フラグ）
     glossary: dict = field(default_factory=dict)
 
 
@@ -153,9 +168,8 @@ def parse_md(md_text: str) -> MDSections:
     s.scenarios = parse_scenarios(
         get_section("代替シナリオ", "Alternative Scenarios")
     )
-    s.flows = parse_flows(
-        get_section("Event Walkthrough", "イベントフロー")
-    )
+    # §3（Event Walkthrough）は DML flows[]+scs/pols から生成するためパース不要。
+    # 旧 event-flow-svg DSL は廃止（README/dml-spec の §3 参照）。
     s.bc_cards = parse_bc_cards(
         get_section("コンテキスト候補", "BC Candidates", "Context Candidates")
     )
@@ -208,108 +222,6 @@ def parse_scenarios(text: str) -> list[dict]:
     return result
 
 
-def parse_flows(text: str) -> list[Flow]:
-    flows = []
-    # ### サブタイトル のすぐ後の event-flow-svg を 1 つの Flow に紐付ける
-    fence_re = re.compile(r"```event-flow-svg\n(.*?)\n```", re.DOTALL)
-    for match in fence_re.finditer(text):
-        dsl = match.group(1)
-        flow = parse_flow_dsl(dsl)
-        if flow:
-            flows.append(flow)
-    return flows
-
-
-def parse_flow_dsl(dsl: str) -> Flow | None:
-    flow = Flow(title="")
-    lines = dsl.split("\n")
-
-    current_lane: Lane | None = None
-    in_flow_section = False
-
-    for raw in lines:
-        line = raw.rstrip()
-        if not line.strip():
-            continue
-        if line.strip().startswith("#"):
-            continue
-
-        m = re.match(r"^title:\s*(.+)$", line.strip())
-        if m:
-            flow.title = m.group(1).strip()
-            continue
-
-        if line.strip() == "flow:":
-            in_flow_section = True
-            continue
-
-        lane_match = re.match(r"^\|([^|]+)\|:\s*(.*)$", line.strip())
-        if lane_match:
-            current_lane = Lane(
-                bc_name=lane_match.group(1).strip(),
-                description=lane_match.group(2).strip(),
-            )
-            flow.lanes.append(current_lane)
-            continue
-
-        if current_lane is None:
-            continue
-
-        notes, joins_into_next = parse_flow_line(line)
-        current_lane.notes.extend(notes)
-        if joins_into_next:
-            # 行末 &>> は最後に書かれた行のみが next-lane 遷移に効く
-            current_lane.joins_into_next = True
-
-    return flow if flow.lanes else None
-
-
-def parse_flow_line(line: str) -> tuple[list[Note], bool]:
-    """1 行をパース → (Note リスト, 行末が &>> で次レーンへ Join 遷移するか)
-
-    オペレータの優先順位:
-    1. 行末 `&>>` (Join + 非同期遷移) > `>>` (通常の非同期遷移)
-    2. `*>` で分割し、2 つ目以降のセグメント内 Note は is_fanout=True にマーク
-    3. 各セグメント内は `>` で分割（既存の同期フロー）
-    """
-    line = line.strip()
-    if not line:
-        return [], False
-
-    joins_into_next = line.endswith("&>>")
-    if joins_into_next:
-        line = line[:-3].rstrip()
-        has_async_end = True
-    else:
-        has_async_end = line.endswith(">>")
-        if has_async_end:
-            line = line[:-2].rstrip()
-
-    notes: list[Note] = []
-    for seg_idx, seg in enumerate(re.split(r"\*>", line)):
-        in_fanout = seg_idx > 0
-        parts = [p.strip() for p in seg.split(">") if p.strip()]
-        for part in parts:
-            note = parse_dsl_item(part)
-            if note:
-                note.is_fanout = in_fanout
-                notes.append(note)
-    if notes and has_async_end:
-        notes[-1].is_async = True
-    return notes, joins_into_next
-
-
-def parse_dsl_item(item: str) -> Note | None:
-    item = item.strip()
-    if not item:
-        return None
-    if item.startswith("[") and item.endswith("]"):
-        return Note(kind="event", label=item[1:-1].strip())
-    if item[0] in DSL_PREFIX_TO_KIND:
-        return Note(kind=DSL_PREFIX_TO_KIND[item[0]], label=item[1:].strip())
-    return Note(kind="command", label=item)
-
-
 def parse_bc_cards(text: str) -> list[dict]:
     cards = []
     parts = re.split(r"^### ", text, flags=re.MULTILINE)
@@ -352,6 +264,13 @@ def parse_bc_cards(text: str) -> list[dict]:
 
 
 def parse_agg_cards(text: str) -> list[dict]:
+    """互換 shim: 旧 `.md` §5（Zod ＋ 散文）を読む parse 関数。
+
+    HTML 描画は `render_agg_cards_from_dml` を使うためビルダー本体は呼ばないが、
+    `parse_md` の戻り値（MDSections.agg_cards）を import している下流スキル
+    （`eventstorming-to-issues`）のための互換維持。同スキルが DML 読みへ
+    移行したら本関数も削除可能。
+    """
     cards = []
     parts = re.split(r"^### ", text, flags=re.MULTILINE)
     for part in parts[1:]:
@@ -594,6 +513,249 @@ def parse_glossary(text: str) -> dict:
 
 
 # ============================================================
+# DML 駆動の生成（フロー / 集約 / 意思決定ログ）
+# ============================================================
+#
+# `.dml.yaml` を yaml.safe_load した dict（MDSections.dml_model）から、
+# HTML §3（イベントフロー）・§5（集約カード）・意思決定ログを組み立てる。
+# 旧来の手書き event-flow-svg DSL や `.md` §5 Zod ブロックは廃止。
+#
+# 共有公開関数:
+#   - build_glossary_index(glossary)      → {EN識別子: 日本語ラベル}（フロー描画用）
+#   - localize(identifier, glossary_idx)  → 日本語ラベル or 英語フォールバック
+#   - build_flows_from_dml(model, gloss)  → list[Flow]（render_flow 再利用）
+#   - aggregates_from_dml(model)          → 集約情報（下流スキル to-issues も利用）
+#
+# 描画関数:
+#   - render_agg_cards_from_dml(...)      → HTML §5 集約カード
+#   - render_decisions(...)               → HTML 意思決定ログ
+
+
+def build_glossary_index(glossary: dict) -> dict[str, str]:
+    """`parse_glossary` の結果（カテゴリ別テーブル）を `{英語識別子: 日本語ラベル}` に反転。
+
+    フロー図の付箋ラベル localize（英語識別子 → 日本語）に使う。同じ英語識別子が
+    複数カテゴリに現れた場合は最後の登録で上書き（実運用ではまず起きない）。
+    """
+    index: dict[str, str] = {}
+    for _cat, rows in (glossary or {}).items():
+        for row in rows:
+            en = (row.get("en") or "").strip()
+            jp = (row.get("jp") or "").strip()
+            if en and jp:
+                index[en] = jp
+    return index
+
+
+def localize(identifier: str, glossary_index: dict[str, str]) -> str:
+    """英語識別子（PascalCase 等）を用語集経由で日本語化。無ければ英語のまま。"""
+    if not identifier:
+        return ""
+    return glossary_index.get(identifier, identifier)
+
+
+def _scenario_steps_to_notes(
+    sc: dict, gloss: dict[str, str]
+) -> list[Note]:
+    """1 つの SCENARIO ステップを Note リストに展開する。
+
+    順序: actor → qry[] → cmd → (evt | brs[].evt)。actor=System は省略可（クラッタ抑制）。
+    brs[] は brMode に応じて exclusive=連続イベント、concurrent=2 件目以降を fanout 化。
+    """
+    notes: list[Note] = []
+    actor = sc.get("actor") or ""
+    if actor and not (SKIP_SYSTEM_ACTOR and actor == "System"):
+        notes.append(Note(kind="actor", label=localize(actor, gloss)))
+    for q in sc.get("qry") or []:
+        notes.append(Note(kind="readmodel", label=localize(q, gloss)))
+    cmd = sc.get("cmd")
+    if cmd:
+        notes.append(Note(kind="command", label=localize(cmd, gloss)))
+    if sc.get("evt"):
+        notes.append(Note(kind="event", label=localize(sc["evt"], gloss)))
+    elif sc.get("brs"):
+        mode = sc.get("brMode", "exclusive")
+        for i, br in enumerate(sc["brs"]):
+            ev = br.get("evt")
+            if not ev:
+                continue
+            n = Note(kind="event", label=localize(ev, gloss))
+            # concurrent: 2 件目以降を fanout として重ね描画
+            if mode == "concurrent" and i > 0:
+                n.is_fanout = True
+            notes.append(n)
+    return notes
+
+
+def _policy_steps_to_notes(
+    pol: dict, gloss: dict[str, str]
+) -> list[Note]:
+    """1 つの POLICY ステップを Note リストに展開する。
+
+    順序: policy → qry? → evt?。`pol.cmd` は後続シナリオの cmd と重複するため
+    意図的に**出力しない**（フロー DSL の伝統的な見せ方 `$Policy > !cmd > [evt]` で
+    cmd 付箋は 1 枚のみ、というのと整合）。
+    側壁: 副作用専用 POLICY が cmd を持つ稀少ケースでは cmd 付箋が省略されるが、
+    pol.evt が立つことで結果は可視化される（cmd の同定は §9 生 DML を参照）。
+    bulk: true の場合 evt 付箋を fanout 化（×N スタック）。
+    trgs（join）の表示は呼び出し側で前レーン `joins_into_next=True` として処理する。
+    """
+    notes: list[Note] = []
+    bulk = bool(pol.get("bulk"))
+    notes.append(Note(kind="policy", label=localize(pol.get("name", ""), gloss)))
+    qry = pol.get("qry")
+    if qry:
+        notes.append(Note(kind="readmodel", label=localize(qry, gloss)))
+    if pol.get("evt"):
+        n = Note(kind="event", label=localize(pol["evt"], gloss))
+        if bulk:
+            n.is_fanout = True
+        notes.append(n)
+    return notes
+
+
+def build_flows_from_dml(model: dict, glossary_index: dict[str, str]) -> list[Flow]:
+    """DML の `flows[]` を起点に、`scs[]`/`pols[]` を解決して `list[Flow]` を組み立てる。
+
+    既存の `render_flow()`（Big Picture グリッド HTML 生成）が消費する Flow/Lane/Note
+    dataclass を作るだけで、HTML 生成本体は再利用する。
+
+    レーン併合ルール:
+      - 同一 ctx で sync な継続（scs→scs かつ前段の最後の遷移が非同期でない）→ 同一 Lane に Note 連結
+      - ctx が変わる、または次が policy ステップ（EVENTUAL-TX）→ 新規 Lane。前 Lane 末尾の Note を is_async=True
+      - 次が trgs（join）policy → 前 Lane の joins_into_next=True（BPMN Σ N シンクバー）
+    """
+    scs = model.get("scs") or []
+    pols = model.get("pols") or []
+    scs_by_name: dict[str, dict] = {}
+    for s in scs:
+        name = s.get("name")
+        if not name:
+            continue
+        if name in scs_by_name:
+            print(f"⚠ DML flows: 重複した scs[].name: {name}", file=sys.stderr)
+        scs_by_name[name] = s
+    pols_by_name: dict[str, dict] = {p.get("name"): p for p in pols if p.get("name")}
+
+    out: list[Flow] = []
+    for fl in model.get("flows") or []:
+        flow_id = fl.get("id", "")
+        flow = Flow(title=fl.get("title") or flow_id)
+        prev_ctx: str | None = None
+        for raw_step in fl.get("steps") or []:
+            step = raw_step.strip()
+            if not step:
+                continue
+            if step in scs_by_name:
+                sc = scs_by_name[step]
+                ctx = sc.get("ctx", "")
+                notes = _scenario_steps_to_notes(sc, glossary_index)
+                async_in = False  # scs ステップは ctx 一致なら同期継続
+                is_join = False
+            elif step in pols_by_name:
+                pol = pols_by_name[step]
+                ctx = pol.get("ctx", "")
+                notes = _policy_steps_to_notes(pol, glossary_index)
+                async_in = True   # policy は常に EVENTUAL-TX 境界
+                is_join = bool(pol.get("trgs"))
+            else:
+                print(
+                    f"⚠ DML flows[{flow_id}]: 未解決の step (scs/pols に該当なし): {step}",
+                    file=sys.stderr,
+                )
+                continue
+            if not notes:
+                continue
+
+            same_ctx = (ctx == prev_ctx)
+            if flow.lanes and same_ctx and not async_in:
+                # 同期継続: 既存レーンに Note を連結
+                flow.lanes[-1].notes.extend(notes)
+            else:
+                # 非同期境界 or ctx 変化 → 新規 Lane
+                if flow.lanes and flow.lanes[-1].notes:
+                    flow.lanes[-1].notes[-1].is_async = True
+                    if is_join:
+                        flow.lanes[-1].joins_into_next = True
+                lane = Lane(bc_name=ctx, description="")
+                lane.notes = list(notes)
+                flow.lanes.append(lane)
+            prev_ctx = ctx
+
+        if flow.lanes:
+            out.append(flow)
+    return out
+
+
+def aggregates_from_dml(model: dict) -> list[dict]:
+    """DML から集約情報を導出する公開ヘルパー（下流スキル to-issues も利用）。
+
+    出力は集約 1 件あたり以下のキーを持つ dict のリスト:
+      name / ctx / purpose / background / constraints
+      states / transitions / attrs / events
+      invariants (=scs[].rules で agg 一致) / errors (=scs[].errs で agg 一致)
+      related_scenarios (=該当 scs[].name のリスト)
+
+    `aggs[].events` が空のときは scs[] から **イベント名のみ**を自動補完する
+    （params は空のまま）。明示的に declare 済みの events[] はそのまま使う。
+    `aggs[].transitions[]` は設計判断（from/to/via の組み合わせ）が必要なため
+    自動補完しない — 空のときは空のまま返す。
+    """
+    aggs = model.get("aggs") or []
+    scs = model.get("scs") or []
+    # AGG 名で scs を集計
+    rules_by_agg: dict[str, list[dict]] = {}
+    errs_by_agg: dict[str, list[dict]] = {}
+    rel_by_agg: dict[str, list[str]] = {}
+    evt_names_by_agg: dict[str, list[str]] = {}  # 重複除去で順序保持
+    for s in scs:
+        a = s.get("agg")
+        if not a:
+            continue
+        rel_by_agg.setdefault(a, []).append(s.get("name") or "")
+        for r in s.get("rules") or []:
+            rules_by_agg.setdefault(a, []).append(r)
+        for e in s.get("errs") or []:
+            errs_by_agg.setdefault(a, []).append(e)
+        # evt の収集（scs[].evt と scs[].brs[].evt の両方）
+        seen = evt_names_by_agg.setdefault(a, [])
+        cand = []
+        if s.get("evt"):
+            cand.append(s["evt"])
+        for br in s.get("brs") or []:
+            if br.get("evt"):
+                cand.append(br["evt"])
+        for e in cand:
+            if e and e not in seen:
+                seen.append(e)
+    out: list[dict] = []
+    for ag in aggs:
+        name = ag.get("name", "")
+        declared_events = list(ag.get("events") or [])
+        # フォールバック: events[] が未記述なら scs[].evt から名前だけ補完（params は空）
+        if not declared_events:
+            derived = [{"name": ev} for ev in evt_names_by_agg.get(name, [])]
+        else:
+            derived = declared_events
+        out.append({
+            "name": name,
+            "ctx": ag.get("ctx", ""),
+            "purpose": ag.get("purpose", ""),
+            "background": ag.get("background", ""),
+            "constraints": list(ag.get("constraints") or []),
+            "states": list(ag.get("states") or []),
+            "transitions": list(ag.get("transitions") or []),
+            "attrs": list(ag.get("attrs") or []),
+            "events": derived,
+            "note": ag.get("note", ""),
+            "invariants": rules_by_agg.get(name, []),
+            "errors": errs_by_agg.get(name, []),
+            "related_scenarios": [n for n in rel_by_agg.get(name, []) if n],
+        })
+    return out
+
+
+# ============================================================
 # HTML レンダラ
 # ============================================================
 
@@ -605,19 +767,31 @@ def esc(s: str) -> str:
 
 
 def render_progress(status: str) -> str:
+    """SKILL.md のワークフロー（9 ステップ）と整合する進捗バーを生成。
+
+    フェーズ番号は SKILL.md と同じ。Status 行が "フェーズN 完了" などを含めば
+    そのフェーズまで done、続く 1 つが current。
+    """
     phases = [
         "1. スコープ",
         "2. ストーリー",
         "3. イベント発見",
         "4. CMD-EVT-POLICY",
         "4.5. BC 境界",
-        "5. RULE-ERR",
-        "6. 整合性チェック",
+        "4.6. 目的・背景・制約",
+        "5. 不変条件・エラー＋属性",
+        "6. 意思決定ログ",
+        "7. 整合性チェック",
     ]
     done_count = 0
-    if re.search(r"フェーズ6.*完了", status):
-        done_count = 7
+    # 順序は具体度の高いものから（"フェーズ4.6" は "フェーズ4" にもマッチするため先行評価）
+    if re.search(r"フェーズ7.*完了", status):
+        done_count = 9
+    elif re.search(r"フェーズ6", status):
+        done_count = 8
     elif re.search(r"フェーズ5", status):
+        done_count = 7
+    elif re.search(r"フェーズ4\.6", status):
         done_count = 6
     elif re.search(r"フェーズ4\.5", status):
         done_count = 5
@@ -630,11 +804,12 @@ def render_progress(status: str) -> str:
     elif re.search(r"フェーズ1", status):
         done_count = 1
 
+    last_idx = len(phases) - 1
     items = []
     for i, name in enumerate(phases):
         if i < done_count:
             cls = "phase done"
-            label = name + (" ✅" if i == 6 else "")
+            label = name + (" ✅" if i == last_idx else "")
         elif i == done_count:
             cls = "phase current"
             label = name
@@ -921,57 +1096,237 @@ def render_context_map(cards: list[dict]) -> str:
     return f"<h3>コンテキストマップ</h3>\n  {svg}"
 
 
-_ERR_CODE_RE = re.compile(r"`([^`]+)`")
+def _render_attr_table(rows: list[dict], header_class: str = "") -> str:
+    """`aggs[].attrs` / `events[].params` の共通属性表レンダリング。
+
+    各行は dict（{name, type, required, note}）。空リストなら ""（呼び出し側で抑制）。
+    """
+    if not rows:
+        return ""
+    body = "\n        ".join(
+        f"<tr>"
+        f"<td class=\"code-cell\">{esc(r.get('name', ''))}</td>"
+        f"<td class=\"code-cell\">{esc(str(r.get('type', '')))}</td>"
+        f"<td>{'✓' if r.get('required') else ''}</td>"
+        f"<td>{esc(r.get('note', '') or '')}</td>"
+        f"</tr>"
+        for r in rows
+    )
+    cls = f'attr-table {header_class}'.strip()
+    return (
+        f'<table class="{cls}">\n'
+        f"      <thead><tr><th>属性</th><th>型</th><th>必須</th><th>備考</th></tr></thead>\n"
+        f"      <tbody>\n        {body}\n      </tbody>\n"
+        f"    </table>"
+    )
 
 
-def _render_err_item(text: str) -> str:
-    return _ERR_CODE_RE.sub(r'<code class="err-code">\1</code>', esc(text))
+def render_agg_cards_from_dml(
+    model: dict, glossary_index: dict[str, str]
+) -> str:
+    """DML `aggs[]` から集約カードを描画する（旧 Zod ブロックは廃止）。
 
+    各カード: コンテキスト · 関連シナリオ → 目的/背景/制約 → 属性表 → 状態/状態遷移 →
+    不変条件（scs[].rules を agg 一致で集約）→ エラーケース（scs[].errs を agg 一致で集約）
+    → イベントごとのペイロード表（events[].params）。
+    """
+    enriched = aggregates_from_dml(model)
+    if not enriched:
+        return '<div class="todo-placeholder">TODO: DML に aggs[] 未記述</div>'
 
-# 集約サブセクションの表示スタイル: (CSS クラス, ラベル接頭辞, 1 項目あたりのレンダラ)
-AGG_SUBSECTION_STYLE: dict[str, tuple[str, str, "object"]] = {
-    "不変条件":   ("inv-section", "✓ ", esc),
-    "エラーケース": ("err-section", "⚠ ", _render_err_item),
-}
-AGG_SUBSECTION_DEFAULT = ("agg-subsection", "", esc)
+    out: list[str] = []
+    for a in enriched:
+        rel = "・".join(f"`{n}`" for n in a["related_scenarios"]) or "—"
+        meta = (
+            f'<div class="dep"><strong>コンテキスト:</strong> '
+            f'<code>{esc(a["ctx"])}</code> · '
+            f'<strong>関連シナリオ:</strong> {esc(rel)}</div>'
+        )
+        intent_html = render_intent_blocks({
+            "purpose": a["purpose"],
+            "background": a["background"],
+            "constraints": a["constraints"],
+        })
 
-
-def render_agg_cards(cards: list[dict]) -> str:
-    if not cards:
-        return '<div class="todo-placeholder">TODO: フェーズ5完了後に追記</div>'
-    out = []
-    for c in cards:
-        meta = f'<div class="dep"><strong>コンテキスト:</strong> {esc(c["context"])} · <strong>関連シナリオ:</strong> {esc(c["related"])}</div>'
-        intent_html = render_intent_blocks(c)
-        zod_html = ""
-        if c["zod"]:
-            zod_html = f'<pre class="code">{highlight_zod(c["zod"])}</pre>'
-
-        bullets = []
-        for label, items in [
-            ("不変条件", c["invariants"]),
-            ("エラーケース", c["errors"]),
-            ("状態遷移", c["transitions"]),
-            ("派生イベント", c["derived"]),
-            ("備考", c["notes"]),
-        ]:
-            if not items:
-                continue
-            css, prefix, render_item = AGG_SUBSECTION_STYLE.get(label, AGG_SUBSECTION_DEFAULT)
-            items_html = "\n      ".join(f"<li>{render_item(x)}</li>" for x in items)
-            bullets.append(
-                f'<div class="{css}">'
-                f"<strong>{prefix}{label}:</strong>"
-                f"<ul>\n      {items_html}\n    </ul>"
-                f"</div>"
+        attr_html = _render_attr_table(a["attrs"])
+        if not attr_html:
+            attr_html = (
+                '<div class="agg-subsection"><em style="color:#90A4AE;">'
+                "属性未記述（DML aggs[].attrs[] 追記）</em></div>"
             )
 
-        sections = [meta, intent_html, zod_html] + bullets
+        states_html = ""
+        if a["states"]:
+            states_html = (
+                '<div class="agg-subsection"><strong>状態:</strong> '
+                + " → ".join(f"<code>{esc(s)}</code>" for s in a["states"])
+                + "</div>"
+            )
+
+        transitions_html = ""
+        if a["transitions"]:
+            items = []
+            for t in a["transitions"]:
+                frm = esc(str(t.get("from", "")))
+                to = t.get("to", "")
+                to_html = (
+                    " | ".join(esc(str(x)) for x in to)
+                    if isinstance(to, list) else esc(str(to))
+                )
+                via = esc(str(t.get("via", "")))
+                via_jp = esc(localize(str(t.get("via", "")), glossary_index))
+                when = t.get("when") or t.get("note") or ""
+                when_html = f' <span class="why">（{esc(when)}）</span>' if when else ""
+                via_label = f"<code>{via}</code>" + (
+                    f" <span class=\"why\">({via_jp})</span>" if via_jp and via_jp != via else ""
+                )
+                items.append(
+                    f"<li><code>{frm}</code> → <code>{to_html}</code> via {via_label}{when_html}</li>"
+                )
+            transitions_html = (
+                '<div class="agg-subsection"><strong>状態遷移:</strong>'
+                f"<ul>\n      " + "\n      ".join(items) + "\n    </ul></div>"
+            )
+
+        inv_html = ""
+        if a["invariants"]:
+            items = []
+            for r in a["invariants"]:
+                base = esc(r.get("rule", ""))
+                why = r.get("why") or ""
+                why_html = f' <span class="why">— {esc(why)}</span>' if why else ""
+                items.append(f"<li>{base}{why_html}</li>")
+            inv_html = (
+                '<div class="inv-section"><strong>✓ 不変条件:</strong>'
+                f"<ul>\n      " + "\n      ".join(items) + "\n    </ul></div>"
+            )
+
+        err_html = ""
+        if a["errors"]:
+            items = []
+            for e in a["errors"]:
+                err = esc(e.get("err", ""))
+                cond = esc(e.get("cond", ""))
+                when = e.get("when") or e.get("note") or ""
+                when_html = f' <span class="why">（{esc(when)}）</span>' if when else ""
+                items.append(
+                    f'<li><code class="err-code">{err}</code>: {cond}{when_html}</li>'
+                )
+            err_html = (
+                '<div class="err-section"><strong>⚠ エラーケース:</strong>'
+                f"<ul>\n      " + "\n      ".join(items) + "\n    </ul></div>"
+            )
+
+        events_html = ""
+        if a["events"]:
+            parts = []
+            for ev in a["events"]:
+                name = ev.get("name", "")
+                name_jp = localize(name, glossary_index)
+                title = esc(name) + (
+                    f" <span class=\"why\">({esc(name_jp)})</span>"
+                    if name_jp and name_jp != name else ""
+                )
+                params_html = _render_attr_table(
+                    ev.get("params") or [], header_class="payload-table"
+                )
+                if not params_html:
+                    params_html = (
+                        '<div class="agg-subsection"><em style="color:#90A4AE;">'
+                        "ペイロード未記述（params[] 追記）</em></div>"
+                    )
+                note = ev.get("note") or ""
+                note_html = (
+                    f'<div class="agg-subsection" style="margin-top:4px;color:#455A64;">'
+                    f"{esc(note)}</div>" if note else ""
+                )
+                parts.append(
+                    f'<div class="agg-event">\n'
+                    f"      <h4>{title}</h4>\n"
+                    f"      {note_html}\n"
+                    f"      {params_html}\n"
+                    f"    </div>"
+                )
+            events_html = (
+                '<div class="agg-events">\n'
+                "    <strong>イベントペイロード:</strong>\n    "
+                + "\n    ".join(parts)
+                + "\n  </div>"
+            )
+
+        sections = [
+            meta, intent_html, attr_html, states_html,
+            transitions_html, inv_html, err_html, events_html,
+        ]
         out.append(
             f'<div class="bc-card">\n'
-            f'    <h3>{esc(c["name"])}</h3>\n'
+            f'    <h3>{esc(a["name"])}</h3>\n'
             "    " + "\n    ".join(s for s in sections if s)
             + "\n  </div>"
+        )
+    return "\n  ".join(out)
+
+
+def render_decisions(model: dict, glossary_index: dict[str, str]) -> str:
+    """DML `decisions[]` から意思決定ログを描画する。
+
+    各カード: トピック・採用 ・影響要素 / 各オプション（採用 ✓ 緑 ／ 不採用 灰・取り消し線）。
+    decisions[] が空なら "" を返し、呼び出し側で見出しごと抑制する。
+    """
+    decisions = (model or {}).get("decisions") or []
+    if not decisions:
+        return ""
+    out: list[str] = []
+    for d in decisions:
+        did = esc(d.get("id", ""))
+        topic = esc(d.get("topic", ""))
+        chosen = d.get("chosen", "")
+        affects = d.get("affects") or []
+        affects_html = ""
+        if affects:
+            chips = " ".join(
+                f"<code>{esc(localize(str(a), glossary_index))}</code>"
+                for a in affects
+            )
+            affects_html = f" · <strong>影響:</strong> {chips}"
+        opts_html_parts: list[str] = []
+        for opt in d.get("options") or []:
+            name = opt.get("name", "")
+            adopted = opt.get("adopted")
+            if adopted is None:
+                adopted = (name == chosen)
+            cls = "adopted" if adopted else "rejected"
+            if adopted:
+                reason = opt.get("why") or ""
+                marker = "✓ "
+                reason_html = (
+                    f'<span class="opt-why">{esc(reason)}</span>' if reason else ""
+                )
+            else:
+                reason = opt.get("why_not") or opt.get("why") or ""
+                marker = ""
+                reason_html = (
+                    f'<span class="opt-why-not">{esc(reason)}</span>' if reason else ""
+                )
+            opts_html_parts.append(
+                f'<div class="opt {cls}">'
+                f'<span class="opt-name">{marker}{esc(name)}</span>'
+                f"{reason_html}"
+                f"</div>"
+            )
+        opts_html = "\n      ".join(opts_html_parts)
+        note = d.get("note") or ""
+        note_html = (
+            f'<div class="decision-note">{esc(note)}</div>' if note else ""
+        )
+        out.append(
+            f'<div class="decision-card">\n'
+            f'    <h3>{did}. {topic}</h3>\n'
+            f'    <div class="dep"><strong>採用:</strong> '
+            f'<code>{esc(str(chosen))}</code>{affects_html}</div>\n'
+            f'    <div class="decision-options">\n      {opts_html}\n    </div>\n'
+            f"    {note_html}\n"
+            f"  </div>"
         )
     return "\n  ".join(out)
 
@@ -1088,8 +1443,6 @@ def render_glossary(glossary: dict) -> str:
 # ============================================================
 # シンタックスハイライト
 # ============================================================
-
-ZOD_KEYWORDS = {"export", "const", "type", "typeof", "import", "from"}
 
 # DML（YAML）の値を「キー名」に応じて付箋色クラスへ割り当てる
 DML_VALUE_CLASS_BY_KEY = {
@@ -1216,37 +1569,6 @@ def highlight_dml(dml: str) -> str:
     return "\n".join(out)
 
 
-def highlight_zod(zod: str) -> str:
-    out = []
-    for line in zod.split("\n"):
-        result = ""
-        i = 0
-        while i < len(line):
-            matched = False
-            for kw in ZOD_KEYWORDS:
-                if line[i:].startswith(kw) and (
-                    i + len(kw) == len(line) or not line[i + len(kw)].isalnum()
-                ):
-                    if i == 0 or not line[i - 1].isalnum():
-                        result += f'<span class="kw">{kw}</span>'
-                        i += len(kw)
-                        matched = True
-                        break
-            if matched:
-                continue
-            # 文字列リテラル
-            if line[i] == "'":
-                end = line.find("'", i + 1)
-                if end > i:
-                    result += f'<span class="cm">{esc(line[i:end + 1])}</span>'
-                    i = end + 1
-                    continue
-            result += esc(line[i])
-            i += 1
-        out.append(result)
-    return "\n".join(out)
-
-
 # ============================================================
 # テンプレ処理
 # ============================================================
@@ -1299,15 +1621,40 @@ def build_body_html(
     progress_html = render_progress(status)
     story_html = render_story(sections.story)
     scenarios_html = render_scenarios(sections.scenarios)
-    flows_html = render_flows(sections.flows)
+    glossary_index = build_glossary_index(sections.glossary)
+
+    # DML 解析成功時のみ §3（フロー）・§5（集約）・意思決定ログを生成。
+    # 失敗時はプレースホルダーで縮退し例外を出さない。
+    decisions_html = ""
+    if sections.dml_model is not None:
+        flows = build_flows_from_dml(sections.dml_model, glossary_index)
+        flows_html = render_flows(flows)
+        agg_cards_html = render_agg_cards_from_dml(
+            sections.dml_model, glossary_index
+        )
+        decisions_html = render_decisions(sections.dml_model, glossary_index)
+    else:
+        flows_html = (
+            '<div class="todo-placeholder">'
+            "DML 解析不可（PyYAML 不在 / 未記述）— §9 を参照"
+            "</div>"
+        )
+        agg_cards_html = (
+            '<div class="todo-placeholder">DML 解析不可 — §9 を参照</div>'
+        )
+
     context_map_html = render_context_map(sections.bc_cards)
     bc_cards_html = render_bc_cards(sections.bc_cards)
-    agg_cards_html = render_agg_cards(sections.agg_cards)
     qry_cards_html = render_qry_cards(sections.qry_cards)
     questions_html = render_questions_hotspots(sections.questions, sections.hotspots)
     actions_html = render_actions(sections.actions, status)
     dml_html = render_dml(sections.dml, sections.dml_errors)
     glossary_html = render_glossary(sections.glossary)
+
+    decisions_block = (
+        f"\n  <h2>8. 意思決定ログ</h2>\n  {decisions_html}\n"
+        if decisions_html else ""
+    )
 
     return f"""
   <h1>EventStorming — {esc(title)}</h1>
@@ -1342,14 +1689,14 @@ def build_body_html(
 
   <h2>7. オープンクエスチョン</h2>
   {questions_html}
-
-  <h2>8. 次のアクション</h2>
+{decisions_block}
+  <h2>9. 次のアクション</h2>
   {actions_html}
 
-  <h2>9. DML</h2>
+  <h2>10. DML</h2>
   {dml_html}
 
-  <h2>10. 用語集</h2>
+  <h2>11. 用語集</h2>
   {glossary_html}
 """.strip()
 
@@ -1357,6 +1704,22 @@ def build_body_html(
 # ============================================================
 # ビルド本体
 # ============================================================
+
+
+def _load_dml_model(dml_text: str) -> dict | None:
+    """DML テキストを yaml.safe_load する。失敗・PyYAML 不在は None。
+
+    返り値 None は build_body_html の縮退フラグ（§3/§5/意思決定ログをスキップ）。
+    全行コメントのみ（=None）/ 空文字 / dict 以外はすべて None として扱う。
+    """
+    if yaml is None or not dml_text.strip():
+        return None
+    try:
+        loaded = yaml.safe_load(dml_text)
+    except yaml.YAMLError as e:  # type: ignore[attr-defined]
+        print(f"⚠ DML YAML 解析失敗: {e}", file=sys.stderr)
+        return None
+    return loaded if isinstance(loaded, dict) else None
 
 
 def _validate_dml_warn(dml_text: str, dml_path: Path) -> list[str]:
@@ -1394,6 +1757,9 @@ def build(
     # JSON Schema 検証（警告のみ・non-blocking）。違反は §9 バナーと stderr に出すが
     # ビルドは止めない（編集途中の不完全 DML でも HTML プレビューを保つ）。
     sections.dml_errors = _validate_dml_warn(sections.dml, dml_path)
+    # DML を構造化して読み込む（HTML §3/§5/意思決定ログの起点）。
+    # 失敗や PyYAML 不在は None に。build_body_html が縮退して例外を出さない。
+    sections.dml_model = _load_dml_model(sections.dml)
     html = render_html(sections)
 
     if artifact:

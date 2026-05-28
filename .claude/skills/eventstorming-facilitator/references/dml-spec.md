@@ -4,14 +4,14 @@ DDD モデリングのための情報圧縮言語。**構文 validity（形が�
 
 - スキーマ通過は必要条件であって十分条件ではない。「形が正しい」ことを schema が、「意味が正しい」ことを causal-check / quality-check が担保する（§7）
 - 検証: `python3 .claude/skills/eventstorming-facilitator/scripts/validate_dml.py docs/eventstorming/<session>.dml.yaml`
-- フル例: [`../examples/sample.dml.yaml`](../examples/sample.dml.yaml)（コミュニティイベント参加ドメイン・v3 文法）
+- フル例: [`../examples/sample.dml.yaml`](../examples/sample.dml.yaml)（コミュニティイベント参加ドメイン・`flows[]` / `decisions[]` を含む v4 参照例）
 
 ---
 
 ## 0. 記法の原則
 
-- **YAML 直書き・MD と兄弟ファイル**: `docs/eventstorming/<session>.dml.yaml` に純 YAML（フェンス不要）。`.md` の §9 はこの `.dml.yaml` へのリンク参照のみ。ビルダーは `.md` + 兄弟 `.dml.yaml` から HTML を生成する
-- **トップレベルは 4 リスト**: `ctxs` / `aggs` / `scs` / `pols`（任意で `domains`）。コメントによるセクション区切りは使わない（リスト構造で自然に分離される）
+- **YAML 直書き・`.md` と兄弟ファイル**: `docs/eventstorming/<session>.dml.yaml` に純 YAML（フェンス不要）。`.md` の §10 はこの `.dml.yaml` へのリンク参照のみ。ビルダーは `.md` + 兄弟 `.dml.yaml` から HTML を生成する
+- **トップレベルは 4 リスト + 任意 3 リスト**: `ctxs` / `aggs` / `scs` / `pols` 必須、`domains` / `flows` / `decisions` 任意。コメントによるセクション区切りは使わない（リスト構造で自然に分離される）
 - **識別子は英語 PascalCase**（`cmd` / `evt` / `agg` / `trg` / `qry` の値、`aggs[].name` 等）。`()` や `<<>>` は付けない
 - **`scs[].name` のみ日本語**で「アクター＋行為」を書く（例: `主催者がコミュニティを作成する`）
 - **`rules[].rule` の不変条件は英語**。日本語の補足は `why` / `when` / `note` の**構造化フィールド**へ書く（`#` 行コメントによる補足慣習は廃止）
@@ -109,15 +109,15 @@ pols:
     note: "会場変更時に既存参加者へ通知（メール送信のみ、状態遷移なし）"
 ```
 
-対応フロー DSL は `$ポリシー *> [event]`（CMD なし）と書く。AGG への BULK CMD（`*> !cmd > [event]`）と視覚的に区別され、AGG の責務肥大化を防げる。
-
 ### bulk / qry の関係
 
 `bulk: true` のとき `qry` 必須（送信対象リストを明示するため）。schema が機械検証する。単一宛先が `trg` ペイロードから決まる場合は `qry` 省略可。
 
+HTML §3 のフロー図では、`bulk: true` の POLICY は **fanout（× N バッジ + 3 枚スタック）** で描画される。
+
 ### 複数トリガーの join（`trgs`）
 
-複数のイベントが揃って初めて起動する POLICY（フロー DSL の `&>>` join に対応）は、`trg`（単一）の代わりに `trgs` を使う。構造と `mode` 語彙は schema 参照。
+複数のイベントが揃って初めて起動する POLICY は、`trg`（単一）の代わりに `trgs`（`evts` 配列 + `mode`）を使う。HTML §3 では **BPMN シンクバー（Σ N）** で描画される。
 
 ---
 
@@ -129,7 +129,21 @@ v2 までは `ctxs[].aggs[]` 内に集約宣言を持っていたが、**v3 で 
 
 - AGG は BC をまたいで参照される（quality-check / causal-check のグラフ起点）
 - `transitions[].via`（CMD 名）と `scs[].cmd` を機械的に突合できる
-- AGG の責務（`purpose` / `states` / `transitions` / `attrs` / `events`）を 1 ブロックで読める
+- AGG の責務（`purpose` / `background` / `constraints` / `states` / `transitions` / `attrs` / `events`）を 1 ブロックで読める
+
+### `aggs[]` のフィールド構成（v4）
+
+| フィールド | 型 | 役割 |
+|---|---|---|
+| `name` | PascalCase | AGG 識別子（必須） |
+| `ctx` | lowercase-with-hyphen | 所属 BC（必須・所有者は 1 つ） |
+| `purpose` | string | 「単一の責任主体として何のソース・オブ・トゥルースか」を 1 文で（必須・30 字以上推奨） |
+| `background` | string | 「なぜ今この AGG を切り出すか・既存運用の何が痛いか」（任意・1〜3 文） |
+| `constraints[]` | string list | 業務／法令／プラットフォーム由来の制約（任意・複数可） |
+| `states` | upper_snake list | 状態名（DRAFT / PUBLISHED 等） |
+| `transitions[]` | `{from,to,via,when?}` | 状態遷移。`via` は scs[].cmd と突合 |
+| `attrs[]` | `{name,type,required?,note?}` | AGG ペイロード属性。HTML §5 で属性表として描画 |
+| `events[]` | `{name, params[]?}` | この AGG が emit する EVT 宣言。`params[]` は `attrs[]` と同じ attribute 構造。HTML §5 でイベントペイロード表として描画 |
 
 ### 意味整合（quality-check が担保）
 
@@ -163,11 +177,11 @@ DML（YAML）の値は HTML レンダリング時に**役割ベースの意味�
 | `states` / `from` / `to` | 状態名（UPPER_SNAKE） | 黄（淡） |
 | キー名 | YAML キー | 淡い灰緑 |
 
-> **フロー図 DSL**（`event-flow-svg` フェンスの `@$![]>>*>&>>`）は DML とは別の DSL。記号一覧と HTML 描画ルールは [`./html-render-spec.md`](./html-render-spec.md) §5-0 参照。
+> **フロー図は DML から自動生成される**（手書きの記号 DSL は無い）。`flows[].steps[]` に `scs[].name` または `pols[].name` を列挙すれば、ビルダーが Big Picture グリッドに描画する。詳細は [`./html-render-spec.md`](./html-render-spec.md) §5 参照。
 
 ---
 
-## 6. `[?]`（未確認）の慣習
+## 6. `[?]`（未確認）の慣習と `decisions[]` への昇格
 
 確信が低い箇所や設計判断が必要な箇所には、該当要素の `note` に `[?]` を付けて理由も書く。進行中セッションを残しつつ、後続フェーズや次回セッションで再評価する。
 
@@ -183,16 +197,18 @@ scs:
         note: "[?] Event 集約と Participation 集約どちらが定員を持つ？"
 ```
 
+**`[?]` で残した未確定判断は、選択肢が見えてきた段階で `decisions[]` に昇格させる**。`decisions[]` に書くことで「採用したもの / 不採用にしたもの / それぞれの理由」が構造化され、HTML §8 で比較カードとしてレビューできる（§9 参照）。
+
 ---
 
 ## 7. 検証の境界（構文 vs 意味）
 
 | レイヤ | 担保するもの | 例 |
 |------|------|------|
-| **JSON Schema**（機械・決定論的） | 構文 validity。トップレベル 4 リスト＋任意 `domains`、各要素の必須フィールド、型、enum（`rel` / `subdomainType` / `bcType` / `brMode`）、識別子の PascalCase・lowercase-with-hyphen・UPPER_SNAKE（状態名）・camelCase（属性名）、`evt`↔`brs` 排他、`trg`↔`trgs` 排他、`bulk:true`→`qry` 必須、未知フィールド禁止 | `cmd` が PascalCase か、`sub.type` が enum 値か、`aggs[].states` が UPPER_SNAKE か |
-| **causal-check / quality-check**（LLM・文脈依存） | 意味 validity。参照の実在・因果整合・モデル品質 | `trg` が実在 EVT を指すか、`pol` が実在 POLICY か、up↔dn の双方向一致、`scs[].cmd` ↔ `aggs[].transitions[].via` 整合、`scs[].evt` ↔ `aggs[].events[].name` 整合、分岐の MECE 性、`evt` の過去形・`cmd` の命令形 |
+| **JSON Schema**（機械・決定論的） | 構文 validity。トップレベル 4 リスト＋任意 `domains`/`flows`/`decisions`、各要素の必須フィールド、型、enum、識別子の PascalCase・lowercase-with-hyphen・UPPER_SNAKE（状態名）・camelCase（属性名）、`evt`↔`brs` 排他、`trg`↔`trgs` 排他、`bulk:true`→`qry` 必須、未知フィールド禁止 | `cmd` が PascalCase か、`sub.type` が enum 値か、`aggs[].states` が UPPER_SNAKE か |
+| **causal-check / quality-check**（LLM・文脈依存） | 意味 validity。参照の実在・因果整合・モデル品質 | `trg` が実在 EVT を指すか、`pol` が実在 POLICY か、up↔dn の双方向一致、`scs[].cmd` ↔ `aggs[].transitions[].via` 整合、`scs[].evt` ↔ `aggs[].events[].name` 整合、`flows[].steps[]` が実在 scs/pols を指すか、`decisions[].affects[]` が実在要素を指すか、分岐の MECE 性、`evt` の過去形・`cmd` の命令形 |
 
-**スキーマ通過は必要条件であって十分条件ではない。** ビルダー（`eventstorming_build.py`）は `.dml.yaml` 読込時に schema 検証し、HTML §9 にバナー（✅ / ⚠ 違反一覧）を描画する。**検証は非ブロッキング**で、違反があっても HTML は生成される。全行コメントのみ（YAML→`None`）や空ファイルは「未記述」として検証対象外（進行中セッション許容）。
+**スキーマ通過は必要条件であって十分条件ではない。** ビルダー（`eventstorming_build.py`）は `.dml.yaml` 読込時に schema 検証し、HTML §10 にバナー（✅ / ⚠ 違反一覧）を描画する。**検証は非ブロッキング**で、違反があっても HTML は生成される。全行コメントのみ（YAML→`None`）や空ファイルは「未記述」として検証対象外（進行中セッション許容）。
 
 ---
 
@@ -212,6 +228,9 @@ aggs:
   - name: Event
     ctx: community-events
     purpose: "イベントのライフサイクルとキャパシティの単一の真実源"
+    background: "現状はスプレッドシート手動運用で公開ステータスの曖昧さが申込導線の混乱を生んでいる"
+    constraints:
+      - "定員は 1 以上必須（個人情報保護法対象外データ）"
     states: [DRAFT, PUBLISHED, CANCELLED]
     transitions:
       - { from: DRAFT,     to: PUBLISHED, via: PublishEvent, when: "必須項目が揃いキャパシティ > 0" }
@@ -219,9 +238,12 @@ aggs:
     attrs:
       - { name: eventId,  type: EventId, required: true }
       - { name: title,    type: string,  required: true }
-      - { name: capacity, type: int,     required: true }
+      - { name: capacity, type: int,     required: true, note: "1 以上" }
     events:
       - name: EventPublished
+        params:
+          - { name: eventId, type: EventId }
+          - { name: title,   type: string }
       - name: EventCancelled
 
 scs:
@@ -247,6 +269,110 @@ pols:
     bulk: true
     evt: CancellationNotificationSent
     note: "副作用専用 POLICY（メール送信のみ・cmd 省略）"
+
+flows:
+  - id: happy
+    title: ハッピーパス — イベントを公開する
+    kind: happy
+    steps:
+      - 主催者がイベントを公開する
+  - id: alt-cancel
+    title: 代替シナリオ — イベントをキャンセルする
+    kind: alt
+    steps:
+      - NotifyEventCancelled
+
+decisions:
+  - id: D1
+    topic: 定員（capacity）はどの AGG が所有するか
+    chosen: Event 集約に持たせる
+    options:
+      - name: Event 集約に持たせる
+        adopted: true
+        why: "公開時点で確定する属性で、Participation と独立に変更されるため Event のライフサイクルと同居が自然"
+      - name: Participation 集約に持たせる
+        why_not: "個別申込ごとに上限を計算し直す必要があり、整合性管理コストが高い"
+    affects: [Event]
 ```
 
-**コミュニティイベント参加ドメイン全体のフル例**: [`../examples/sample.dml.yaml`](../examples/sample.dml.yaml)（2 BC・複数 AGG・SCENARIO / POLICY を含む 190 行の参照モデル）。
+**コミュニティイベント参加ドメイン全体のフル例**: [`../examples/sample.dml.yaml`](../examples/sample.dml.yaml)。
+
+---
+
+## 9. `flows[]` と `decisions[]` の哲学
+
+### なぜ `flows[]` が必要か
+
+ドメインモデルには **ハッピーパス** に加えて **複数の代替シナリオ**（キャンセル・繰上待ち・エラー復旧 等）が存在する。それぞれが「どの scs/pols をどの順で辿るか」を明示的に残さないと、後で別パスを思い出して書き起こすときに必ず情報が落ちる。`flows[]` は **「フローの構成」を独立した一級概念として永続化** することで、HTML §3 のフロー図を機械的に再生成できるようにする。
+
+```yaml
+flows:
+  - id: happy
+    title: ハッピーパス — 申込から決済確定まで
+    kind: happy
+    steps:
+      - 主催者がイベントを作成する          # scs[].name（日本語）
+      - 参加者がイベントに参加申込する
+      - RequestPayment                      # pols[].name（PascalCase）
+      - システムが申込を確定し監査記録する
+  - id: alt-waitlist
+    title: 代替シナリオ — 残席ゼロで繰上待ち
+    kind: alt
+    steps:
+      - 参加者がイベントに参加申込する
+      - NotifyWaitlistEntry
+```
+
+### `steps[]` の参照規則
+
+- 各 step は **`scs[].name` の日本語表記** または **`pols[].name` の PascalCase** のいずれかを書く
+- 順序は因果連鎖と整合させる（前ステップの evt が次ステップの trg と一致するなど）
+- 同一 `ctx` の連続 sync ステップはビルダー側で 1 レーンに併合される。`ctx` 変化・policy ステップ・`trgs` join はそれぞれ HTML §3 の非同期矢印・sync-bar として描画される
+- typo（実在 scs/pols に該当なし）は causal-check の C12 で検出
+
+### `kind` の使い分け
+
+| 値 | 用途 |
+|---|---|
+| `happy` | 主要フロー。1 セッションで原則 1 本 |
+| `alt` | 代替シナリオ（例外パス・回避パス・補助フロー）。複数可 |
+
+`kind` は分類ヒントで HTML 表示には影響しない（causal-check が「happy 過多 / 無し」を将来チェックする余地として残す）。
+
+### `decisions[]` の書き方
+
+`decisions[]` は **「採用したもの + なぜ採用したか + 不採用にしたもの + なぜ採用しなかったか」を構造化して残す**。設計判断の歴史を引き継ぐためのログで、`[?]` の保留メモを「選択肢が揃ったら」昇格させる。
+
+```yaml
+decisions:
+  - id: D2
+    topic: WAITLIST（繰上待ち）の管理単位
+    chosen: Participation 集約の状態として持つ
+    options:
+      - name: Participation 集約の状態として持つ
+        adopted: true
+        why: "Event 集約に WAITLIST を持たせると申込キャンセルのたびに Event を更新する必要があり、Event の責務（ライフサイクル管理）から外れる"
+      - name: 独立した Waitlist 集約を切り出す
+        why_not: "繰上ロジックが Participation の状態遷移と密結合で、別 AGG にすると整合性管理のコストが高い"
+      - name: 別 BC（waitlisting）に切り出す
+        why_not: "通知 / 繰上 / キャンセル等の参加ライフサイクル管理は participation BC の責務内で十分。複雑性に見合う独立性が無い"
+    affects: [Participation]
+    note: "繰上の通知タイミング（CancellationDetected 直後 / 翌日バッチ）は別途要検討（H7 にて）"
+```
+
+### `decisions[]` の必須/推奨フィールド
+
+| フィールド | 必須/推奨 | 書き方のコツ |
+|---|---|---|
+| `id` | 必須 | `D1` / `D2` のような連番、または `capacity-owner` のような slug |
+| `topic` | 必須 | 「何を決めたか」を 1 行で（CMD 名ではなく業務概念で） |
+| `chosen` | 必須 | `options[].name` のいずれかと完全一致（未確定なら `chosen: 未確定`） |
+| `options[]` | 必須・1 件以上 | 検討した全選択肢。1 件しか書かないと「比較していない」シグナル |
+| `options[].why` / `why_not` | 推奨 | `rules[].why` と同様に **業務文脈** で書く。「実装が楽」だけでなく「業務的に何が違うか」を |
+| `options[].adopted` | 任意 | `chosen` との照合で自動判定されるが、明示すると意図がはっきりする |
+| `affects[]` | 推奨 | 影響を受ける AGG / BC / 要素名（PascalCase or lowercase-with-hyphen）。causal-check C13 で実在突合 |
+| `note` | 任意 | 「決まったが後で見直す可能性のある条件」「関連する未決問題」等 |
+
+### 「決められないとき」の扱い
+
+意思決定が早すぎて確証が無い場合は **`chosen: 未確定`** で保留する。`options[]` だけ書いて理由を埋めておけば、後続セッションで再評価できる。これは `[?]` よりも一段構造化されており、quality-check が「未確定 decision が長期残存」を検出する余地もある。

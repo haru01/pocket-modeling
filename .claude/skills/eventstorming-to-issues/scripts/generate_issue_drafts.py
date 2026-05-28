@@ -362,10 +362,10 @@ def render_side_effect_policies(items: list[dict]) -> str:
 MODULE_STRUCTURE_TEMPLATE = """```
 src/<bc>/<aggregate>/
   index.ts       — Aggregate root + 不変条件
-  schema.ts      — Zod schemas
+  schema.ts      — 属性スキーマ（attrs[] を実装言語の型/バリデータへ）
   commands/      — 1 CMD = 1 file
   queries/       — 1 QRY = 1 file
-  events.ts      — EVT 定義
+  events.ts      — EVT 定義（aggs[].events[].params をペイロード型へ）
   errors.ts      — ERR 定義
   policies.ts    — 受信 POLICY ハンドラ
 tests/<bc>/<aggregate>/<aggregate>.spec.ts
@@ -400,6 +400,50 @@ def render_qry_table(queries: list[dict]) -> str:
     for q in queries:
         rows.append(f"| `{q['id']}` | {q.get('purpose', '')} | (未起票) |")
     return "\n".join(rows)
+
+
+def render_attrs(attrs: list[dict]) -> str:
+    """DML aggs[].attrs[] を Markdown テーブルで描画する。
+
+    各要素は `{name, type?, required?, note?}`。下流（実装担当 AI エージェント）が
+    そのまま型/バリデータへ落とせる粒度で表示する。
+    """
+    if not attrs:
+        return "_（DML aggs[].attrs[] 未記載 — `<session>.dml.yaml` の該当 AGG に追記）_"
+    rows = ["| 属性 | 型 | 必須 | メモ |", "|---|---|---|---|"]
+    for a in attrs:
+        name = a.get("name", "")
+        type_ = a.get("type", "")
+        req = "✓" if a.get("required") else ""
+        note = (a.get("note") or "").replace("|", "\\|")
+        rows.append(f"| `{name}` | `{type_}` | {req} | {note} |")
+    return "\n".join(rows)
+
+
+def render_event_params(event_params: list[dict]) -> str:
+    """DML aggs[].events[].params をイベントごとに表示する。"""
+    if not event_params:
+        return "_（DML aggs[].events[] 未記載 — `<session>.dml.yaml` の該当 AGG に追記）_"
+    blocks: list[str] = []
+    for ev in event_params:
+        name = ev.get("event_name", "")
+        params = ev.get("params") or []
+        note = (ev.get("note") or "").strip()
+        head = f"### EVT `{name}`"
+        if note:
+            head += f" — {note}"
+        if not params:
+            blocks.append(f"{head}\n- _ペイロード未記載_")
+            continue
+        rows = [head, "", "| 属性 | 型 | 必須 | メモ |", "|---|---|---|---|"]
+        for p in params:
+            pname = p.get("name", "")
+            ptype = p.get("type", "")
+            preq = "✓" if p.get("required") else ""
+            pnote = (p.get("note") or "").replace("|", "\\|")
+            rows.append(f"| `{pname}` | `{ptype}` | {preq} | {pnote} |")
+        blocks.append("\n".join(rows))
+    return "\n\n".join(blocks)
 
 
 def render_invariants(items: list[str]) -> str:
@@ -545,11 +589,13 @@ def epic_body(
 
 {render_business_context(agg, bcs.get(bc, {}))}
 
-## スキーマ (Zod)
+## 属性 (DML aggs[].attrs[])
 
-```typescript
-{agg.get('zod', '').strip() or '// TODO: スキーマを記入'}
-```
+{render_attrs(agg.get('attrs', []))}
+
+## イベントペイロード (DML aggs[].events[].params)
+
+{render_event_params(agg.get('event_params', []))}
 
 ## 不変条件 (RULE)
 {render_invariants(agg.get('invariants', []))}
@@ -598,7 +644,8 @@ def epic_body(
 {MODULE_STRUCTURE_TEMPLATE}
 
 ## 受け入れ条件
-- [ ] Zod スキーマが Epic 記載と一致
+- [ ] 属性スキーマ（attrs[]）が Epic 記載の型/必須と一致
+- [ ] イベントペイロード（events[].params）が Epic 記載と一致
 - [ ] 状態遷移図の全エッジが実装されテストでカバー
 - [ ] 全不変条件 (RULE) が enforce され、違反時に Epic 記載の ERR が発火
 - [ ] 全 CMD / QRY が公開 API として動作
@@ -676,17 +723,13 @@ def cmd_body(bc: str, agg_id: str, cmd: dict, scenarios: list[dict]) -> str:
 
 {scenario_text}
 
-## 入力 (Command Schema, Zod)
+## 入力 (Command Schema)
 
-```typescript
-// TODO: AGG スキーマから入力に必要な属性を抜粋
-```
+- AGG `attrs[]` から本 CMD の入力に必要な属性を抜粋（型 / 必須は Epic 本文参照）
 
 ## 発火イベント (EVT)
 
-```typescript
-// TODO: EVT スキーマを記入
-```
+- AGG `events[].params` から該当 EVT のペイロードを参照
 
 ## 適用される RULE
 - TODO: 該当する不変条件を Epic から抜粋

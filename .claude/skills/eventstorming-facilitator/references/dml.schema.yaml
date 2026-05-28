@@ -1,7 +1,10 @@
 # DML (Domain Modeling Language) JSON Schema — Draft 2020-12
 #
-# DML は YAML 形式のドメインモデル（ctxs / aggs / scs / pols の 4 リスト + 任意の domains）。
+# DML は YAML 形式のドメインモデル（ctxs / aggs / scs / pols の 4 リスト + 任意の domains / flows / decisions）。
 # v3 で AGG をトップレベル `aggs[]` に切り出した（旧 v2 の `ctxs[].aggs[]` 内 dict 形式は廃止）。
+# v4 で「フローの構成（happy + alternatives）」と「意思決定ログ（採用/不採用理由）」を
+# それぞれ `flows[]` / `decisions[]` トップレベルとして追加。HTML §3 フロー図はこの
+# `flows[]` を起点に `scs[]`/`pols[]` を辿って自動生成される（旧 event-flow-svg DSL は廃止）。
 # このスキーマは「構文 validity（形が正しいか）」のみを機械検証する。
 # 「意味 validity（参照の実在・因果整合・モデル品質）」は causal-check / quality-check が担う。
 # スキーマ通過は必要条件であって十分条件ではない。
@@ -50,6 +53,12 @@ properties:
   pols:
     type: array
     items: { $ref: "#/$defs/policy" }
+  flows:                                       # 要素⑤・任意（HTML §3 のフロー図を駆動）
+    type: array
+    items: { $ref: "#/$defs/flow" }
+  decisions:                                   # 要素⑥・任意（意思決定ログ：採用/不採用理由）
+    type: array
+    items: { $ref: "#/$defs/decision" }
 
 $defs:
 
@@ -174,6 +183,10 @@ $defs:
       name: { $ref: "#/$defs/pascalCase" }
       ctx: { $ref: "#/$defs/contextName" }     # 所属 BC（必須・ctxs[].aggs と双方向参照）
       purpose: { type: string }
+      background: { type: string }              # 「なぜ今この AGG を切り出すか」（v4・任意）
+      constraints:                              # 業務/法令/プラットフォーム由来の制約（v4・任意）
+        type: array
+        items: { type: string }
       states:
         type: array
         items: { $ref: "#/$defs/upperSnake" }
@@ -326,3 +339,55 @@ $defs:
             bulk: { const: true }
         then:
           required: [qry]                        # bulk: true のとき qry 必須
+
+  # ---------- Flow（v4・happy + alternatives を構成して HTML §3 図を駆動） ----------
+  # steps[] は scs[].name（日本語）または pols[].name（PascalCase）の混在文字列リスト。
+  # 順序は因果連鎖と整合する想定（causal-check が突合）。同一 ctx の連続ステップは
+  # ビルダー側で 1 レーンに併合され、ctx 変化やポリシー遷移は非同期矢印で描画される。
+  flow:
+    type: object
+    additionalProperties: false
+    required: [id, title, steps]
+    properties:
+      id: { $ref: "#/$defs/contextName" }       # e.g. happy / alt-cancel / alt-waitlist
+      title: { type: string }                   # HTML §3 でフロー図の見出しに使用
+      kind:
+        type: string
+        enum: [happy, alt]                      # 任意・分類ヒント（HTML 表示には影響しない）
+      steps:
+        type: array
+        minItems: 1
+        items: { type: string }                 # scs[].name（日本語）or pols[].name（PascalCase）
+      note: { type: string }
+
+  # ---------- Decision / Option（v4・意思決定ログ） ----------
+  # 各 decision は「採用したもの + なぜ + 不採用のもの + なぜでない」を構造化して残す。
+  # affects[] は影響を受ける AGG / 要素名（PascalCase または contextName）。
+  decisionOption:
+    type: object
+    additionalProperties: false
+    required: [name]
+    properties:
+      name: { type: string }                    # 選択肢の識別ラベル（自由文字列）
+      adopted: { type: boolean }                # true なら採用（chosen と整合）
+      why: { type: string }                     # 採用理由（adopted: true のとき推奨）
+      why_not: { type: string }                 # 不採用理由（adopted: false/未指定のとき推奨）
+      note: { type: string }
+  decision:
+    type: object
+    additionalProperties: false
+    required: [id, topic, chosen, options]
+    properties:
+      id:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$"  # e.g. D1 / capacity-owner
+      topic: { type: string }                   # 意思決定のテーマ（1 行）
+      chosen: { type: string }                  # 採用した options[].name のいずれか
+      options:
+        type: array
+        minItems: 1
+        items: { $ref: "#/$defs/decisionOption" }
+      affects:                                  # 影響する DML 要素名（任意）
+        type: array
+        items: { type: string }
+      note: { type: string }

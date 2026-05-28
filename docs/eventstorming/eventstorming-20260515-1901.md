@@ -69,120 +69,8 @@
 
 ## 3) Event Walkthrough
 
-### ハッピーパス
-
-```event-flow-svg
-title: ハッピーパス — コミュニティ作成から参加確定・開催完了まで
-flow:
-|community|: 主催者がコミュニティを起点に活動を始める
-  @主催者 > !コミュニティを作成 > [コミュニティが作成された]
-  > @参加者 > !コミュニティに参加 > [メンバーが参加した] >>
-|event-planning|: コミュニティを起点にイベントを企画
-  @主催者 > !イベントを作成 > [イベントが作成された]
-  > !イベントを公開 > [イベントが公開された] >>
-|registration|: イベント公開を受けて参加者の申込フローへ
-  @参加者 > ?イベント詳細 > ?残席数 > !参加を申し込む > [参加が申し込まれた] >>
-|ticketing|: 申込発生を受けて決済 → チケット発行 → 申込確定の Saga
-  $申込決済処理 > !決済を実行 > [決済が完了した]
-  > $決済成功時のチケット発行 > !チケットを発行 > [チケットが発行された]
-  > $チケット発行時の申込確定 > !申込を確定 > [申込が確定した] >>
-|attendance|: 開催当日の参加確定フロー
-  @参加者 > !会場で受付 > [受付が完了した] >>
-|event-planning|: 主催者の明示確定で開催完了
-  @主催者 > !イベントを開催済にする > [イベントが開催済になった]
-```
-
-### 代替シナリオ: キャンセル → 返金 → キャンセル待ち繰り上げ
-
-```event-flow-svg
-title: 代替シナリオ — 参加キャンセル Saga（要求 → 返金 → 完了 → 繰り上げ）
-flow:
-|registration|: 参加者起点のキャンセル要求
-  @参加者 > !キャンセルを要求 > [キャンセルが要求された] >>
-|ticketing|: 要求を受けて返金（EVENTUAL）→ 完了で繰り上げ判断
-  $キャンセル時の返金 > !返金を実行 > [返金が完了した]
-  > $返金完了時のキャンセル確定 > !キャンセルを確定 > [キャンセルが確定した] >>
-|registration|: 空席発生で繰り上げ（EVENTUAL）
-  $空席発生時の繰り上げ > !キャンセル待ちを繰り上げ > [繰り上げが行われた]
-```
-
-### 代替シナリオ: 主催者によるイベント中止
-
-```event-flow-svg
-title: 代替シナリオ — イベント中止 Saga（要求 → BULK 並列返金 → Join で完了）
-flow:
-|event-planning|: 主催者起点のイベント中止要求
-  @主催者 > !イベント中止を要求 > [イベント中止が要求された] >>
-|ticketing|: 全 confirmed 申込を BULK 並列返金（reason=EVENT_CANCEL）
-  $中止時の一括返金 *> !返金を実行 > [返金が完了した] &>>
-|event-planning|: 全 N 件の返金完了 Join で中止を確定
-  $全返金完了時の中止確定 > !イベント中止を確定 > [イベント中止が確定した]
-```
-
-### 代替シナリオ: 決済期限切れによる自動取消
-
-```event-flow-svg
-title: 代替シナリオ — 決済期限切れ → 自動取消 → 繰り上げ
-flow:
-|ticketing|: 申込後の支払い未達を時間経過で検知（EVENTUAL）
-  $決済期限切れ検出 > !申込を期限切れにする > [申込が期限切れで取消された] >>
-|registration|: 取消による空席発生で繰り上げ（EVENTUAL）
-  $空席発生時の繰り上げ > !キャンセル待ちを繰り上げ > [繰り上げが行われた]
-```
-
-### 代替シナリオ: 定員増枠による繰り上げ（BULK）
-
-```event-flow-svg
-title: 代替シナリオ — 定員増枠 → BULK 繰り上げ
-flow:
-|event-planning|: 主催者起点の定員変更
-  @主催者 > !定員を増やす > [定員が増枠された] >>
-|registration|: 増枠数分のキャンセル待ちを BULK 並列繰り上げ（EVENTUAL）
-  $増枠時の BULK 繰り上げ *> !キャンセル待ちを繰り上げ > [繰り上げが行われた]
-```
-
-### 代替シナリオ: 日時変更（再同意必須）
-
-```event-flow-svg
-title: 代替シナリオ — 日時変更 → BULK 再同意要求 → 継続参加選択
-flow:
-|event-planning|: 主催者起点の日時変更
-  @主催者 > !日時を変更 > [日時が変更された] >>
-|registration|: 全 confirmed 申込へ BULK 並列で再同意要求（EVENTUAL）
-  $日時変更時の再同意要求 *> !再同意を要求 > [再同意が要求された]
-  > @参加者 > !継続参加を選択 > [継続参加が選択された]
-```
-
-### 代替シナリオ: 会場変更（通知のみ）
-
-```event-flow-svg
-title: 代替シナリオ — 会場変更 → BULK 通知（副作用のみ・AGG 更新なし）
-flow:
-|event-planning|: 主催者起点の会場変更
-  @主催者 > !会場を変更 > [会場が変更された] >>
-|registration|: POLICY 内で全 confirmed 申込へ通知を fanout（副作用・EVENTUAL・CMD なし）
-  $会場変更時の通知 *> [変更が通知された]
-```
-
-### 代替シナリオ: 料金変更（再同意必須）
-
-```event-flow-svg
-title: 代替シナリオ — 料金変更 → BULK 再同意要求
-flow:
-|event-planning|: 主催者起点の料金変更
-  @主催者 > !料金を変更 > [料金が変更された] >>
-|registration|: 全 confirmed 申込へ BULK 並列で再同意要求（EVENTUAL）
-  $料金変更時の再同意要求 *> !再同意を要求 > [再同意が要求された]
-```
-
-### 代替シナリオ: コミュニティ退会（独立 BC、伝播なし）
-
-```event-flow-svg
-title: 代替シナリオ — コミュニティ退会（既存チケットには伝播しない）
-flow:
-|community|: メンバー起点の退会
-  @参加者 > !コミュニティを退会 > [コミュニティから退会した]
-```
+イベントフローは DML（`eventstorming-20260515-1901.dml.yaml` の `flows[]`）から自動生成される。
+HTML ビュー（`dist/eventstorming/eventstorming-20260515-1901.html` §3）を参照のこと。
 
 ---
 
@@ -242,323 +130,49 @@ flow:
 - コンテキスト: `community`
 - 関連シナリオ: `主催者がコミュニティを作成する`, `参加者がコミュニティに参加する`, `メンバーがコミュニティを退会する`
 
-#### 属性（Zod）
-
-```ts
-export const CommunityIdSchema = z.string().uuid().brand<'CommunityId'>();
-export const MemberIdSchema = z.string().uuid().brand<'MemberId'>();
-
-export const CommunitySchema = z.object({
-  id: CommunityIdSchema,
-  name: z.string().min(1).max(100),
-  description: z.string().min(1).max(2000),
-  ownerId: MemberIdSchema,
-  status: z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']),
-  members: z.array(MemberIdSchema),
-  createdAt: z.date(),
-});
-export type Community = z.infer<typeof CommunitySchema>;
-```
-
-#### 不変条件
-- コミュニティ名はシステム全体で一意
-- name と description は空にできない
-- ownerId は必ず存在する（コミュニティ作成者）
-- members に重複はない
-- ownerId は退会できない（先にコミュニティを ARCHIVED にする必要がある）
-
-#### エラーケース
-- `DuplicateCommunityNameError`: 同名のコミュニティが既に存在する
-- `InvalidCommunityDataError`: name または description が空
-- `CommunityNotAvailableError`: PUBLISHED 状態ではないコミュニティに参加しようとした
-- `AlreadyMemberError`: 既にメンバーであるユーザーが再度参加しようとした
-- `NotMemberError`: メンバーでないユーザーが退会しようとした
-- `OwnerCannotLeaveError`: 主催者が退会しようとした（先にコミュニティを ARCHIVE すること）
-
-#### 状態遷移
-- `DRAFT` → `PUBLISHED`: 公開操作
-- `PUBLISHED` → `ARCHIVED`: 主催者による閉鎖
+属性・状態遷移・不変条件・エラーケースは DML（`aggs[].attrs[]`, `aggs[].states`, 各 `scs[].rules`/`errs`）が真実源。
 
 ### Event（イベント）
 
 - コンテキスト: `event-planning`
 - 関連シナリオ: `主催者がイベントを作成する`, `主催者がイベントを公開する`, `主催者が定員を増やす`, `主催者が日時を変更する`, `主催者が会場を変更する`, `主催者が料金を変更する`, `主催者がイベント中止を要求する`, `システムが全返金完了でイベント中止を確定する`, `主催者がイベントを開催完了にする`
 
-#### 属性（Zod）
-
-```ts
-export const EventIdSchema = z.string().uuid().brand<'EventId'>();
-export const PriceSchema = z.object({
-  amount: z.number().int().nonnegative(),
-  currency: z.literal('JPY'),
-});
-
-export const EventSchema = z.object({
-  id: EventIdSchema,
-  communityId: CommunityIdSchema,
-  title: z.string().min(1).max(200),
-  description: z.string().max(5000),
-  startDateTime: z.date(),
-  endDateTime: z.date(),
-  venueName: z.string().nullable(),
-  venueAddress: z.string().nullable(),
-  venueCapacity: z.number().int().nonnegative(),
-  onlineCapacity: z.number().int().nonnegative(),
-  streamUrl: z.string().url().nullable(),
-  memberPrice: PriceSchema,
-  generalPrice: PriceSchema,
-  status: z.enum([
-    'DRAFT',
-    'PUBLISHED',
-    'CANCELLATION_REQUESTED',
-    'CANCELLED',
-    'COMPLETED',
-  ]),
-  createdAt: z.date(),
-});
-export type Event = z.infer<typeof EventSchema>;
-```
-
-#### 不変条件
-- 既存コミュニティに紐づくこと
-- venueCapacity と onlineCapacity は非負整数
-- 少なくとも一方は正の値である（両方0は不可）
-- venueCapacity > 0 のとき venueName と venueAddress は必須
-- onlineCapacity > 0 のとき streamUrl は PUBLISHED 時までに必須
-- startDateTime は createdAt より未来
-- endDateTime は startDateTime より後
-- memberPrice ≤ generalPrice（メンバー優遇）
-- 公開後の `venueCapacity` / `onlineCapacity` は減少不可（増加のみ）
-- 開催済みイベントはキャンセル不可
-
-#### エラーケース
-- `CommunityNotFoundError`: communityId に対応する Community が存在しない
-- `InvalidCapacityError`: 両定員が 0、または減少しようとした
-- `InvalidScheduleError`: startDateTime が過去、または endDateTime が startDateTime 以前
-- `InvalidEventDataError`: PUBLISHED に必要な項目が未入力
-- `InvalidStatusTransitionError`: 許可されない状態遷移
-- `EventAlreadyOccurredError`: 開催済みイベントに対する中止操作
-- `EventAlreadyCancelledError`: 既に中止されたイベントへの再中止
-- `ParticipationTypeChangeNotAllowedError`: 会場枠⇔オンライン枠の構成変更（RelocateEvent では不可）
-- `RefundsPendingError`: 全返金が完了する前に中止確定しようとした
-- `EventNotStartedYetError`: startDateTime 通過前に開催完了させようとした
-
-#### 状態遷移
-- `DRAFT` → `PUBLISHED`: 公開操作（必須項目チェック）
-- `PUBLISHED` → `CANCELLATION_REQUESTED`: 主催者による中止要求
-- `CANCELLATION_REQUESTED` → `CANCELLED`: 全返金完了で確定
-- `PUBLISHED` → `COMPLETED`: 開催完了操作（開催日時通過後）
+属性・状態遷移・不変条件・エラーケースは DML（`aggs[].attrs[]`, `aggs[].states`, 各 `scs[].rules`/`errs`）が真実源。
 
 ### Application（申込）
 
 - コンテキスト: `registration`
 - 関連シナリオ: `参加者がイベント詳細を確認して参加を申し込む`, `参加者がキャンセルを要求する`, `参加者がキャンセル待ちを取下げる`, `システムが返金完了をうけてキャンセルを確定する`, `システムがキャンセル待ちを繰り上げる`, `参加者が変更通知を受けて継続参加を選択する`
 
-#### 属性（Zod）
-
-```ts
-export const ApplicationIdSchema = z.string().uuid().brand<'ApplicationId'>();
-export const ParticipationTypeSchema = z.enum(['VENUE', 'ONLINE']);
-
-export const ApplicationSchema = z.object({
-  id: ApplicationIdSchema,
-  eventId: EventIdSchema,
-  memberId: MemberIdSchema,
-  participationType: ParticipationTypeSchema,
-  status: z.enum([
-    'APPLIED',
-    'CONFIRMED',
-    'WAITLISTED',
-    'PROMOTED',
-    'PENDING_RECONFIRMATION',
-    'CANCELLATION_REQUESTED',
-    'CANCELLED',
-    'EXPIRED',
-  ]),
-  paymentDeadline: z.date().nullable(),
-  waitlistPosition: z.number().int().positive().nullable(),
-  appliedAt: z.date(),
-});
-export type Application = z.infer<typeof ApplicationSchema>;
-```
-
-#### 不変条件
-- イベントは PUBLISHED 状態である
-- 同一メンバー × 同一イベントの active な Application は 1 つまで（CANCELLED/EXPIRED は除外）
-- participationType は Event の利用可能枠と一致する
-- WAITLISTED 状態のときのみ `waitlistPosition` が非 null
-- APPLIED / PROMOTED 状態のときのみ `paymentDeadline` が非 null（24 時間後）
-- CONFIRMED 状態に到達するには対応する Ticket が存在する
-- 開催開始後はキャンセル要求不可
-
-#### エラーケース
-- `EventNotAvailableError`: イベントが PUBLISHED でない
-- `AlreadyAppliedError`: 同一イベントに既に active な申込がある
-- `InvalidParticipationTypeError`: 選択した participationType に Event の枠がない
-- `InvalidStatusTransitionError`: 許可されない状態遷移
-- `EventAlreadyStartedError`: 開催開始後のキャンセル要求
-
-#### 状態遷移
-- 申込時: 枠あり → `APPLIED`、枠なし → `WAITLISTED`
-- `APPLIED` → `CONFIRMED`: 決済成功 + チケット発行
-- `APPLIED` → `EXPIRED`: 決済失敗 or 決済期限切れ
-- `WAITLISTED` → `PROMOTED`: 繰り上げ通知（24h 決済期限付き）
-- `PROMOTED` → `CONFIRMED`: 期限内決済成功
-- `PROMOTED` → `EXPIRED`: 決済期限切れ
-- `CONFIRMED` → `CANCELLATION_REQUESTED`: キャンセル要求
-- `CANCELLATION_REQUESTED` → `CANCELLED`: 返金完了で確定
-- `WAITLISTED` → `CANCELLED`: キャンセル待ち取下げ（返金不要）
-- `CONFIRMED` → `PENDING_RECONFIRMATION`: 日時・料金変更で再同意要求
-- `PENDING_RECONFIRMATION` → `CONFIRMED`: 継続参加を選択
-- `PENDING_RECONFIRMATION` → `CANCELLATION_REQUESTED`: 再同意せずキャンセル
+属性・状態遷移・不変条件・エラーケースは DML（`aggs[].attrs[]`, `aggs[].states`, 各 `scs[].rules`/`errs`）が真実源。
 
 ### Ticket（チケット）
 
 - コンテキスト: `ticketing`
 - 関連シナリオ: `システムがチケットを発行する`, `システムが返金を実行する`, `参加者が会場で受付する`, `参加者がオンラインで参加する`
 
-#### 属性（Zod）
-
-```ts
-export const TicketIdSchema = z.string().uuid().brand<'TicketId'>();
-export const PaymentIdSchema = z.string().uuid().brand<'PaymentId'>();
-
-export const TicketSchema = z.object({
-  id: TicketIdSchema,
-  applicationId: ApplicationIdSchema,
-  eventId: EventIdSchema,
-  memberId: MemberIdSchema,
-  paymentId: PaymentIdSchema,
-  participationType: ParticipationTypeSchema,
-  priceSnapshot: PriceSchema,
-  memberAtPurchase: z.boolean(),
-  status: z.enum(['ISSUED', 'USED', 'REFUNDED']),
-  issuedAt: z.date(),
-});
-export type Ticket = z.infer<typeof TicketSchema>;
-```
-
-#### 不変条件
-- 対応する Payment が COMPLETED 状態である
-- `priceSnapshot` は発行時の Event 料金を凍結保持
-- `memberAtPurchase` は発行時のコミュニティメンバー状態を凍結保持
-- ISSUED 状態の Ticket のみ USED または REFUNDED に遷移可能
-- 1 つの Application に対応する Ticket は 1 つまで
-
-#### エラーケース
-- `InvalidTicketError`: 存在しない or 既に REFUNDED の Ticket での受付試行
-- `TicketAlreadyUsedError`: USED の Ticket での二重受付
-
-#### 状態遷移
-- 発行: `ISSUED`
-- `ISSUED` → `USED`: 受付完了またはオンライン参加開始
-- `ISSUED` → `REFUNDED`: 返金完了
+属性・状態遷移・不変条件・エラーケースは DML（`aggs[].attrs[]`, `aggs[].states`, 各 `scs[].rules`/`errs`）が真実源。
 
 ### Payment（決済）
 
 - コンテキスト: `ticketing`
 - 関連シナリオ: `システムが決済を実行する`
 
-#### 属性（Zod）
-
-```ts
-export const PaymentSchema = z.object({
-  id: PaymentIdSchema,
-  applicationId: ApplicationIdSchema,
-  amount: PriceSchema,
-  status: z.enum(['PENDING', 'COMPLETED', 'FAILED']),
-  externalProviderRef: z.string().nullable(),
-  attemptedAt: z.date(),
-  completedAt: z.date().nullable(),
-});
-export type Payment = z.infer<typeof PaymentSchema>;
-```
-
-#### 不変条件
-- amount は Ticket 発行時の priceSnapshot と一致する
-- COMPLETED への遷移時 externalProviderRef が必須
-- 同一 Application に対する Payment は最大 1 つの COMPLETED まで（リトライは別 Payment レコード）
-
-#### エラーケース
-- `PaymentAmountMismatchError`: amount が priceSnapshot と異なる
-- `PaymentAlreadyCompletedError`: 既に COMPLETED 状態のため再決済不可
-
-#### 状態遷移
-- 試行: `PENDING`
-- `PENDING` → `COMPLETED`: 決済成功
-- `PENDING` → `FAILED`: 決済失敗（カード期限切れ等）
+属性・状態遷移・不変条件・エラーケースは DML（`aggs[].attrs[]`, `aggs[].states`, 各 `scs[].rules`/`errs`）が真実源。
 
 ### Refund（返金）
 
 - コンテキスト: `ticketing`
 - 関連シナリオ: `システムが返金を実行する`
 
-#### 属性（Zod）
-
-```ts
-export const RefundIdSchema = z.string().uuid().brand<'RefundId'>();
-
-export const RefundSchema = z.object({
-  id: RefundIdSchema,
-  ticketId: TicketIdSchema,
-  paymentId: PaymentIdSchema,
-  amount: PriceSchema,
-  reason: z.enum(['MEMBER_CANCEL', 'EVENT_CANCEL', 'EVENT_RESCHEDULE_REJECT', 'EVENT_REPRICE_REJECT']),
-  status: z.enum(['PENDING', 'COMPLETED', 'FAILED']),
-  externalProviderRef: z.string().nullable(),
-  processedAt: z.date(),
-});
-export type Refund = z.infer<typeof RefundSchema>;
-```
-
-#### 不変条件
-- 元の Ticket は ISSUED または USED 状態（USED の場合は会場での参加後の特例返金）
-- amount は Ticket.priceSnapshot と一致
-- 同一 Ticket に対する Refund は最大 1 つの COMPLETED まで
-
-#### エラーケース
-- `RefundAlreadyProcessedError`: 既に返金済みの Ticket への再返金
-- `TicketNotFoundError`: 元 Ticket が存在しない
-
-#### 状態遷移
-- 試行: `PENDING`
-- `PENDING` → `COMPLETED`: 返金成功
-- `PENDING` → `FAILED`: 返金失敗（要手動対応）
+属性・状態遷移・不変条件・エラーケースは DML（`aggs[].attrs[]`, `aggs[].states`, 各 `scs[].rules`/`errs`）が真実源。
 
 ### Attendance（受付・参加）
 
 - コンテキスト: `attendance`
 - 関連シナリオ: `参加者が会場で受付する`, `参加者がオンラインで参加する`
 
-#### 属性（Zod）
-
-```ts
-export const AttendanceIdSchema = z.string().uuid().brand<'AttendanceId'>();
-
-export const AttendanceSchema = z.object({
-  id: AttendanceIdSchema,
-  ticketId: TicketIdSchema,
-  eventId: EventIdSchema,
-  memberId: MemberIdSchema,
-  participationType: ParticipationTypeSchema,
-  status: z.enum(['CHECKED_IN', 'JOINED_ONLINE']),
-  recordedAt: z.date(),
-});
-export type Attendance = z.infer<typeof AttendanceSchema>;
-```
-
-#### 不変条件
-- 対応する Ticket は ISSUED 状態
-- 受付時刻 (recordedAt) は Event の開催時間帯内
-- 1 つの Ticket に対する Attendance は 1 つまで
-- participationType は Ticket の participationType と一致する
-- status は participationType に一致する（VENUE → CHECKED_IN、ONLINE → JOINED_ONLINE）
-
-#### エラーケース
-- `InvalidTicketError`: Ticket が ISSUED 状態でない
-- `ParticipationTypeMismatchError`: Ticket の participationType と受付方法が不一致
-- `NotTodayError`: 受付時刻が Event の開催時間帯外
-- `AlreadyCheckedInError`: 既に受付済みの Ticket での二重受付
+属性・状態遷移・不変条件・エラーケースは DML（`aggs[].attrs[]`, `aggs[].states`, 各 `scs[].rules`/`errs`）が真実源。
 
 ---
 
@@ -631,7 +245,7 @@ export type Attendance = z.infer<typeof AttendanceSchema>;
 
 ## 8) 次のアクション
 
-- 実装フェーズ移行: 集約ごとに TypeScript + Zod で型実装 → Repository → Application Service の順
+- 実装フェーズ移行: 集約ごとに DML `aggs[].attrs[]` を起点に型実装（TypeScript など）→ Repository → Application Service の順
 - Saga の実装方針確定: EventBus + メッセージング基盤の選定（PostgreSQL Outbox / Redis Streams 等）
 - POLICY の冪等性: `RefundOnApplicationCancellation` 等の二重起動防止策（イベント ID による重複排除）
 - リードモデルの materialized view 戦略: Projection を別データストアにするか同 DB で view にするか

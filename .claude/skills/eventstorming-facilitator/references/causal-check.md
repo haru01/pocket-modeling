@@ -23,6 +23,8 @@ DML は兄弟 `<session>.dml.yaml` ファイル（純 YAML・フェンスなし�
 | **AGG所属マップ（ctxs 側）** | 全 `ctxs[].aggs[]`（PascalCase 名簿） |
 | **AGG transitions via CMD一覧** | 全 `aggs[].transitions[].via` |
 | **AGG events一覧** | 全 `aggs[].events[].name` |
+| **flows steps一覧** | 全 `flows[].steps[]`（フロー id 付きで保持） |
+| **decisions affects一覧** | 全 `decisions[].affects[]`（decision id 付きで保持） |
 
 ---
 
@@ -41,6 +43,8 @@ DML は兄弟 `<session>.dml.yaml` ファイル（純 YAML・フェンスなし�
 | **C9** | `scs[].cmd` の AGG（`scs[].agg`）の `aggs[].transitions[].via` に同じ cmd が存在するか | SCENARIO の CMD が AGG 側で状態遷移トリガーとして宣言されていない（実装漏れ・命名揺れの検出） |
 | **C10** | `scs[].evt` が AGG（`scs[].agg`）の `aggs[].events[]` に宣言されているか | AGG が emit する EVT 宣言と SCENARIO 発火 EVT の不一致 |
 | **C11** | `ctxs[].aggs` 名簿と `aggs[].ctx` の双方向参照整合 | (a) `ctxs[].aggs` に並ぶ名前で `aggs[]` 側に該当 `name` が無い (b) `aggs[].ctx` が指す BC の `ctxs[].aggs` 名簿にその AGG 名が無い |
+| **C12** | `flows[].steps[]` が実在 scs/pols を指すか | step 名が `scs[].name`（日本語）にも `pols[].name`（PascalCase）にも一致しない（typo・未定義・古い名前の残存） |
+| **C13** | `decisions[].affects[]` が実在 AGG / BC 要素を指すか | affects エントリが `aggs[].name` / `ctxs[].name` / `scs[]`/`pols[]` のいずれにも一致しない |
 
 ---
 
@@ -138,6 +142,24 @@ aggs 側 → ctxs 側：
 → NOなら: 「AGG N は ctx: X と宣言されているが、BC X の aggs 名簿に登録されていない」
 ```
 
+### C12: flows[].steps[] の実在チェック
+
+```
+各 flows[].steps[] の step 名 S について：
+→ scs[].name と一致するか？  pols[].name と一致するか？
+→ どちらにも無ければ:
+   「フロー <flowId> のステップ "<S>" は scs/pols に未定義（typo or 古い名前の残存）」
+```
+
+### C13: decisions[].affects[] の実在チェック
+
+```
+各 decisions[].affects[] のエントリ A について：
+→ aggs[].name に一致？  ctxs[].name に一致？  scs[].name に一致？  pols[].name に一致？
+→ どれにも無ければ:
+   「意思決定 <id> の affects "<A>" は実在しない要素（PascalCase or lowercase-with-hyphen の typo の可能性）」
+```
+
 ---
 
 ## 出力フォーマット
@@ -164,7 +186,7 @@ aggs 側 → ctxs 側：
 
 1. MDファイルを Read で読み込む
 2. 上記「検査対象の収集」を実施してリストを作る
-3. C1〜C11 を順に検査する
+3. C1〜C13 を順に検査する
 4. **問題あり・要確認** の項目をセクション6（オープンクエスチョン）に追記する（Edit tool）
 
 ### セクション6への追記ルール

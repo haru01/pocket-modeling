@@ -5,7 +5,9 @@
 - Status: **{{ステータス}}**
 - Goal: {{ゴール}}
 - HTML ビュー: [../../dist/eventstorming/{{eventstorming-YYYYMMDD-HHMM}}.html](../../dist/eventstorming/{{eventstorming-YYYYMMDD-HHMM}}.html) （Python ビルダーが自動生成する派生ファイル）
-- DML: [./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml](./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml) （モデル本体・純 YAML。`.md` と並ぶ Single Source of Truth）
+- DML: [./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml](./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml) （モデル本体・純 YAML。**モデル唯一の真実源**）
+
+> このテンプレートは `.md` 側のセクション構成を示す。**§3（フロー）／§5（集約）／§8（意思決定ログ）の本文はビルダーが `.dml.yaml` から HTML を自動生成するため、`.md` 側には書かない**（注記のみ）。
 
 ---
 
@@ -23,42 +25,13 @@
 
 ### {{シナリオ名（例：主催者がイベントを中止する）}}
 
-{{例外フローの短いストーリー（100〜200字程度）。ユーザー視点で何が起きたかを描く。図解はセクション3に記載。}}
+{{例外フローの短いストーリー（100〜200字程度）。ユーザー視点で何が起きたかを描く。図解は §3 がビルダーにより自動生成される。}}
 
 ---
 
 ## 3) Event Walkthrough
 
-フロー DSL を `` ```event-flow-svg `` フェンスで記述する。これは Single Source of Truth で、HTML 派生ファイルがこの DSL を視覚化する。
-
-### ハッピーパス
-
-```event-flow-svg
-title: {{タイトル（例: ハッピーパス — 注文確定から発送まで）}}
-flow:
-|{{BC名}}|: {{フロー開始の文脈説明（アクター・起動条件）}}
-  @{{アクター（日本語）}} > !{{コマンド（日本語）}} > [{{イベント（日本語）}}]
-  > !{{コマンド（日本語）}} > [{{イベント（日本語）}}] >>
-|{{BC名}}|: {{セグメント1→2の境界説明（何をきっかけに次のレーンへ移るか）}}
-  ${{ポリシー（日本語）}} > !{{コマンド（日本語）}} > [{{イベント（日本語）}}] >>
-|{{BC名}}|: {{セグメント2→3の境界説明}}
-  ${{ポリシー（日本語）}} > !{{コマンド（日本語）}} > [{{イベント（日本語）}}]
-```
-
-> **テキストフォーマット規約**: フロー行は `[イベント]` の直後で改行し、次の行は `  > ` で始める（インデント 2 スペース）。HTML レンダリングには影響しない。
-
-### 代替シナリオ: {{シナリオ名（例：参加キャンセル）}}
-
-```event-flow-svg
-title: {{タイトル（例: 代替シナリオ — 参加キャンセル）}}
-flow:
-|{{BC名}}|: {{フロー起点の文脈説明（例：(前のイベント名) をトリガーにポリシーが非同期起動（EVENTUAL））}}
-  @{{アクター（日本語）}} > !{{コマンド（日本語）}} > [{{イベント（日本語）}}] >>
-|{{BC名}}|: {{境界説明（EVENTUAL）}}
-  ${{ポリシー（日本語）}} > !{{コマンド（日本語）}} > [{{イベント（日本語）}}]
-```
-
-> **HTML 描画**: 上記の DSL は HTML ファイル §3 で **Big Picture グリッド形式**（時系列=横、BC=縦、付箋色分け）にレンダリングされる。詳細は `references/html-render-spec.md`。
+> **DML 自動生成セクション**。本文は書かない。HTML §3 は `.dml.yaml` の `flows[]`（`id`/`title`/`kind`/`steps[]`）と `scs[]`/`pols[]` を解決して Big Picture グリッド形式（時系列=横、BC=縦、付箋色分け）にレンダリングされる。フロー記述ガイドは `references/dml-spec.md` §9 参照。
 
 ---
 
@@ -92,53 +65,16 @@ flow:
 
 ## 5) 集約候補
 
-> **命名規約**: `### EnglishName（日本語名）` 形式を必須とする（例: `### Order（注文）`）。`EnglishName` は DML/Zod で使う識別子、日本語名は HTML 表示用の補助。
+> **DML 自動生成セクション**。本文（属性・状態遷移・不変条件・エラーケース）は `.md` には書かない。`.dml.yaml` の `aggs[]`（`name`/`ctx`/`purpose`/`background`/`constraints[]`/`states`/`transitions[]`/`attrs[]`/`events[]`）と該当 `scs[].rules[]`/`scs[].errs[]` を解析して HTML §5 が **属性表 / イベントペイロード表 / 不変条件（緑）/ エラーケース（赤）/ 状態遷移** を自動描画する。命名規約と書き方ガイドは `references/dml-spec.md` §4 参照。
+
+`.md` 側に補足の散文コメントを書きたい場合のみ、以下の形で追記する（必須ではない）。
 
 ### {{EnglishName}}（{{日本語名}}）
 
 - コンテキスト: `{{context-slug}}`
 - 関連シナリオ: `{{scenario-1}}`, `{{scenario-2}}`
 
-#### 目的
-
-{{この集約が「単一の責任主体」として担う責務を 1 文で。**必須・30字以上**。
-「何をするか（CMD で表現済み）」ではなく「なぜこの単位で切るか／何のソース・オブ・トゥルースか」を書く。}}
-
-#### 背景
-
-{{なぜ今この集約を切り出すか・現状運用の何が痛いか（推奨・1〜3文）。Happy Path Story と重複しても可（ここは AGG 視点で再構成）。}}
-
-#### 制約
-
-- {{業務／法令／プラットフォーム由来で守るべき非機能・ルール（推奨・複数可）。可能なら `→ RULE n` / `→ ERR \`Name\`` で対応する不変条件・エラーへのリンクを末尾に併記する。}}
-
-#### 属性（Zod）
-
-```ts
-export const {{AggregateName}}Schema = z.object({
-  id: {{AggregateName}}IdSchema,
-  // {{属性: Branded ID は別途参照、enum はリテラルユニオンで表現}}
-  // 例:
-  // title: z.string().min(1).max(200),
-  // status: z.enum(['DRAFT', 'PUBLISHED', 'CLOSED']),
-  // createdAt: z.date(),
-});
-export type {{AggregateName}} = z.infer<typeof {{AggregateName}}Schema>;
-```
-
-#### 不変条件
-- {{invariant 1（日本語）}}
-- {{invariant 2（日本語）}}
-
-#### エラーケース
-- `{{ErrorName}}`: {{発生条件の説明}}
-- `{{AnotherError}}`: {{条件}}
-
-> **対比表示**：HTML レンダー時、**不変条件は緑系（`.inv-section` ・ `✓ 不変条件:`）／ エラーケースは赤系（`.err-section` ・ `⚠ エラーケース:`）** に自動描画される（`html-render-spec.md` §6-3.1 参照）。
-> エラー識別子は **バックティック `` ` `` で囲む** こと（`.err-code` で更にハイライトされる）。
-
-#### 状態遷移
-- {{状態1}} → {{状態2}}: {{条件}}
+{{必要なら散文コメント（DML には収まらない設計メモなど）。属性・不変条件・エラー・状態遷移は DML 側で管理。}}
 
 ---
 
@@ -162,22 +98,28 @@ export type {{AggregateName}} = z.infer<typeof {{AggregateName}}Schema>;
 
 ---
 
-## 8) 次のアクション
+## 8) 意思決定ログ
+
+> **DML 自動生成セクション**。本文は `.md` には書かない。`.dml.yaml` の `decisions[]`（`id`/`topic`/`chosen`/`options[]`/`affects[]`、各 option の `why`/`why_not`）から HTML §8 が **採用（緑）／不採用（灰・取り消し線）の比較カード** を自動描画する。`decisions[]` が空なら HTML §8 は見出しごと非表示。書き方ガイドは `references/dml-spec.md` §9 参照。
+
+---
+
+## 9) 次のアクション
 
 - {{action 1}}
 - {{action 2}}
 
 ---
 
-## 9) DML
+## 10) DML
 
-DML 全文は別ファイル [`./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml`](./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml)（YAML 直書き・フェンス不要）に保持する。`ctxs` / `aggs` / `scs` / `pols` の 4 リスト（任意で `domains`）、識別子は英語。トップレベル `aggs[]` に AGG 詳細（`name`/`ctx`/`purpose`/`states`/`transitions`/`attrs`/`events`）を集約し、`ctxs[].aggs` は AGG 名（PascalCase 文字列）の軽量名簿として保持する。構文の機械検証は `references/dml.schema.yaml`、設計判断・哲学は `references/dml-spec.md`、フル参照例は `examples/sample.dml.yaml`。HTML §9 にはこの `.dml.yaml` の内容が描画される。
+DML 全文は別ファイル [`./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml`](./{{eventstorming-YYYYMMDD-HHMM}}.dml.yaml)（YAML 直書き・フェンス不要）に保持する。`ctxs` / `aggs` / `scs` / `pols` の 4 リスト（任意で `domains` / `flows` / `decisions`）、識別子は英語。トップレベル `aggs[]` に AGG 詳細（`name`/`ctx`/`purpose`/`background`/`constraints`/`states`/`transitions`/`attrs`/`events`）を集約し、`ctxs[].aggs` は AGG 名（PascalCase 文字列）の軽量名簿として保持する。構文の機械検証は `references/dml.schema.yaml`、設計判断・哲学は `references/dml-spec.md`、フル参照例は `examples/sample.dml.yaml`。HTML §10 にはこの `.dml.yaml` の内容が描画される。
 
 > このセクションは `.dml.yaml` へのリンク参照のみとし、DML 本文（YAML）は **埋め込まない**。
 
 ---
 
-## 10) 用語集
+## 11) 用語集
 
 日本語フロー図ラベルと英語 DML 識別子の対応を一覧で示す。新しい CMD/EVT/POLICY/Actor を追加したら必ず本表を更新する。
 

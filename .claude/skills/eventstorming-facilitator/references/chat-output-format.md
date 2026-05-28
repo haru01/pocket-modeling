@@ -93,7 +93,7 @@ Claude Code（CLI/PCアプリ/スマホアプリ）はインライン `<svg>` / 
 - 代替シナリオがある場合は、テーブル形式のフローを **複数並べる** (ハッピーパス + 代替1 + 代替2)
 - DML 抜粋は §5 の粒度ルールに従う
 - 用語集は **新規追加分のみ**。既出の対応は出さない
-- 表内の付箋ラベルは **DSL 記号（`@!$[]`）を削除** して書く。種別は表ヘッダーの絵文字＋カラム名で識別
+- 表内の付箋ラベルは記号を付けず日本語ラベルそのままで書く。種別は表ヘッダーの絵文字＋カラム名で識別
 
 ### 構造化テーブルの書き方
 
@@ -119,9 +119,10 @@ assistant が自己判断する。
   - フェーズ3: 10-20件のイベント候補
   - フェーズ4: 各 EVT に CMD と Actor が紐付き、非同期遷移が同定
   - フェーズ4.5: LANGUAGE が記録され、レーン境界が明確
-  - **フェーズ4.6: 全 AGG カードに `#### 目的`（30字以上）が記入され、`#### 背景`/`#### 制約` の有無を判定**
-  - フェーズ5: 全 AGG の不変条件・エラー、`brs` 分岐、**Zod スキーマ確定**。各 `rules[].why`、各 `errs[].when` の記入率を確認
-  - フェーズ6: causal-check 完了、残課題レビュー済
+  - **フェーズ4.6: 全 AGG エントリの `aggs[].purpose`（30字以上）が記入され、`background`/`constraints[]` の有無を判定**
+  - フェーズ5: 全 AGG の不変条件・エラー、`brs` 分岐、**`aggs[].attrs[]` / `aggs[].events[].params[]` の確定**。各 `rules[].why`、各 `errs[].when` の記入率を確認
+  - **フェーズ6: 主要な設計判断が `decisions[]` に記録され、各 option に `why`/`why_not` が記述されている**
+  - フェーズ7: causal-check 完了、残課題レビュー済
 
 ### 往復と判定するシグナル
 
@@ -146,9 +147,10 @@ assistant が自己判断する。
 | フェーズ3完了 | 新規追加された scenario の `name` / `actor` / `evt` のみ (cmd/rules は未確定) |
 | フェーズ4完了 | 該当フェーズで追加・確定した scenario 全文 (cmd/evt/agg/rules 入り) |
 | フェーズ4.5完了 | `lang` + `ctxs` の追加分 |
-| **フェーズ4.6完了** | **トップレベル `aggs[]` の新規エントリ（`name`/`ctx`/`purpose`/`states`）と `ctxs[].aggs` 名簿の追加分のみ。加えて「### AGG 目的・背景・制約サマリ」テーブルで各 AGG の `#### 目的` 1 行と制約件数を 1 表で示す** |
-| フェーズ5完了 | 新規 rules/errs が追加された scenario 全文 + pols 要素 (新規分) + `aggs[].transitions[]`/`attrs[]`/`events[]` の追加分 + **集約の Zod スキーマ**。`rules[].why`、`errs[].when` がある分は併記 |
-| フェーズ6完了 | **新規分の抜粋のみ + MD/HTML ファイルパスを案内**。DML 全文は別ファイル `<session>.dml.yaml` に保持、チャットには流さない |
+| **フェーズ4.6完了** | **トップレベル `aggs[]` の新規エントリ（`name`/`ctx`/`purpose`/`background`/`constraints`/`states`）と `ctxs[].aggs` 名簿の追加分のみ。加えて「### AGG 目的・背景・制約サマリ」テーブルで各 AGG の `purpose` 1 行と制約件数を 1 表で示す** |
+| フェーズ5完了 | 新規 rules/errs が追加された scenario 全文 + pols 要素 (新規分) + `aggs[].transitions[]`/`attrs[]`/`events[].params[]` の追加分。`rules[].why`、`errs[].when` がある分は併記 |
+| **フェーズ6完了（意思決定ログ）** | **新規 `decisions[]` エントリ（id/topic/chosen/options[]）。各 option の `why`/`why_not` を 1〜2 行で簡潔に報告** |
+| フェーズ7完了 | **新規分の抜粋のみ + MD/HTML ファイルパスを案内**。DML 全文は別ファイル `<session>.dml.yaml` に保持、チャットには流さない |
 
 DML 抜粋は ` ```dml ` コードブロックで囲む。
 
@@ -159,12 +161,14 @@ DML 抜粋は ` ```dml ` コードブロックで囲む。
 | フェーズ | HTML 操作 |
 |---|---|
 | 1. スコープ | HTML はまだ作らない |
-| 2. ストーリー | HTML を **Write で新規作成** + `Bash open` で初回起動。§1〜§3 + 進捗バー入り |
-| 3. イベント発見 | HTML を **Edit で §3 フローグリッド更新**。付箋追加 |
-| 4. CMD-EVT-POLICY | HTML を **Edit で §3 + §4（コンテキスト）+ §10（用語集）更新** |
-| 4.5. BC 境界 | HTML を **Edit で §4 のレーン名・LANGUAGE 更新** |
-| 5. RULE-ERR | HTML を **Edit で §5（集約・Zodスキーマ）+ §6（リードモデル）更新** |
-| 6. 整合性チェック | HTML を **Edit で全セクション最終化** |
+| 2. ストーリー | `.md` を **Write で新規作成** + `Bash open` で初回起動。HTML §1〜§2 + 進捗バー + 用語集スケルトン入り |
+| 3. イベント発見 | `.dml.yaml` を **Edit で `scs[]` の仮 entries 追加**。HTML §3 はビルダーが自動再生成（`flows[]` が空ならプレースホルダ） |
+| 4. CMD-EVT-POLICY | `.dml.yaml` を **Edit で `scs`/`pols`/`flows[]`（happy + 代替 1〜2）追加** → `.md` §11 用語集を Edit |
+| 4.5. BC 境界 | `.dml.yaml` を **Edit で `lang` 追加**。HTML §4 はビルダーが自動再生成 |
+| 4.6. 目的・背景・制約 | `.dml.yaml` を **Edit で `aggs[]` に `purpose`/`background`/`constraints` 追加** |
+| 5. RULE-ERR + 属性・イベントペイロード | `.dml.yaml` を **Edit で `scs[].rules`/`errs` + `aggs[].attrs`/`events[].params` を追加**。HTML §5 はビルダーが自動再生成 |
+| 6. 意思決定ログ | `.dml.yaml` を **Edit で `decisions[]` 追加**。HTML §8 はビルダーが自動再生成 |
+| 7. 整合性チェック | HTML を **Edit で全セクション最終化**（実際の Edit は `.md`/`.dml.yaml` 側） |
 
 HTML は MD と並行して常に最新状態を保つ。`open` で起動した外部ブラウザは `<meta http-equiv="refresh">` で 3 秒ごとに自動リロードして反映される。
 
@@ -189,20 +193,20 @@ HTML は MD と並行して常に最新状態を保つ。`open` で起動した�
 
 | 言い方 | 解釈 | 反映先 |
 |---|---|---|
-| 「E3 を"招待送信済"に変えて」 | E3 のラベル変更 | DML の `evt` リネーム + フロー DSL のラベル変更 + HTML §3 と §10 更新 |
-| 「主催者BCに@Adminを追加」 | レーンへの actor 追加 | scenario に `actor: Admin` + フロー DSL に `@Admin` + HTML §3 |
-| 「C2 と E2 の間に !メール送信 を挟んで」 | CMD 挿入 | scenario に `cmd: SendMail` + フロー DSL + HTML §3 |
-| 「E4 を消して」 | 削除 | DML から該当 `evt` 削除 + フロー DSL + HTML から削除。下流に影響あれば `[?]` 警告 |
-| 「P1 を notifications BC に動かして」 | POLICY 移動 | policy の `ctx` を変更 + フロー DSL + HTML §3 のレーン変更 |
-| 「Member BC を participant にリネーム」 | CONTEXT リネーム | `ctxs[].name` を member → participant に変更し scs/pols の `ctx` 参照も更新 + HTML §3 §4 §10 |
-| 「ハッピーパスをやり直したい」 | フェーズ2 へロールバック | §1〜§3 を再構築 + HTML 再生成 |
+| 「E3 を"招待送信済"に変えて」 | EVT のラベル変更 | DML の `evt` リネーム（scs/pols 全箇所）+ `flows[].steps[]` 参照は scs/pols 名なので影響なし。HTML §3 と §11 用語集はビルダーが自動再生成 |
+| 「主催者BCに Admin を追加」 | レーンへの actor 追加 | 該当 scenario に `actor: Admin` + 用語集追加。HTML はビルダーが自動再生成 |
+| 「C2 と E2 の間に メール送信 を挟んで」 | CMD 挿入 | 該当 scenario に `cmd: SendMail` or 新 scenario 追加 + `flows[].steps[]` に新 step を挿入 |
+| 「E4 を消して」 | 削除 | DML から該当 `evt` 削除 + 該当 scenario の `flows[].steps[]` 参照を更新。下流に影響あれば `[?]` 警告 |
+| 「P1 を notifications BC に動かして」 | POLICY 移動 | policy の `ctx` を変更。`flows[].steps[]` の参照は pols[].name なので影響なし。HTML §3 のレーン分割はビルダーが自動再生成 |
+| 「Member BC を participant にリネーム」 | CONTEXT リネーム | `ctxs[].name` を member → participant に変更し scs/pols/aggs の `ctx` 参照も更新 |
+| 「ハッピーパスをやり直したい」 | フェーズ2 へロールバック | §1〜§2 を再構築 + `flows[].steps[]` を組み直し |
 
 ### 8-2. assistant の反映手順 (1指示あたり)
 
 1. ユーザー指示を **対象アイテム** (A1/C2/E3 や日本語ラベル) と **操作** (追加/削除/変更/移動/リネーム) に分解
 2. **テキストで確認**: 「`E3 = 参加申し込みが完了した` を `招待送信済` に変更し、DML の `evt: ParticipationApplied` を `evt: InvitationSent` にリネームします。OK?」
-3. ユーザー OK → `.dml.yaml`（DML）を先に `Edit` → `.md` の §3 フロー DSL / §10 用語集 を `Edit` で一貫して更新
-4. HTML を `Edit` で該当セクション更新
+3. ユーザー OK → `.dml.yaml`（DML）を先に `Edit` → `.md` の §11 用語集を `Edit` で一貫して更新
+4. HTML は触らない（ビルダーが自動再生成）
 5. 品質チェックサブエージェント (`quality-check-agent.md`) を起動（`.md` ＋ 兄弟 `.dml.yaml` を対象。HTML は対象外）
 6. **フェーズ完了相当の変更なら** チャット本文に構造化テーブル付き完了メッセージ。**細かい変更なら** テキスト確認のみ
 

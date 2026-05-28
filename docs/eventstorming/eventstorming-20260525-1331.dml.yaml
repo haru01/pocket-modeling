@@ -235,7 +235,7 @@ scs:
   pol:
   - TradeInBonusPointGrant
   - CampaignBonusPointGrant
-  note: '[?] H2: 下取り利用版(TradeInBonusPointGrant)とキャンペーンのみ版(CampaignBonusPointGrant)が同一 EVT(PurchasedItemShipped) を契機にしており、下取り有無での出し分けが EVT だけでは決まらない'
+  note: 下取り利用版(TradeInBonusPointGrant)とキャンペーンのみ版(CampaignBonusPointGrant)が同一 EVT(PurchasedItemShipped) を契機にしており、下取り有無での出し分けが必要（決定ログ H2 参照）
 - name: システムが注文をキャンセルする
   ctx: store-front
   actor: System
@@ -347,7 +347,7 @@ scs:
   agg: TradeIn
   pol:
   - OrderCancellationOnTradeInCancel
-  note: '[?] H1: Alt-2（全体取消）。Alt-3 の CancelTradeInOnly と同一 EVT(TradeInCancelled) を発火するため、注文取消(Alt-2)と購入続行(Alt-3)の後続ポリシー routing が EVT だけでは区別できない'
+  note: Alt-2（全体取消）。Alt-3 の CancelTradeInOnly と同一 EVT(TradeInCancelled) を発火するため、注文取消(Alt-2)と購入続行(Alt-3)の後続ポリシー routing の区別が必要（決定ログ H1 参照）
 - name: 客が下取りのみキャンセルする
   ctx: trade-in
   actor: Customer
@@ -356,7 +356,7 @@ scs:
   agg: TradeIn
   pol:
   - PurchaseWithoutTradeIn
-  note: '[?] H1: Alt-3（購入は全額決済で続行）。上の CancelTradeIn と同一 EVT のため要区別（別 EVT 化 or ペイロードフラグ）'
+  note: Alt-3（購入は全額決済で続行）。上の CancelTradeIn と同一 EVT のため routing 区別が必要（決定ログ H1 参照）
 - name: 発送スタッフが下取り品を返送する
   ctx: trade-in
   actor: ShippingStaff
@@ -438,7 +438,7 @@ pols:
   ctx: store-front
   trg: PurchaseConfirmed
   cmd: AllocateInventory
-  note: '[?] H3: フロー DSL の同期継続（購入確定→在庫引当）を接続するため追加（用語集 §10 にも登録済み）。SAME-TX とすべきか別 TX かは要確認'
+  note: フロー DSL の同期継続（購入確定→在庫引当）を接続するため追加。SAME-TX か別 TX かは要確認（決定ログ H3 参照）
 - name: PointConsumptionTrigger
   ctx: loyalty
   trg: InventoryAllocated
@@ -463,7 +463,7 @@ pols:
   ctx: store-front
   trg: InventoryReleased
   cmd: CancelOrder
-  note: '[?] H3: Alt-8 補償の同期継続（在庫解放→注文取消）を接続するため追加（用語集 §10 にも登録済み）'
+  note: Alt-8 補償の同期継続（在庫解放→注文取消）を接続するため追加（決定ログ H3 参照）
 - name: OrderCancellationOnInventoryShortage
   ctx: store-front
   trg: InventoryAllocationFailed
@@ -488,22 +488,22 @@ pols:
   ctx: store-front
   trg: TradeInCancelled
   cmd: CancelOrder
-  note: '[?] H1: Alt-2（全体取消）。PurchaseWithoutTradeIn と同一 trigger(TradeInCancelled) のため、購入続行(Alt-3)との区別が EVT だけでは付かない'
+  note: Alt-2（全体取消）。PurchaseWithoutTradeIn と同一 trigger(TradeInCancelled) のため、購入続行(Alt-3)との区別が必要（決定ログ H1 参照）
 - name: PurchaseWithoutTradeIn
   ctx: store-front
   trg: TradeInCancelled
   cmd: ConfirmPurchase
-  note: '[?] H1: Alt-3（下取り充当なしで全額購入確定）。OrderCancellationOnTradeInCancel と同一 trigger のため要区別'
+  note: Alt-3（下取り充当なしで全額購入確定）。OrderCancellationOnTradeInCancel と同一 trigger のため要区別（決定ログ H1 参照）
 - name: TradeInBonusPointGrant
   ctx: loyalty
   trg: PurchasedItemShipped
   cmd: GrantPoints
-  note: '[?] H2: 下取り利用優遇 +10%（キャンペーン期間内なら +5% も加算）。CampaignBonusPointGrant と同一 trigger のため下取り有無で出し分けが必要'
+  note: 下取り利用優遇 +10%（キャンペーン期間内なら +5% も加算）。CampaignBonusPointGrant と同一 trigger のため出し分けが必要（決定ログ H2 参照）
 - name: CampaignBonusPointGrant
   ctx: loyalty
   trg: PurchasedItemShipped
   cmd: GrantPoints
-  note: '[?] H2: Alt-3（下取りなし）でキャンペーン分のみ付与。TradeInBonusPointGrant と同一 trigger のため要区別'
+  note: Alt-3（下取りなし）でキャンペーン分のみ付与。TradeInBonusPointGrant と同一 trigger のため要区別（決定ログ H2 参照）
 - name: OrderCancellationOnTradeInTimeout
   ctx: store-front
   trg: TradeInShipmentTimedOut
@@ -524,3 +524,149 @@ pols:
   trg: CampaignStarted
   cmd: EndCampaign
   note: Alt-9：キャンペーン開始を起点に期間終了時刻を監視し、到達で終了させるタイマー
+flows:
+- id: happy
+  title: ハッピーパス — 注文 → 下取品発送 → 本査定 → 承認 → 購入確定・ポイント付与
+  kind: happy
+  steps:
+  - 客が商品をカートに入れる
+  - 客が下取り品を申告する
+  - 客が下取り付きで注文する
+  - TradeInPickupArrangement
+  - 発送スタッフが集荷キットを発送する
+  - 客が下取り品を発送する
+  - 査定担当が下取り品を受領する
+  - 査定担当が本査定を実施する
+  - AppraisalResultNotification
+  - システムが査定承認を依頼する
+  - 客が査定を承認する
+  - PurchaseConfirmationOnApproval
+  - システムが購入を確定する
+  - InventoryAllocationOnPurchaseConfirmed
+  - システムが在庫を引き当てる
+  - PointConsumptionTrigger
+  - システムがポイントを消費する
+  - BalanceSettlementTrigger
+  - システムが残金を決済する
+  - 発送スタッフが商品を発送する
+  - TradeInBonusPointGrant
+  - システムがポイントを付与する
+- id: alt-1-reduced-approval
+  title: Alt-1 — 本査定が見積もりより低く、客が減額承認
+  kind: alt
+  steps:
+  - 査定担当が本査定を実施する
+  - DiscrepancyNotification
+  - システムが再見積もりを提示する
+  - 客が減額を承認する
+  - PurchaseConfirmationOnApproval
+  - システムが購入を確定する
+- id: alt-2-full-cancel
+  title: Alt-2 — 客が査定を拒否、下取り品返送 + 注文キャンセル
+  kind: alt
+  steps:
+  - DiscrepancyNotification
+  - システムが再見積もりを提示する
+  - 客が下取りをキャンセルする
+  - 発送スタッフが下取り品を返送する
+  - OrderCancellationOnTradeInCancel
+  - システムが注文をキャンセルする
+- id: alt-3-trade-in-only-cancel
+  title: Alt-3 — 下取りキャンセル、購入は全額決済で続行
+  kind: alt
+  steps:
+  - DiscrepancyNotification
+  - システムが再見積もりを提示する
+  - 客が下取りのみキャンセルする
+  - 発送スタッフが下取り品を返送する
+  - PurchaseWithoutTradeIn
+  - システムが購入を確定する
+  - システムが残金を決済する
+  - 発送スタッフが商品を発送する
+  - CampaignBonusPointGrant
+  - システムがポイントを付与する
+- id: alt-5-quote-expired
+  title: Alt-5 — 下取り概算提示後、有効期限内に注文確定されず期限切れ
+  kind: alt
+  steps:
+  - 客が下取り品を申告する
+  - QuoteExpiryWatchdog
+  - システムが見積もりを失効させる
+- id: alt-6-shipment-timeout
+  title: Alt-6 — 集荷キット送付後、所定期間内に下取り品が発送されず業務を打ち切り
+  kind: alt
+  steps:
+  - 発送スタッフが集荷キットを発送する
+  - TradeInShipmentWatchdog
+  - システムが下取りを打ち切る
+  - OrderCancellationOnTradeInTimeout
+  - システムが注文をキャンセルする
+- id: alt-7-inventory-shortage
+  title: Alt-7 — 購入確定時の在庫引当に失敗、注文を取消（ポイント・残金は未拘束）
+  kind: alt
+  steps:
+  - PurchaseConfirmationOnApproval
+  - システムが購入を確定する
+  - InventoryAllocationOnPurchaseConfirmed
+  - システムが在庫を引き当てる
+  - OrderCancellationOnInventoryShortage
+  - システムが注文をキャンセルする
+- id: alt-8-payment-failure-compensation
+  title: Alt-8 — ポイント消費後の残金決済が失敗、ポイント返戻 + 在庫解放 + 注文取消
+  kind: alt
+  steps:
+  - BalanceSettlementTrigger
+  - システムが残金を決済する
+  - CompensationOnBalanceFailure
+  - システムがポイントを返戻する
+  - InventoryReleaseTrigger
+  - システムが在庫を解放する
+  - OrderCancellationOnInventoryRelease
+  - システムが注文をキャンセルする
+- id: alt-9-campaign-management
+  title: Alt-9 — マーケティング担当がキャンペーンを開始・終了する管理フロー
+  kind: alt
+  steps:
+  - マーケティング担当がキャンペーンを開始する
+  - CampaignEndWatchdog
+  - システムがキャンペーンを終了する
+decisions:
+- id: H1
+  topic: TradeInCancelled イベントだけでは Alt-2（全体取消）と Alt-3（購入続行）の routing が決まらない
+  chosen: 未確定
+  options:
+  - name: 別 EVT 化
+    why: 各 routing を独立した因果連鎖として書け、ポリシー側の条件分岐が暗黙的にならない
+  - name: ペイロードフラグ
+    why_not: 1 EVT で分岐するためポリシー側の condition が暗黙的になる
+  affects:
+  - OrderCancellationOnTradeInCancel
+  - PurchaseWithoutTradeIn
+  - CancelTradeIn
+  - CancelTradeInOnly
+  note: ペイロードフラグなら EVT 過去形維持。別 EVT 化なら Alt-3 用に TradeInCancelledForPurchaseContinuation 等の追加が必要
+- id: H2
+  topic: PurchasedItemShipped だけでは TradeInBonusPointGrant と CampaignBonusPointGrant の出し分けができない
+  chosen: 未確定
+  options:
+  - name: ペイロード判定
+    why: 1 EVT で済み、Loyalty 側で下取り有無を条件分岐できる
+  - name: 別 EVT 化
+    why_not: 「商品発送」という事実は 1 つだから EVT を 2 つに割るのは不自然
+  affects:
+  - TradeInBonusPointGrant
+  - CampaignBonusPointGrant
+  note: payload で下取り有無を判定するか、別 EVT 化するかは要決定
+- id: H3
+  topic: 購入確定→在庫引当、在庫解放→注文取消の同期継続が SAME-TX か別 TX か
+  chosen: 未確定
+  options:
+  - name: SAME-TX（scs.brs で書く）
+    why: AGG 更新を 1 トランザクションで確定し、整合性を強く保つ
+  - name: 別 TX（pols で書く）
+    why: 在庫引当失敗時の補償ロジックを分離できる
+  affects:
+  - InventoryAllocationOnPurchaseConfirmed
+  - InventoryReleaseTrigger
+  - OrderCancellationOnInventoryRelease
+  note: 現状は別 TX（POLICY）で表現中。SAME-TX に倒すなら scs[].brs に統合する

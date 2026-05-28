@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""EventStorming MD → 構造化 JSON
+"""EventStorming MD + DML → 構造化 JSON
 
 使い方:
     python3 parse_eventstorming_md.py <md_path> [--out <json_path>]
 
-出力 JSON は generate_issue_drafts.py / build_dependency_graph.py が消費する。
+入力:
+    - `<md_path>`: セッション MD（§4 BC カード / §10 用語集 / §6 QRY 等を読む）
+    - `<md_path>` の兄弟ファイル `<session>.dml.yaml`: 集約・SCENARIO・POLICY・FLOW のモデル真実源
 
-eventstorming-facilitator/scripts/eventstorming_build.py の parse_md() を
-再利用し、AGG カードから「状態遷移を起こす CMD」表を抽出する追加処理を行う。
+出力 JSON は generate_issue_drafts.py / build_dependency_graph.py が消費する。
+集約属性・イベントペイロード・状態遷移・不変条件・エラーはすべて DML から導出する。
 """
 
 from __future__ import annotations
@@ -29,7 +31,12 @@ FACILITATOR_SCRIPTS = (
 )
 sys.path.insert(0, str(FACILITATOR_SCRIPTS))
 
-from eventstorming_build import parse_md  # noqa: E402
+from eventstorming_build import (  # noqa: E402
+    aggregates_from_dml,
+    build_flows_from_dml,
+    build_glossary_index,
+    parse_md,
+)
 
 
 # ============================================================
@@ -43,264 +50,213 @@ def extract_bc_slug(name_line: str) -> str:
     return m.group(1) if m else name_line
 
 
-def extract_bc_slug_from_context(ctx: str) -> str:
-    """AGG カードの `コンテキスト: event-planning` 値から slug を取り出す"""
-    return ctx.strip().strip("`")
-
-
 # ============================================================
-# 状態遷移パース
+# 集約データ: DML から導出
 # ============================================================
 
 
-TRANSITION_RE = re.compile(
-    r"^[`']?(\S+?)[`']?\s*[→\-]>?\s*[`']?(\S+?)[`']?\s*:\s*(.+)$"
-)
+def _normalize_transition(tr: dict) -> list[dict]:
+    """DML transition（from/to/via/when）を generate_issue_drafts / build_dependency_graph が
+    期待する `{from, to, trigger}` 形式へ展開する。
 
-
-def parse_transitions(items: list[str]) -> list[dict]:
-    """AGG カードの状態遷移リスト各行をパース
-
-    入力例:
-        "`DRAFT` → `PUBLISHED`: 公開操作（必須項目チェック）"
-    出力:
-        {"from": "DRAFT", "to": "PUBLISHED", "trigger": "公開操作（必須項目チェック）"}
+    `to` は単一 or 配列のため、配列なら各 to 先ごとに 1 エッジへ展開する。trigger は
+    `via`（CMD 名）を採用し、`when` は補助情報として note に保持する。
     """
-    transitions = []
-    for item in items:
-        # バッククォート除去
-        clean = item.strip()
-        m = TRANSITION_RE.match(clean)
-        if m:
-            transitions.append(
+    via = tr.get("via", "")
+    when = tr.get("when") or ""
+    frm = tr.get("from", "")
+    to = tr.get("to")
+    tos: list[str] = to if isinstance(to, list) else [to] if to else []
+    out: list[dict] = []
+    for t in tos:
+        out.append(
+            {
+                "from": frm,
+                "to": t,
+                "trigger": via,
+                "when": when,
+                "note": tr.get("note") or "",
+            }
+        )
+    return out
+
+
+def _classify_agg_scenarios(
+    agg_name: str,
+    dml_scenarios: list[dict],
+    transition_cmds: set[str],
+) -> tuple[list[dict], list[dict], list[str]]:
+    """この AGG に属する scs[] を「状態遷移 CMD」「属性更新 CMD」「related_scenarios」に分類。
+
+    - transition_cmds: 集約の transitions[].via に登場する CMD 名集合
+    - dml_scenarios: 正規化済みシナリオ（_normalize_scenario の出力）
+
+    返り値: (state_transition_cmds, attribute_cmds, related_scenarios)
+    """
+    related_scenarios: list[str] = []
+    by_cmd_state: dict[str, dict] = {}
+    by_cmd_attr: dict[str, dict] = {}
+    for sc in dml_scenarios:
+        if sc.get("agg") != agg_name:
+            continue
+        name = sc.get("name") or ""
+        if name:
+            related_scenarios.append(name)
+        cmd = sc.get("cmd")
+        if not cmd:
+            continue
+        if cmd in transition_cmds:
+            entry = by_cmd_state.setdefault(
+                cmd,
                 {
-                    "from": m.group(1).strip("`'"),
-                    "to": m.group(2).strip("`'"),
-                    "trigger": m.group(3).strip(),
-                }
+                    "name": cmd,
+                    "jp_scenario": name,
+                    "jp_trigger": name,
+                    "mutates_state": True,
+                    "transitions": [],
+                },
             )
-    return transitions
+            # transitions は後段で集約 transitions と突合して埋める
+            if name and not entry.get("jp_scenario"):
+                entry["jp_scenario"] = name
+        else:
+            by_cmd_attr.setdefault(
+                cmd,
+                {
+                    "name": cmd,
+                    "jp_scenario": name,
+                    "mutates_state": False,
+                },
+            )
+    return list(by_cmd_state.values()), list(by_cmd_attr.values()), related_scenarios
 
 
-# ============================================================
-# 用語集から SCENARIO 名 → CMD 名 マップ作成
-# ============================================================
+def _attach_transitions_to_state_cmds(
+    state_cmds: list[dict], transitions: list[dict]
+) -> None:
+    """state_transition_cmds[].transitions に、対応する transitions（from/to/trigger）を埋める。
 
-
-def build_command_name_map(glossary: dict) -> dict[str, str]:
-    """用語集の「コマンド」カテゴリから 日本語 → 英語 のマップを作成
-
-    SCENARIO の本文に含まれる動詞句から CMD 識別子を推定するための辞書。
+    `trigger == cmd.name` で突合する。
     """
-    result: dict[str, str] = {}
-    for cat in ("コマンド", "Command"):
-        rows = glossary.get(cat, [])
-        for row in rows:
-            jp = row.get("jp", "").strip()
-            en = row.get("en", "").strip()
-            if jp and en:
-                result[jp] = en
-    return result
+    by_via: dict[str, list[dict]] = {}
+    for tr in transitions:
+        by_via.setdefault(tr["trigger"], []).append(tr)
+    for c in state_cmds:
+        c["transitions"] = by_via.get(c["name"], [])
 
 
-def lookup_command_name(scenario_name: str, cmd_map: dict[str, str]) -> str | None:
-    """SCENARIO 名から CMD 識別子を最長一致で推定"""
-    candidates = [(jp, en) for jp, en in cmd_map.items() if jp in scenario_name]
-    if not candidates:
-        return None
-    candidates.sort(key=lambda x: -len(x[0]))
-    return candidates[0][1]
+def _format_invariant(r: dict | str) -> str:
+    """DML rules 要素（dict or str）を表示用の 1 文字列へ。"""
+    if isinstance(r, dict):
+        text = (r.get("rule") or "").strip()
+        why = (r.get("why") or "").strip()
+        if text and why:
+            return f"{text}（なぜ: {why}）"
+        return text or why
+    return str(r)
 
 
-# ============================================================
-# AGG → CMD 紐付け
-# ============================================================
-
-
-def split_related_scenarios(related: str) -> list[str]:
-    """関連シナリオの値からバッククォート囲みのシナリオ名リストを抽出"""
-    return [s.strip().strip("`") for s in re.findall(r"`([^`]+)`", related)]
-
-
-KANJI_SEQ_RE = re.compile(r"[一-龥]+")
-
-
-def extract_kanji_keywords(text: str) -> set[str]:
-    """text 内の連続漢字シーケンスから 2-gram を抽出 (部分一致のため)"""
-    bigrams: set[str] = set()
-    for seq in KANJI_SEQ_RE.findall(text):
-        if len(seq) < 2:
-            continue
-        for i in range(len(seq) - 1):
-            bigrams.add(seq[i:i + 2])
-    return bigrams
-
-
-def resolve_cmd_for_transition(
-    trigger: str, related_scenarios: list[str], cmd_map: dict[str, str]
-) -> tuple[str | None, str | None]:
-    """状態遷移トリガー文 → 対応する CMD 名 (関連シナリオ経由)
-
-    手順:
-        1. trigger に cmd_map のキー (日本語動詞句) が含まれれば即マッチ
-        2. それ以外は trigger と各 related の連続漢字シーケンス集合の積を取り、
-           共通文字数が最大の related から CMD を引く
-    """
-    # Step 1: trigger 直接マッチ (最長優先)
-    for jp in sorted(cmd_map.keys(), key=len, reverse=True):
-        if jp in trigger:
-            return cmd_map[jp], None
-
-    # Step 2: 漢字キーワード共有
-    trigger_kw = extract_kanji_keywords(trigger)
-    if not trigger_kw:
-        return None, None
-    best_cmd = None
-    best_scenario = None
-    best_score = 0
-    for s in related_scenarios:
-        common = trigger_kw & extract_kanji_keywords(s)
-        if not common:
-            continue
-        score = sum(len(k) for k in common)
-        if score > best_score:
-            cmd = lookup_command_name(s, cmd_map)
-            if cmd:
-                best_cmd = cmd
-                best_scenario = s
-                best_score = score
-    return best_cmd, best_scenario
-
-
-def build_scenario_owners(agg_cards: list[dict]) -> dict[str, list[str]]:
-    """SCENARIO 名 → そのシナリオを「関連」と宣言した AGG 名のリスト"""
-    owners: dict[str, list[str]] = {}
-    for agg in agg_cards:
-        name = extract_agg_name(agg["name"])
-        for scenario in split_related_scenarios(agg.get("related", "")):
-            owners.setdefault(scenario, []).append(name)
-    return owners
-
-
-def extract_agg_name(name_line: str) -> str:
-    """`Event（イベント）` → `Event`"""
-    m = re.match(r"^([A-Za-z][A-Za-z0-9]*)", name_line)
-    return m.group(1) if m else name_line
-
-
-def extract_agg_jp(name_line: str) -> str:
-    """`Event（イベント）` → `イベント`"""
-    m = re.search(r"（([^）]+)）", name_line)
-    return m.group(1) if m else ""
-
-
-# ============================================================
-# 集約データの拡張
-# ============================================================
+def _format_error(e: dict | str) -> str:
+    """DML errs 要素（dict or str）を表示用の 1 文字列へ。"""
+    if isinstance(e, dict):
+        cond = (e.get("cond") or "").strip()
+        err = (e.get("err") or "").strip()
+        when = (e.get("when") or "").strip()
+        head = f"{cond} → {err}" if cond and err else (cond or err)
+        return f"{head}（{when}）" if when and head else head
+    return str(e)
 
 
 def enrich_aggregates(
-    agg_cards: list[dict],
-    scenario_owners: dict[str, list[str]],
-    cmd_map: dict[str, str],
+    model: dict, dml_scenarios: list[dict]
 ) -> list[dict]:
-    """AGG カードに以下を追加:
-    - id (PascalCase 名)
-    - jp_name
-    - bc_slug
-    - transitions (構造化)
-    - commands: そのAGGに固有のCMDリスト (state-transition / attribute-only)
-    - queries: 別途リードモデルから紐付け
+    """DML model から集約情報を導出し、下流テンプレが期待する dict 形式へ正規化する。
+
+    出力 dict のキー（互換維持）:
+      - id: PascalCase 集約名
+      - jp_name: 集約の日本語名（DML には無いので英語と同値、将来 glossary で拡張可能）
+      - bc_slug: 所属 BC
+      - attrs: list[{name, type, required, note}]
+      - event_params: list[{event_name, params: [...]}]
+      - purpose / background / constraints: DML から
+      - invariants: scs[].rules を agg 一致で集約（表示用文字列リスト）
+      - errors: scs[].errs を agg 一致で集約（表示用文字列リスト）
+      - transitions: list[{from, to, trigger, when, note}]
+      - state_transition_cmds: transitions[].via に出現する CMD のシナリオ
+      - attribute_cmds: それ以外で agg を更新する scs のシナリオ
+      - related_scenarios: scs[].name のリスト（agg 一致）
+      - cross_agg_scenarios: 空配列（scs は単一 agg なので意味を持たない）
+      - notes / derived: 空配列（DML に直接対応なし）
     """
-    enriched = []
-    for agg in agg_cards:
-        agg_id = extract_agg_name(agg["name"])
-        bc_slug = extract_bc_slug_from_context(agg.get("context", ""))
-        transitions = parse_transitions(agg.get("transitions", []))
+    enriched: list[dict] = []
+    for ag in aggregates_from_dml(model):
+        name = ag["name"]
+        # transitions を {from,to,trigger,when,note} 形式へ
+        transitions: list[dict] = []
+        for tr in ag.get("transitions") or []:
+            transitions.extend(_normalize_transition(tr))
+        transition_cmds = {tr["trigger"] for tr in transitions if tr.get("trigger")}
 
-        related_scenarios = split_related_scenarios(agg.get("related", ""))
+        state_cmds, attr_cmds, related = _classify_agg_scenarios(
+            name, dml_scenarios, transition_cmds
+        )
+        _attach_transitions_to_state_cmds(state_cmds, transitions)
 
-        # state-transition triggers から CMD 識別子を推定
-        state_transition_cmds: list[dict] = []
-        seen_cmd: set[str] = set()
-        resolved_via_scenario: set[str] = set()
-        for tr in transitions:
-            cmd_name, matched_scenario = resolve_cmd_for_transition(
-                tr["trigger"], related_scenarios, cmd_map
-            )
-            if not cmd_name:
-                cmd_name = tr["trigger"]  # フォールバック
-            else:
-                if matched_scenario:
-                    resolved_via_scenario.add(matched_scenario)
-            if cmd_name in seen_cmd:
-                # 既出のCMDなら from/to の幅を広げるだけにする
-                for c in state_transition_cmds:
-                    if c["name"] == cmd_name:
-                        c["transitions"].append(tr)
-                        break
-                continue
-            seen_cmd.add(cmd_name)
-            state_transition_cmds.append(
+        # transitions[].via が CMD なのに対応 scs が存在しないケースも
+        # state_cmds として残す（Mermaid ラベル/受け入れ条件で見えるように）
+        seen_state = {c["name"] for c in state_cmds}
+        for via in transition_cmds:
+            if via and via not in seen_state:
+                state_cmds.append(
+                    {
+                        "name": via,
+                        "jp_scenario": "",
+                        "jp_trigger": "",
+                        "mutates_state": True,
+                        "transitions": [
+                            tr for tr in transitions if tr["trigger"] == via
+                        ],
+                    }
+                )
+
+        # event_params: DML aggs[].events[].params をペイロード一覧として保持
+        event_params: list[dict] = []
+        for ev in ag.get("events") or []:
+            event_params.append(
                 {
-                    "name": cmd_name,
-                    "jp_trigger": tr["trigger"],
-                    "mutates_state": True,
-                    "transitions": [tr],
-                }
-            )
-
-        # AGG に「のみ」紐づくシナリオ → 属性更新 CMD 候補
-        # ただし state-transition で既に解決済みの SCENARIO は除外
-        attribute_cmds: list[dict] = []
-        cross_scenarios: list[str] = []
-        for scenario in related_scenarios:
-            owners = scenario_owners.get(scenario, [])
-            if len(owners) > 1:
-                cross_scenarios.append(scenario)
-                continue
-            if scenario in resolved_via_scenario:
-                continue  # 状態遷移 CMD として既に登録済み
-            cmd_name = lookup_command_name(scenario, cmd_map)
-            if not cmd_name:
-                continue
-            if cmd_name in seen_cmd:
-                continue  # state-transition で既出
-            seen_cmd.add(cmd_name)
-            attribute_cmds.append(
-                {
-                    "name": cmd_name,
-                    "jp_scenario": scenario,
-                    "mutates_state": False,
+                    "event_name": ev.get("name", ""),
+                    "params": list(ev.get("params") or []),
+                    "note": ev.get("note") or "",
                 }
             )
 
         enriched.append(
             {
-                "id": agg_id,
-                "jp_name": extract_agg_jp(agg["name"]),
-                "name_line": agg["name"],
-                "bc_slug": bc_slug,
-                "zod": agg.get("zod", ""),
-                "purpose": agg.get("purpose", ""),
-                "background": agg.get("background", ""),
-                "constraints": agg.get("constraints", []),
-                "invariants": agg.get("invariants", []),
-                "errors": agg.get("errors", []),
+                "id": name,
+                "jp_name": name,  # DML に日本語名は無いので英語そのまま
+                "name_line": name,
+                "bc_slug": ag.get("ctx", ""),
+                "attrs": list(ag.get("attrs") or []),
+                "event_params": event_params,
+                "purpose": ag.get("purpose", ""),
+                "background": ag.get("background", ""),
+                "constraints": list(ag.get("constraints") or []),
+                "invariants": [_format_invariant(r) for r in ag.get("invariants", [])],
+                "errors": [_format_error(e) for e in ag.get("errors", [])],
                 "transitions": transitions,
-                "state_transition_cmds": state_transition_cmds,
-                "attribute_cmds": attribute_cmds,
-                "cross_agg_scenarios": cross_scenarios,
-                "related_scenarios": related_scenarios,
-                "notes": agg.get("notes", []),
-                "derived": agg.get("derived", []),
+                "state_transition_cmds": state_cmds,
+                "attribute_cmds": attr_cmds,
+                "cross_agg_scenarios": [],
+                "related_scenarios": related,
+                "notes": [],
+                "derived": [],
             }
         )
     return enriched
 
 
 # ============================================================
-# BC データの整形
+# BC データの整形（MD §4 BC カードから）
 # ============================================================
 
 
@@ -362,43 +318,6 @@ def attach_queries_to_aggregates(
 
 
 # ============================================================
-# AGG 跨ぎ SCENARIO の抽出
-# ============================================================
-
-
-def extract_cross_agg_scenarios(
-    scenarios: list[dict],
-    agg_scenario_owners: dict[str, list[str]],
-    cmd_map: dict[str, str],
-) -> list[dict]:
-    """関連シナリオ言及が 2 つ以上の AGG にまたがる SCENARIO のリスト
-
-    Story 内 SCENARIO (### 見出し) と Alternative Scenarios の両方を見る。
-    ここでは agg_scenario_owners から複数オーナーのものだけを返す。
-    """
-    result = []
-    for scenario_name, owners in agg_scenario_owners.items():
-        if len(owners) <= 1:
-            continue
-        cmd_name = lookup_command_name(scenario_name, cmd_map)
-        # SCENARIO テキストを scenarios から探す
-        text = ""
-        for s in scenarios:
-            if s["name"] == scenario_name:
-                text = s.get("text", "")
-                break
-        result.append(
-            {
-                "name": scenario_name,
-                "cmd_name": cmd_name,
-                "owners": owners,
-                "text": text,
-            }
-        )
-    return result
-
-
-# ============================================================
 # DML（YAML）から SCENARIO / POLICY を抽出
 # ============================================================
 
@@ -408,23 +327,23 @@ def parse_dml_blocks(dml_text: str) -> dict:
 
     YAML を `yaml.safe_load` で読み、下流スクリプト（generate_issue_drafts.py /
     build_dependency_graph.py）が消費する既存の dict 構造へ正規化して返す。
-    返り値: {"scenarios": [...], "policies": [...]}
+    返り値: {"scenarios": [...], "policies": [...], "model": <yaml dict>}
 
     （CONTEXT/BC は `## コンテキスト候補` カードから取得するため、ここでは
     YAML の `contexts` は読まない＝旧テキスト DML と同じ役割分担を維持する）
     """
     if not dml_text.strip():
-        return {"scenarios": [], "policies": []}
+        return {"scenarios": [], "policies": [], "model": {}}
     data = yaml.safe_load(dml_text)
     if not isinstance(data, dict):
-        return {"scenarios": [], "policies": []}
+        return {"scenarios": [], "policies": [], "model": {}}
     scenarios = [
         _normalize_scenario(s) for s in (data.get("scs") or []) if isinstance(s, dict)
     ]
     policies = [
         _normalize_policy(p) for p in (data.get("pols") or []) if isinstance(p, dict)
     ]
-    return {"scenarios": scenarios, "policies": policies}
+    return {"scenarios": scenarios, "policies": policies, "model": data}
 
 
 def _as_list(value) -> list[str]:
@@ -563,20 +482,6 @@ def main():
     md_text = args.md_path.read_text(encoding="utf-8")
     sections = parse_md(md_text)
 
-    cmd_map = build_command_name_map(sections.glossary)
-    scenario_owners = build_scenario_owners(sections.agg_cards)
-    aggregates = enrich_aggregates(sections.agg_cards, scenario_owners, cmd_map)
-    aggregates, unattached_qrys = attach_queries_to_aggregates(
-        aggregates, sections.qry_cards
-    )
-
-    bcs = enrich_bcs(sections.bc_cards)
-
-    # AGG 跨ぎ SCENARIO
-    cross_agg = extract_cross_agg_scenarios(
-        sections.scenarios, scenario_owners, cmd_map
-    )
-
     # DML はサイドカー `<session>.dml.yaml`（純 YAML）を優先。
     # 無ければ §9 の埋め込み ```dml フェンスから抽出済みの sections.dml にフォールバック。
     dml_path = args.md_path.with_name(args.md_path.stem + ".dml.yaml")
@@ -591,6 +496,23 @@ def main():
     except Exception:
         pass
     dml_blocks = parse_dml_blocks(dml_text)
+    model = dml_blocks["model"]
+
+    # 集約・QRY・BC は DML / MD から組み立てる
+    aggregates = enrich_aggregates(model, dml_blocks["scenarios"])
+    aggregates, unattached_qrys = attach_queries_to_aggregates(
+        aggregates, sections.qry_cards
+    )
+    bcs = enrich_bcs(sections.bc_cards)
+
+    # FLOW: DML の flows[]+scs/pols から Lane/Note 形式を組み立て
+    glossary_index = build_glossary_index(sections.glossary)
+    flows = build_flows_from_dml(model, glossary_index) if model else []
+
+    # AGG 跨ぎ SCENARIO: DML scs[] は単一 agg なので空配列で出す
+    # （ポリシー連鎖の cross-agg 検出は将来拡張・現状は空にして下流テンプレが
+    # 「なし」と表示するようにする）
+    cross_agg: list[dict] = []
 
     result = {
         "session_id": build_session_id(args.md_path),
@@ -615,7 +537,7 @@ def main():
                     for ln in f.lanes
                 ],
             }
-            for f in sections.flows
+            for f in flows
         ],
         "scenarios": sections.scenarios,
         "glossary": sections.glossary,

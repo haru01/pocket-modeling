@@ -423,7 +423,7 @@
       font-size: 0.92em;
     }
 
-    /* === コードブロック (DML / Zod) === */
+    /* === コードブロック (DML 生表示) === */
     pre.code {
       background: #263238; color: #ECEFF1;
       padding: 16px; border-radius: 6px;
@@ -480,6 +480,54 @@
     }
     .bc-card h3 { margin: 0 0 6px 0; color: #1565C0; font-family: 'SF Mono', Menlo, monospace; }
     .bc-card .dep { font-size: 13px; color: #607D8B; }
+
+    /* === 集約 属性 / イベントペイロード テーブル（v4 DML 駆動） === */
+    table.attr-table {
+      width: 100%; border-collapse: collapse; margin: 8px 0;
+      font-size: 13px; background: #FFFFFF;
+      border: 1px solid #CFD8DC; border-radius: 4px; overflow: hidden;
+    }
+    table.attr-table th {
+      background: #ECEFF1; color: #37474F; padding: 6px 10px;
+      text-align: left; font-size: 12px; font-weight: 700;
+    }
+    table.attr-table td { padding: 5px 10px; border-top: 1px solid #ECEFF1; }
+    table.attr-table td.code-cell {
+      font-family: 'SF Mono', Menlo, monospace; color: #1565C0;
+    }
+    table.attr-table.payload-table th { background: #FFF3E0; color: #E65100; }
+    .agg-events { margin: 10px 0 4px 0; }
+    .agg-events > strong { color: #E65100; font-size: 13px; }
+    .agg-event { margin: 8px 0; padding: 6px 10px; background: #FFF8E1; border-left: 3px solid #FFAB40; border-radius: 0 4px 4px 0; }
+    .agg-event h4 {
+      margin: 0 0 4px 0; font-size: 13px; color: #E65100;
+      font-family: 'SF Mono', Menlo, monospace;
+    }
+    .inv-section .why, .err-section .why,
+    .agg-subsection .why { color: #607D8B; font-size: 12px; font-style: italic; }
+
+    /* === 意思決定ログ === */
+    .decision-card {
+      padding: 12px 16px; background: #FFFFFF;
+      border: 1px solid #CFD8DC; border-left: 4px solid #6A1B9A;
+      border-radius: 0 4px 4px 0; margin: 8px 0; font-size: 14px;
+    }
+    .decision-card h3 { margin: 0 0 6px 0; color: #6A1B9A; font-size: 15px; }
+    .decision-card .dep { font-size: 13px; color: #607D8B; margin-bottom: 8px; }
+    .decision-options { display: flex; flex-direction: column; gap: 6px; }
+    .opt { padding: 8px 12px; border-radius: 0 4px 4px 0; border-left: 3px solid transparent; }
+    .opt.adopted { background: #E8F5E9; border-left-color: #2E7D32; }
+    .opt.adopted .opt-name { color: #2E7D32; font-weight: 700; }
+    .opt.rejected { background: #FAFAFA; border-left-color: #B0BEC5; }
+    .opt.rejected .opt-name {
+      color: #78909C; font-weight: 700; text-decoration: line-through;
+    }
+    .opt-name { display: block; font-size: 13px; }
+    .opt-why, .opt-why-not {
+      display: block; color: #455A64; font-size: 13px; margin-top: 2px;
+    }
+    .opt-why-not { color: #78909C; }
+    .decision-note { margin-top: 6px; color: #607D8B; font-size: 12px; font-style: italic; }
   </style>
 </head>
 <body>
@@ -501,8 +549,10 @@
     <div class="phase">3. イベント発見</div>
     <div class="phase">4. CMD-EVT-POLICY</div>
     <div class="phase">4.5. BC 境界</div>
-    <div class="phase">5. RULE-ERR</div>
-    <div class="phase">6. 整合性チェック</div>
+    <div class="phase">4.6. 目的・背景・制約</div>
+    <div class="phase">5. 不変条件・エラー＋属性</div>
+    <div class="phase">6. 意思決定ログ</div>
+    <div class="phase">7. 整合性チェック</div>
   </div>
 
   <!-- =====================
@@ -585,21 +635,31 @@
   <!-- ... -->
 
   <!-- =====================
-       5. 集約候補（Zod スキーマ必須）
+       5. 集約候補（DML aggs[] から自動生成）
        ===================== -->
   <h2>5. 集約候補</h2>
   <div class="bc-card">
     <h3>{{AggregateName}}</h3>
-    <div class="dep"><strong>コンテキスト:</strong> {{context-slug}} · <strong>関連シナリオ:</strong> {{シナリオ}}</div>
-    <p style="margin: 6px 0;">{{集約の役割説明}}</p>
-<pre class="code"><span class="kw">export const</span> {{AggregateName}}Schema = z.object({
-  id: {{AggregateName}}IdSchema,
-  status: z.enum([<span class="cm">'STATE_A'</span>, <span class="cm">'STATE_B'</span>]),
-  // ...
-});
-<span class="kw">export type</span> {{AggregateName}} = z.infer&lt;<span class="kw">typeof</span> {{AggregateName}}Schema&gt;;</pre>
-    <p style="font-size: 14px; color: #607D8B; margin: 4px 0;"><strong>不変条件 (案):</strong> {{...}}</p>
-    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>状態遷移:</strong> STATE_A → STATE_B</p>
+    <div class="dep"><strong>コンテキスト:</strong> <code>{{context-slug}}</code> · <strong>関連シナリオ:</strong> {{シナリオ列}}</div>
+    <div class="purpose-section"><strong>目的:</strong> {{aggs[].purpose}}</div>
+    <div class="background-section"><strong>背景:</strong> {{aggs[].background}}</div>
+    <div class="constraints-section"><strong>制約:</strong><ul><li>{{aggs[].constraints[i]}}</li></ul></div>
+    <table class="attr-table">
+      <thead><tr><th>属性</th><th>型</th><th>必須</th><th>備考</th></tr></thead>
+      <tbody><tr><td class="code-cell">{{name}}</td><td class="code-cell">{{type}}</td><td>✓</td><td>{{note}}</td></tr></tbody>
+    </table>
+    <div class="agg-subsection"><strong>状態:</strong> <code>STATE_A</code> → <code>STATE_B</code></div>
+    <div class="inv-section"><strong>✓ 不変条件:</strong><ul><li>{{scs[].rules[i].rule}}<span class="why">— {{rules[i].why}}</span></li></ul></div>
+    <div class="err-section"><strong>⚠ エラーケース:</strong><ul><li><code class="err-code">{{errs[i].err}}</code>: {{errs[i].cond}}</li></ul></div>
+    <div class="agg-events"><strong>イベントペイロード:</strong>
+      <div class="agg-event">
+        <h4>{{EventName}}</h4>
+        <table class="attr-table payload-table">
+          <thead><tr><th>属性</th><th>型</th><th>必須</th><th>備考</th></tr></thead>
+          <tbody><tr><td class="code-cell">{{params[i].name}}</td><td class="code-cell">{{params[i].type}}</td><td></td><td></td></tr></tbody>
+        </table>
+      </div>
+    </div>
   </div>
   <!-- ... -->
 
@@ -626,9 +686,23 @@
   <div class="hotspot"><strong>H1.</strong> {{設計判断の論点}}</div>
 
   <!-- =====================
-       8. 次のアクション
+       8. 意思決定ログ（DML decisions[] から自動生成）
+       空のときはビルダー側で見出しごと抑制される。
        ===================== -->
-  <h2>8. 次のアクション</h2>
+  <h2>8. 意思決定ログ</h2>
+  <div class="decision-card">
+    <h3>{{decisions[i].id}}. {{decisions[i].topic}}</h3>
+    <div class="dep"><strong>採用:</strong> <code>{{chosen}}</code> · <strong>影響:</strong> <code>{{affects[0]}}</code></div>
+    <div class="decision-options">
+      <div class="opt adopted"><span class="opt-name">✓ {{option name}}</span><span class="opt-why">{{why}}</span></div>
+      <div class="opt rejected"><span class="opt-name">{{rejected name}}</span><span class="opt-why-not">{{why_not}}</span></div>
+    </div>
+  </div>
+
+  <!-- =====================
+       9. 次のアクション
+       ===================== -->
+  <h2>9. 次のアクション</h2>
   <div class="next-actions">
     <ul>
       <li>{{次のフェーズへの導線}}</li>
@@ -636,19 +710,23 @@
   </div>
 
   <!-- =====================
-       9. DML
+       10. DML（生 YAML をハイライト表示。`.dml.yaml` のサイドカーから読む）
        ===================== -->
-  <h2>9. DML</h2>
-  <pre class="code"><span class="kw">CONTEXT</span> <span class="id">{{context-slug}}</span> {
-  <span class="cm"># {{description}}</span>
-  <span class="kw">UPSTREAM</span> (none)
-  <span class="kw">DOWNSTREAM</span> <span class="id">{{other-context}}</span>
-}</pre>
+  <h2>10. DML</h2>
+  <pre class="code"><span class="yk">ctxs</span>:
+  - <span class="yk">name</span>: <span class="v-str">{{context-slug}}</span>
+    <span class="yk">aggs</span>: [<span class="v-actor">{{AggregateName}}</span>]
+<span class="yk">aggs</span>:
+  - <span class="yk">name</span>: <span class="v-actor">{{AggregateName}}</span>
+<span class="yk">flows</span>:
+  - <span class="yk">id</span>: <span class="v-str">happy</span>
+<span class="yk">decisions</span>:
+  - <span class="yk">id</span>: <span class="v-str">D1</span></pre>
 
   <!-- =====================
-       10. 用語集
+       11. 用語集
        ===================== -->
-  <h2>10. 用語集</h2>
+  <h2>11. 用語集</h2>
 
   <div class="glossary-section">
     <h3>アクター</h3>

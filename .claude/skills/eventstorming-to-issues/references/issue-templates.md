@@ -36,11 +36,22 @@
 - 制約:
   - <BC レベルで横断的な制約>
 
-## スキーマ (Zod)
+## 属性 (DML aggs[].attrs[])
 
-\`\`\`typescript
-<Zod スキーマをそのまま転記>
-\`\`\`
+| 属性 | 型 | 必須 | メモ |
+|---|---|---|---|
+| `id` | `EventId` | ✓ | 集約 ID |
+| `title` | `string` | ✓ | イベント名（一覧表示用） |
+| ... | ... | ... | ... |
+
+## イベントペイロード (DML aggs[].events[].params)
+
+### EVT `EventCreated`
+
+| 属性 | 型 | 必須 | メモ |
+|---|---|---|---|
+| `eventId` | `EventId` | ✓ | 発火対象 |
+| `title` | `string` | ✓ | 作成時タイトル |
 
 ## 不変条件 (RULE)
 - <invariant 1>
@@ -137,17 +148,18 @@ stateDiagram-v2
 \`\`\`
 src/<bc>/<aggregate>/
   index.ts       — Aggregate root + 不変条件
-  schema.ts      — Zod schemas
+  schema.ts      — 属性スキーマ（attrs[] を実装言語の型/バリデータへ）
   commands/      — 1 CMD = 1 file
   queries/       — 1 QRY = 1 file
-  events.ts      — EVT 定義
+  events.ts      — EVT 定義（aggs[].events[].params をペイロード型へ）
   errors.ts      — ERR 定義
   policies.ts    — 受信 POLICY ハンドラ
 tests/<bc>/<aggregate>/<aggregate>.spec.ts
 \`\`\`
 
 ## 受け入れ条件
-- [ ] Zod スキーマが Epic 記載と一致
+- [ ] 属性スキーマ（attrs[]）が Epic 記載の型/必須と一致
+- [ ] イベントペイロード（events[].params）が Epic 記載と一致
 - [ ] 状態遷移図の全エッジが実装されテストでカバー
 - [ ] 全不変条件 (RULE) が enforce され、違反時に Epic 記載の ERR が発火
 - [ ] 全 CMD / QRY が公開 API として動作

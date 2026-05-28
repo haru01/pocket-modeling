@@ -1,12 +1,12 @@
 # EventStorming / DDD 表記品質チェックリスト
 
-MDファイルを書き出した後、サブエージェントがこのチェックリストに従って検査・修正する。
+`.md` と兄弟 `.dml.yaml` を書き出した後、サブエージェントがこのチェックリストに従って検査・修正する。
 
 ---
 
 ## 1. DML記法チェック（兄弟 `.dml.yaml` ファイル・YAML 直書き）
 
-DML は兄弟 `<session>.dml.yaml` ファイル（純 YAML・フェンスなし）。`ctxs` / `aggs` / `scs` / `pols` の 4 トップレベルリスト（任意で `domains`）で構成される。AGG 詳細はトップレベル `aggs[]` に集約し、`ctxs[].aggs` は AGG 名（PascalCase 文字列）の軽量名簿として保持する。
+DML は兄弟 `<session>.dml.yaml` ファイル（純 YAML・フェンスなし）。`ctxs` / `aggs` / `scs` / `pols` の 4 トップレベルリスト（任意で `domains` / `flows` / `decisions`）で構成される。AGG 詳細はトップレベル `aggs[]` に集約し、`ctxs[].aggs` は AGG 名（PascalCase 文字列）の軽量名簿として保持する。
 
 > **JSON Schema との分担**: 形式（正規表現で判定できるもの）= **D1 / D6 / D8** と、`evt`↔`brs` 排他・`trg`↔`trgs` 排他・`bulk:true`→`qry` 必須・未知フィールド禁止・enum 違反は `references/dml.schema.yaml` が機械検証する（`scripts/validate_dml.py`）。サブエージェントはまず兄弟 `.dml.yaml` を Read し、Schema 違反（あれば build バナー / validate_dml の出力）を判断材料にする。**時制・命令形・言語・意図の判断（D2 / D3 / D4 / D7）は Schema では不可能**なので、引き続きこのチェックリストで確認・修正する。
 
@@ -25,16 +25,31 @@ DML は兄弟 `<session>.dml.yaml` ファイル（純 YAML・フェンスなし�
 
 ---
 
-## 2. event_flow 図チェック（セクション2・3の `` ```event-flow-svg `` ブロック、旧記法 `:::diagram-svg event_flow` も対象）
+## 2. フロー記述チェック（DML `flows[]`）
+
+§3 のフロー図は手書きの DSL ではなく **DML `flows[]` から自動生成** される。記述ミスは以下で検出する。
 
 | # | ルール | NG例 | OK例 |
 |---|-------|------|------|
-| F1 | `$Policy` の直後に必ず `!Command` がある（`$Policy > [Event]` は禁止） | `$在庫確認ポリシー > [在庫が不足した]` | `$在庫確認ポリシー > !在庫を確認 > [在庫が不足した]` |
-| F2 | イベントは `[日本語過去形]` で表記 | `[在庫不足]` | `[在庫が不足した]` |
-| F3 | コマンドは `!動詞句（日本語）` で表記 | `[注文確定]` や `OrderConfirm` | `!注文を確定` |
-| F4 | BC名は `|lowercase-with-hyphen|` | `|OrderManagement|` | `|order-management|` |
-| F5 | アクターは `@役割名（日本語）` で表記 | `@Customer` | `@顧客` |
-| F6 | `?ReadModel` は**操作対象集約以外**からのデータ取得にのみ付ける。同一集約の参照には付けない。順序は `@Actor > ?ReadModel > !Command` | 書き込む集約と同じデータを `?ビュー` で表記する | 別集約の残席数を確認する `?残席数 > !参加申込` |
+| F-flows | `flows[].steps[]` の各 step 名が **scs[].name（日本語）または pols[].name（PascalCase）** のいずれかと完全一致する。typo・未定義参照は **自動修正せず**、ホットスポット候補として返す | `steps: [- 顧客が注文確定する]`（scs[].name 未定義） | `steps: [- 顧客が注文を確定する]`（scs[].name と一致） |
+| F-decisions | 各 `decisions[]` エントリで `chosen` が `options[].name` のいずれかと一致し、各 option に `why` または `why_not` が記述されているか | `chosen: A 案` / `options[].name: [A, B]`（不一致） | `chosen: A`／`options[].name: [A, B]` 各々に `why`/`why_not` あり |
+
+`F-flows` の検出ロジック:
+```
+flows[].steps[] の各 step について：
+  → scs[].name にあるか？  pols[].name にあるか？
+  → どちらにも無ければ:
+     [?] F-flows_<flowId>_<step>: step "<step>" は scs/pols に未定義
+```
+
+`F-decisions` の検出ロジック:
+```
+decisions[] の各エントリ d について：
+  → d.chosen が d.options[].name のいずれかと一致するか？
+  → 各 option に why または why_not が記述されているか？
+  → 不一致／未記述があれば:
+     [?] F-decisions_<id>: <内容>
+```
 
 ---
 
@@ -43,18 +58,19 @@ DML は兄弟 `<session>.dml.yaml` ファイル（純 YAML・フェンスなし�
 | # | ルール |
 |---|-------|
 | S1 | セクション1（ハッピーパスストーリー）が400〜600字で記述されているか |
-| S2 | セクション2（代替シナリオ）は**テキストのみ**。`` ```event-flow-svg `` / `:::diagram-svg` ブロックがあれば削除する（図はセクション3に集約） |
-| S3 | セクション3（Event Walkthrough）に **ハッピーパス図が最初** に来ているか |
-| S4 | セクション3の代替シナリオにも `` ```event-flow-svg `` 図があるか（ハッピーパス図の後。旧記法 `:::diagram-svg event_flow` も可） |
-| S5 | セクション5（集約候補）の各 AGG に ` ```ts ` の Zod スキーマブロックが存在するか |
+| S2 | セクション2（代替シナリオ）は**テキストのみ**。フロー図相当のコードブロックがあれば削除する（図は §3 が DML から自動生成） |
+| S3 | `.dml.yaml` の `flows[]` に **`kind: happy`** のエントリが少なくとも 1 件あるか |
+| S4 | `.dml.yaml` の `flows[]` に代替シナリオ（`kind: alt`）が 1 件以上あるか（推奨） |
+| **S5-attr** | **`.dml.yaml` の `aggs[]` 各エントリに `attrs[]` が 1 件以上記述されているか**。未記述はホットスポット候補として返す: `[?] S5-attr_<AggName>: aggs[].attrs[] が未記述` |
+| **S5-evt** | **`.dml.yaml` の `aggs[]` 各エントリに `events[]` が 1 件以上、各 event に `params[]` が記述されているか**。未記述はホットスポット候補として返す: `[?] S5-evt_<AggName>: aggs[].events[] が未記述`、または `[?] S5-evt_<AggName>.<EventName>: params[] が未記述` |
 | S6 | セクション4（コンテキスト候補）の各 BC に「依存方向」項目（UPSTREAM / DOWNSTREAM）が存在するか |
-| S7 | セクション10（用語集）が存在し、フロー図で使われている `@` / `!` / `[]` / `$` / `?` 付き日本語ラベルがすべて登録されているか |
-| **S8** | **セクション5（集約候補）の各 AGG に `#### 目的` サブセクションがあり、本文が 30 字以上書かれているか**。空・未記入・短すぎる項目は **自動修正せず**、ホットスポット候補 `[?-WHY] S8_<AggName>: 目的が未記入または短すぎる` として返す（M 系と同じ運用） |
+| S7 | セクション11（用語集）が存在し、`scs[]`/`pols[]`/`aggs[]` で使われている英語識別子（actor / cmd / evt / agg / pol / qry）がすべて登録されているか |
+| **S8** | **`.dml.yaml` の `aggs[]` 各エントリに `purpose` があり、本文が 30 字以上書かれているか**。空・未記入・短すぎる項目は **自動修正せず**、ホットスポット候補 `[?-WHY] S8_<AggName>: 目的が未記入または短すぎる` として返す |
 | **S9** | **`aggs[].name` で宣言された AGG が `scs[].agg` でも参照されているか（孤立 AGG の検出）／逆に `scs[].agg` が `aggs[].name` に存在するか（未定義 AGG 参照の検出）**。違反は **自動修正せず**、ホットスポット候補として返す: `[?] S9_<AggName>: aggs[] に宣言されているが scs[].agg で未参照（孤立 AGG）` または `[?] S9_<AggName>: scs[].agg で参照されているが aggs[] に未宣言` |
 
 ---
 
-## 3-B. WHY/WHEN 推奨チェック（W1〜W2）
+## 3-B. WHY/WHEN 推奨チェック（W1〜W3）
 
 「**形式違反ではない・あるとより良い**」を見るカテゴリ。違反は自動修正せず、ホットスポット候補 `[?-WHY] W_N` として返す。
 
@@ -62,8 +78,9 @@ DML は兄弟 `<session>.dml.yaml` ファイル（純 YAML・フェンスなし�
 |---|-------|------|------|
 | W1 | 各 `rules[]` に `why` キーが書かれていることを推奨 | YAML パースで `rules[]` 要素に `why` が無い | `- rule: communityName must be unique system-wide` → `why: "URL slug や検索 UX で name → id 逆引きを想定するため"` を推奨 |
 | W2 | 各 `errs[]` に `when` キーが書かれていることを推奨 | 同上、`errs[]` 要素に `when` が無い | `- cond: duplicateName`<br>`  err: DuplicateCommunityNameError` → `when: "name が既存と重複"` を推奨 |
+| W3 | 各 `decisions[]` の各 `options[]` に `why`（採用）または `why_not`（不採用）が書かれていることを推奨 | YAML パースで `options[]` 要素に `why`/`why_not` が無い | `- name: A 案`（理由なし） → `why: "..."` または `why_not: "..."` を推奨 |
 
-**S8 / W1 / W2 の運用方針:** D / F / S1〜S7 のような自動修正は **しない**。意味判断を伴うため、検出後はホットスポット候補 `[?-WHY]` プレフィックスで列挙し、ファシリテーター本体が次ターン以降に **1 件ずつ会話補完**（詳細は `chat-output-format.md` §10A「WHY 補完モード」）。
+**S8 / W1〜W3 の運用方針:** D / F / S1〜S7 のような自動修正は **しない**。意味判断を伴うため、検出後はホットスポット候補 `[?-WHY]` プレフィックスで列挙し、ファシリテーター本体が次ターン以降に **1 件ずつ会話補完**（詳細は `chat-output-format.md` §10A「WHY 補完モード」）。
 
 ---
 
@@ -95,13 +112,15 @@ D / F / S 系のような **形式的な違反は自動修正** するが、M �
 
 ## 検査・修正手順
 
-1. MDファイルを `Read` で読み込む
+1. `.md` ファイルと兄弟 `.dml.yaml` を `Read` で読み込む
 2. **D・F・S1〜S7 系**を全項目検査 → 違反は `Edit` tool で自動修正
-3. **S8 / S9 / W1 / W2 / M 系**を全項目検査 → 違反候補は自動修正せず、レポートに `[?-WHY] S8/W_N` または `[?] S9/M_N` として列挙
+3. **S5-attr / S5-evt / S8 / S9 / W1〜W3 / F-flows / F-decisions / M 系**を全項目検査 → 違反候補は自動修正せず、レポートに `[?-WHY] S/W_N` または `[?] S/M/F_N` として列挙
 4. 結果を返す：
    - 違反なし → `「品質チェック完了：問題なし」`
    - D/F/S1〜S7 違反あり → 修正した項目リスト（`F1: $Policy後の!Command追加 ×3箇所` など）
-   - S8 違反あり → ホットスポット候補リスト（`[?-WHY] S8_Payment: AGG Payment の #### 目的 が未記入` など）
+   - S5-attr / S5-evt 違反あり → ホットスポット候補リスト（`[?] S5-attr_Event: aggs[].attrs[] が未記述` など）
+   - S8 違反あり → ホットスポット候補リスト（`[?-WHY] S8_Payment: AGG Payment の purpose が未記入` など）
    - S9 違反あり → ホットスポット候補リスト（`[?] S9_Notification: aggs[] に宣言されているが scs[].agg で未参照（孤立 AGG）` など）
-   - W1/W2 違反あり → ホットスポット候補リスト（`[?-WHY] W1: SCENARIO 主催者がコミュニティを作成する の RULE 1 に WHY 未記入` など）
+   - F-flows / F-decisions 違反あり → ホットスポット候補リスト（`[?] F-flows_happy_顧客が注文する: step "顧客が注文する" は scs/pols に未定義` など）
+   - W1/W2/W3 違反あり → ホットスポット候補リスト（`[?-WHY] W1: SCENARIO 主催者がコミュニティを作成する の RULE 1 に WHY 未記入` など）
    - M 違反候補あり → ホットスポット候補リスト（`[?] M1: SCENARIO 顧客が注文を確定する — CMD/EVT で「確定」が重複、Saga 起動のため早すぎる命名の可能性` など）

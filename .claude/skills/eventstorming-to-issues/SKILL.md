@@ -5,7 +5,9 @@ description: EventStorming のモデリング結果 (docs/eventstorming/*.md) �
 
 # EventStorming → GitHub Issue 化
 
-EventStorming セッション成果物 (`docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md`) を入力に、**集約を単位とした self-contained Epic** + **AGG 跨ぎ統合 Issue** を生成する。Epic は CMD / QRY / 受信 POLICY / 発信 EVT の詳細を inline で持ち、1 つ読めば AI エージェントが PR を書けるよう設計する。
+EventStorming セッション成果物（セッション MD `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md` ＋ サイドカー DML `<同名>.dml.yaml`）を入力に、**集約を単位とした self-contained Epic** + **AGG 跨ぎ統合 Issue** を生成する。Epic は CMD / QRY / 受信 POLICY / 発信 EVT の詳細を inline で持ち、1 つ読めば AI エージェントが PR を書けるよう設計する。
+
+**モデルの真実源は DML**: 集約属性・イベントペイロード・状態遷移・不変条件・エラーはすべて `<session>.dml.yaml` の `aggs[]` / `scs[]` から導出する。MD は §4 BC カード（コンテキスト候補）・§6 リードモデル・§10 用語集など、DML には乗らないナラティブ要素のみ参照する。
 
 ## 設計の核心 — 1 AGG = 1 PR
 
@@ -30,9 +32,9 @@ EventStorming セッション成果物 (`docs/eventstorming/eventstorming-YYYYMM
 python3 .claude/skills/eventstorming-to-issues/scripts/parse_eventstorming_md.py \
   <md_path> > /tmp/es-parsed.json
 ```
-- BC / AGG / SCENARIO / QRY / フロー / 状態遷移を JSON 化
-- DML（YAML）の pols / scs も抽出し `policies` / `dml_scenarios` キーに格納（内部表現は parser 仕様に従う）
-- MD セクション抽出は `eventstorming-facilitator/scripts/eventstorming_build.py` の `parse_md()` を再利用。DML（YAML）は **`<md_path>` の兄弟ファイル `<session>.dml.yaml`（純 YAML）から読む**（無ければ旧来の `.md` §9 埋め込み ` ```dml ` フェンスにフォールバック）。`yaml.safe_load` でパースして既存の dict 構造へ正規化（`parse_dml_blocks`）
+- BC / AGG（属性・イベントペイロード・状態遷移を含む）/ SCENARIO / QRY / フロー を JSON 化
+- DML（YAML）の `aggs` / `scs` / `pols` / `flows` を真実源として読む。`aggregates_from_dml(model)` で集約情報、`build_flows_from_dml(model, glossary_index)` でフロー、`scs[].rules` / `scs[].errs` で不変条件・エラーを agg 一致で集約
+- MD セクション抽出は `eventstorming-facilitator/scripts/eventstorming_build.py` の `parse_md()` を再利用（§4 BC カード・§6 QRY・§10 用語集など）。DML（YAML）は **`<md_path>` の兄弟ファイル `<session>.dml.yaml`（純 YAML）から読む**（無ければ旧来の `.md` §9 埋め込み ` ```dml ` フェンスにフォールバック）。`yaml.safe_load` でパースして既存の dict 構造へ正規化（`parse_dml_blocks`）
 
 ### Step 3: 依存グラフ構築 + Mermaid 生成
 ```bash
@@ -48,7 +50,7 @@ python3 .claude/skills/eventstorming-to-issues/scripts/generate_issue_drafts.py 
   /tmp/es-parsed.json --output docs/issues/<session-id>/
 ```
 出力ファイル（AGG 単位 + 統合 Issue のみ。Sub-issue は廃止）:
-- `epics/<bc>__<AGG>.md`: **AGG Epic（self-contained）**。**ビジネス背景と制約（目的・背景・制約 + BC 共通の方針）**・Zod スキーマ・不変条件（rule）・エラー（err）・状態遷移・CMD/QRY 詳細（`rules[].why` / `errs[].when` を併記）・受信 POLICY・発信 EVT・受け入れ条件・モジュール構造提案を 1 ファイルに集約
+- `epics/<bc>__<AGG>.md`: **AGG Epic（self-contained）**。**ビジネス背景と制約（目的・背景・制約 + BC 共通の方針）**・属性（DML aggs[].attrs[]）・イベントペイロード（DML aggs[].events[].params）・不変条件（rule）・エラー（err）・状態遷移・CMD/QRY 詳細（`rules[].why` / `errs[].when` を併記）・受信 POLICY・発信 EVT・受け入れ条件・モジュール構造提案を 1 ファイルに集約
 - `integration/<scenario>.md`: AGG 跨ぎ統合 SCENARIO
 - `cross-bc/<saga>.md`: Cross-BC Saga（現状未実装、将来拡張）
 - `_index.md`: BC（大項目）× AGG（中項目）ナビ
