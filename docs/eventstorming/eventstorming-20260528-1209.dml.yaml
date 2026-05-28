@@ -862,12 +862,15 @@ decisions:
     affects: [TradeIn, ConvertOnTimeout, DetectTradeInTimeout]
     options:
       - name: "7-days"
+        label: "7 日"
         adopted: false
         why_not: "短すぎて遠方会員や繁忙期に到着が間に合わないクレームを誘発する。先取交換と非対称になる運用負担"
       - name: "10-days"
+        label: "10 日"
         adopted: true
         why: "先取交換の 10 日と統一して業務オペとサポート FAQ を一本化できる。Web 上に明示済みの実績ある日数"
       - name: "14-days"
+        label: "14 日"
         adopted: false
         why_not: "在庫予測の不確実性が増え、新品の price 変動リスクが拡大。10% UP の機会コストも増える"
 
@@ -877,12 +880,15 @@ decisions:
     affects: [Authorization, AuthorizeOnOrderPlaced]
     options:
       - name: "hold-difference"
+        label: "差額のみ仮押え"
         adopted: true
         why: "顧客カードの一時拘束を最小化しつつ、与信失敗を早期に検知できる。差額が確定済みの場面で再与信不要"
       - name: "hold-full-then-refund"
+        label: "全額仮押え→後で返金"
         adopted: false
         why_not: "顧客の利用可能枠を圧迫し、特に高額品で UX を損なう。返金処理の運用コストが増える"
       - name: "no-hold-until-final"
+        label: "確定時まで与信なし"
         adopted: false
         why_not: "査定確定時に与信失敗するとロールバックが複雑（既に出荷準備に入る場合）。決済確実性が低下"
 
@@ -892,12 +898,15 @@ decisions:
     affects: [ReturnOnAppraisalRejected, TradeIn]
     options:
       - name: "company-pays"
+        label: "会社負担"
         adopted: true
         why: "顧客が『送ったら買い叩かれて返送料も取られる』という不信を予防。ブランド信頼を中古市場の競合優位として確保"
       - name: "customer-pays"
+        label: "顧客負担"
         adopted: false
         why_not: "短期コスト圧縮にはなるがクレーム源化しやすく、長期 LTV を毀損するリスク"
       - name: "conditional-by-delta"
+        label: "査定差額に応じて分担"
         adopted: false
         why_not: "ロジック複雑化（査定変動率で会社/顧客負担を分岐）、サポート工数増、判定根拠の説明負担"
 
@@ -907,12 +916,15 @@ decisions:
     affects: [TradeIn, CancelTradeIn]
     options:
       - name: "state-aware-single-cmd"
+        label: "単一 CMD で状態別に分岐"
         adopted: true
         why: "UI/API 表面を 1 つの CancelTradeIn に保ち、状態別の挙動分岐は AGG 内に隠蔽。会員側のメンタルモデルがシンプル"
       - name: "split-by-state"
+        label: "状態ごとに別 CMD"
         adopted: false
         why_not: "CancelBeforeShipping / CancelAfterReceive など複数 CMD に分けると会員が状態を理解した上で操作する必要があり UX が悪化"
       - name: "no-cancel-allowed"
+        label: "キャンセル不可"
         adopted: false
         why_not: "業務的に非現実的。会員都合のキャンセルはコールセンター経由で必ず発生する"
 
@@ -922,9 +934,11 @@ decisions:
     affects: [OrderPlaced, AppraisalApproved, AppraisalRejected]
     options:
       - name: "keep-current-naming"
+        label: "現命名を維持"
         adopted: true
         why: "命名は業務語彙と一致させ会員/オペが理解しやすさを優先。Saga 完了を別 EVT で表現すると識別子が膨らみ追跡負担が増える"
       - name: "introduce-confirmed-suffix"
+        label: "Confirmed サフィックスを導入"
         adopted: false
         why_not: "OrderConfirmed/AppraisalConfirmed を別途用意すると認知負荷が上がる。本セッションスコープでは過剰設計"
 
@@ -934,12 +948,15 @@ decisions:
     affects: [Quote]
     options:
       - name: "30-days"
+        label: "30 日"
         adopted: true
         why: "中古カメラの相場変動サイクルとカード会社の与信慣行とのバランス。業界他社の中央値"
       - name: "7-days"
+        label: "7 日"
         adopted: false
         why_not: "概算を見てから検討する会員の標準的な意思決定タイムラインに合わない（給与日待ち等の現実を無視）"
       - name: "no-expiry"
+        label: "無期限"
         adopted: false
         why_not: "古い Quote を理由にした請求トラブルや古物相場乖離のリスクが残る"
 

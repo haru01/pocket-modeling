@@ -565,6 +565,17 @@
       color: #78909C; font-weight: 700; text-decoration: line-through;
     }
     .opt-name { display: block; font-size: 15px; }
+    /* 英語識別子（追跡用 ID）。日本語ラベルの右に小さく従属表示 */
+    .opt-id {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.85em; font-weight: 400; color: #90A4AE; margin-left: 4px;
+    }
+    .opt.adopted .opt-id { color: #66BB6A; }
+    .opt.rejected .opt-id { color: #B0BEC5; }
+    /* 採用行（dep 内）の英語識別子も同等に控えめに */
+    .dep .opt-id {
+      background: transparent; padding: 0; font-size: 0.85em; color: #90A4AE;
+    }
     .opt-why, .opt-why-not {
       display: block; color: #455A64; font-size: 14px; margin-top: 4px;
     }

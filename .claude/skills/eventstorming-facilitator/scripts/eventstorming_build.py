@@ -1204,6 +1204,17 @@ def render_decisions(model: dict, glossary_index: dict[str, str]) -> str:
         did = esc(d.get("id", ""))
         topic = esc(d.get("topic", ""))
         chosen = d.get("chosen", "")
+        options = d.get("options") or []
+        # chosen に対応する option を引き、label があれば「label (name)」形式で見出しに反映
+        chosen_label = ""
+        for opt in options:
+            if opt.get("name") == chosen:
+                chosen_label = opt.get("label") or ""
+                break
+        chosen_html = (
+            f'<code>{esc(chosen_label)}</code> <code class="opt-id">({esc(str(chosen))})</code>'
+            if chosen_label else f'<code>{esc(str(chosen))}</code>'
+        )
         affects = d.get("affects") or []
         affects_html = ""
         if affects:
@@ -1213,8 +1224,9 @@ def render_decisions(model: dict, glossary_index: dict[str, str]) -> str:
             )
             affects_html = f" · <strong>影響:</strong> {chips}"
         opts_html_parts: list[str] = []
-        for opt in d.get("options") or []:
+        for opt in options:
             name = opt.get("name", "")
+            label = opt.get("label") or ""
             adopted = opt.get("adopted")
             if adopted is None:
                 adopted = (name == chosen)
@@ -1231,9 +1243,17 @@ def render_decisions(model: dict, glossary_index: dict[str, str]) -> str:
                 reason_html = (
                     f'<span class="opt-why-not">{esc(reason)}</span>' if reason else ""
                 )
+            # label があれば日本語ラベルを左、英語識別子をその右の括弧書きに
+            if label:
+                name_html = (
+                    f'<span class="opt-name">{marker}{esc(label)}'
+                    f' <span class="opt-id">({esc(name)})</span></span>'
+                )
+            else:
+                name_html = f'<span class="opt-name">{marker}{esc(name)}</span>'
             opts_html_parts.append(
                 f'<div class="opt {cls}">'
-                f'<span class="opt-name">{marker}{esc(name)}</span>'
+                f'{name_html}'
                 f"{reason_html}"
                 f"</div>"
             )
@@ -1246,7 +1266,7 @@ def render_decisions(model: dict, glossary_index: dict[str, str]) -> str:
             f'<div class="decision-card">\n'
             f'    <h3>{did}. {topic}</h3>\n'
             f'    <div class="dep"><strong>採用:</strong> '
-            f'<code>{esc(str(chosen))}</code>{affects_html}</div>\n'
+            f'{chosen_html}{affects_html}</div>\n'
             f'    <div class="decision-options">\n      {opts_html}\n    </div>\n'
             f"    {note_html}\n"
             f"  </div>"

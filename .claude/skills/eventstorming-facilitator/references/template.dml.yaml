@@ -118,10 +118,11 @@
 # decisions:
 #   - id: D1
 #     topic: <意思決定のテーマ>
-#     chosen: <採用オプション名>
+#     chosen: <採用オプション名（options[].name のいずれかと一致）>
 #     options:
-#       - { name: <opt-1>, adopted: true,  why: <採用理由> }
-#       - { name: <opt-2>, adopted: false, why_not: <不採用理由> }
+#       # name: 追跡用 ID（英語 slug 推奨）。label: HTML 表示用の日本語ラベル（任意）
+#       - { name: <opt-1>, label: <日本語ラベル>, adopted: true,  why: <採用理由> }
+#       - { name: <opt-2>, label: <日本語ラベル>, adopted: false, why_not: <不採用理由> }
 #     affects: [<関連 AGG/BC 名>]
 
 # ---------- (K) オープンクエスチョン（旧 .md §5） ----------

@@ -410,6 +410,8 @@ decisions:
 | `topic` | 必須 | 「何を決めたか」を 1 行で（CMD 名ではなく業務概念で） |
 | `chosen` | 必須 | `options[].name` のいずれかと完全一致（未確定なら `chosen: 未確定`） |
 | `options[]` | 必須・1 件以上 | 検討した全選択肢。1 件しか書かないと「比較していない」シグナル |
+| `options[].name` | 必須 | 追跡用の識別子。`chosen` との突合や履歴参照のため **英語 slug（例: `10-days`, `hold-difference`）** を推奨 |
+| `options[].label` | 推奨 | HTML 表示用の日本語ラベル（例: `10 日`, `差額のみ仮押え`）。あれば「label (name)」形式で並び、識別子だけだと意味が取りにくい選択肢でも読み下せる |
 | `options[].why` / `why_not` | 推奨 | `rules[].why` と同様に **業務文脈** で書く。「実装が楽」だけでなく「業務的に何が違うか」を |
 | `options[].adopted` | 任意 | `chosen` との照合で自動判定されるが、明示すると意図がはっきりする |
 | `affects[]` | 推奨 | 影響を受ける AGG / BC / 要素名（PascalCase or lowercase-with-hyphen）。causal-check C13 で実在突合 |

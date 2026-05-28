@@ -403,7 +403,8 @@ $defs:
     additionalProperties: false
     required: [name]
     properties:
-      name: { type: string }                    # 選択肢の識別ラベル（自由文字列）
+      name: { type: string }                    # 選択肢の識別ラベル（自由文字列・追跡用 ID。英語推奨）
+      label: { type: string }                   # 日本語表示ラベル（任意。HTML レンダリング時に「label (name)」形式で表示）
       adopted: { type: boolean }                # true なら採用（chosen と整合）
       why: { type: string }                     # 採用理由（adopted: true のとき推奨）
       why_not: { type: string }                 # 不採用理由（adopted: false/未指定のとき推奨）
