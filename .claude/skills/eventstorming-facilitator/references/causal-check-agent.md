@@ -14,7 +14,7 @@ EventStorming セッションの DML（兄弟 `.dml.yaml` ファイル・YAML）
 2. `.claude/skills/eventstorming-facilitator/references/causal-check.md` を Read で読み込む
 3. 兄弟 `.dml.yaml`（純 YAML・フェンスなし）を `yaml.safe_load` でパースし、「検査対象の収集」を実施して EVT/CMD/POLICY/TRIGGER/AGG/flows steps/decisions affects のリストを作成する
 4. C1〜C13 を順に検査する
-5. 問題あり・要確認の項目を以下の形式でセクション6に追記する（Edit tool）：
+5. 問題あり・要確認の項目を以下の形式でセクション6（オープンクエスチョン）に追記する（Edit tool）：
 
    ### 因果チェーン（自動検出）
    - Q?. 「注文キャンセル」の業務手順がまだ定義されていません — 在庫切れでキャンセルになったとき、顧客への連絡・返金はどの部門が担当し、どの順番で行いますか？

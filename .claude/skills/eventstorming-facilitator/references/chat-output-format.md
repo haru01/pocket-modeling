@@ -163,11 +163,11 @@ DML 抜粋は ` ```dml ` コードブロックで囲む。
 | 1. スコープ | HTML はまだ作らない |
 | 2. ストーリー | `.md` を **Write で新規作成** + `Bash open` で初回起動。HTML §1〜§2 + 進捗バー + 用語集スケルトン入り |
 | 3. イベント発見 | `.dml.yaml` を **Edit で `scs[]` の仮 entries 追加**。HTML §3 はビルダーが自動再生成（`flows[]` が空ならプレースホルダ） |
-| 4. CMD-EVT-POLICY | `.dml.yaml` を **Edit で `scs`/`pols`/`flows[]`（happy + 代替 1〜2）追加** → `.md` §11 用語集を Edit |
-| 4.5. BC 境界 | `.dml.yaml` を **Edit で `lang` 追加**。HTML §4 はビルダーが自動再生成 |
+| 4. CMD-EVT-POLICY | `.dml.yaml` を **Edit で `scs`/`pols`/`flows[]`（happy + 代替 1〜2）追加** → `.md` §4 用語集を Edit |
+| 4.5. BC 境界 | `.dml.yaml` を **Edit で `lang` 追加**。HTML §8 はビルダーが自動再生成 |
 | 4.6. 目的・背景・制約 | `.dml.yaml` を **Edit で `aggs[]` に `purpose`/`background`/`constraints` 追加** |
-| 5. RULE-ERR + 属性・イベントペイロード | `.dml.yaml` を **Edit で `scs[].rules`/`errs` + `aggs[].attrs`/`events[].params` を追加**。HTML §5 はビルダーが自動再生成 |
-| 6. 意思決定ログ | `.dml.yaml` を **Edit で `decisions[]` 追加**。HTML §8 はビルダーが自動再生成 |
+| 5. RULE-ERR + 属性・イベントペイロード | `.dml.yaml` を **Edit で `scs[].rules`/`errs` + `aggs[].attrs`/`events[].params` を追加**。HTML §9 はビルダーが自動再生成 |
+| 6. 意思決定ログ | `.dml.yaml` を **Edit で `decisions[]` 追加**。HTML §7 はビルダーが自動再生成 |
 | 7. 整合性チェック | HTML を **Edit で全セクション最終化**（実際の Edit は `.md`/`.dml.yaml` 側） |
 
 HTML は MD と並行して常に最新状態を保つ。`open` で起動した外部ブラウザは `<meta http-equiv="refresh">` で 3 秒ごとに自動リロードして反映される。
@@ -193,7 +193,7 @@ HTML は MD と並行して常に最新状態を保つ。`open` で起動した�
 
 | 言い方 | 解釈 | 反映先 |
 |---|---|---|
-| 「E3 を"招待送信済"に変えて」 | EVT のラベル変更 | DML の `evt` リネーム（scs/pols 全箇所）+ `flows[].steps[]` 参照は scs/pols 名なので影響なし。HTML §3 と §11 用語集はビルダーが自動再生成 |
+| 「E3 を"招待送信済"に変えて」 | EVT のラベル変更 | DML の `evt` リネーム（scs/pols 全箇所）+ `flows[].steps[]` 参照は scs/pols 名なので影響なし。HTML §3 と §4 用語集はビルダーが自動再生成 |
 | 「主催者BCに Admin を追加」 | レーンへの actor 追加 | 該当 scenario に `actor: Admin` + 用語集追加。HTML はビルダーが自動再生成 |
 | 「C2 と E2 の間に メール送信 を挟んで」 | CMD 挿入 | 該当 scenario に `cmd: SendMail` or 新 scenario 追加 + `flows[].steps[]` に新 step を挿入 |
 | 「E4 を消して」 | 削除 | DML から該当 `evt` 削除 + 該当 scenario の `flows[].steps[]` 参照を更新。下流に影響あれば `[?]` 警告 |
@@ -205,7 +205,7 @@ HTML は MD と並行して常に最新状態を保つ。`open` で起動した�
 
 1. ユーザー指示を **対象アイテム** (A1/C2/E3 や日本語ラベル) と **操作** (追加/削除/変更/移動/リネーム) に分解
 2. **テキストで確認**: 「`E3 = 参加申し込みが完了した` を `招待送信済` に変更し、DML の `evt: ParticipationApplied` を `evt: InvitationSent` にリネームします。OK?」
-3. ユーザー OK → `.dml.yaml`（DML）を先に `Edit` → `.md` の §11 用語集を `Edit` で一貫して更新
+3. ユーザー OK → `.dml.yaml`（DML）を先に `Edit` → `.md` の §4 用語集を `Edit` で一貫して更新
 4. HTML は触らない（ビルダーが自動再生成）
 5. 品質チェックサブエージェント (`quality-check-agent.md`) を起動（`.md` ＋ 兄弟 `.dml.yaml` を対象。HTML は対象外）
 6. **フェーズ完了相当の変更なら** チャット本文に構造化テーブル付き完了メッセージ。**細かい変更なら** テキスト確認のみ

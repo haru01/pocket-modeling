@@ -2,8 +2,9 @@
 """EventStorming MD + DML → HTML ビルダー
 
 DML（`.dml.yaml`）をモデル唯一の真実源とし、HTML §3（イベントフロー）と
-§5（集約カード）と意思決定ログを DML から自動生成する。`.md` は物語（§1/§2）と
-用語集（§10）・リードモデル（§6）・次アクション・オープンクエスチョンのみ保持する。
+§9（集約カード）と §7（意思決定ログ）を DML から自動生成する。`.md` は物語（§1/§2）と
+用語集（§4・前置き表）・次のアクション（§5）・オープンクエスチョン（§6）・
+コンテキスト候補（§8）・リードモデル（§10）・DML 参照（§11）を保持する。
 
 使い方:
     python3 scripts/eventstorming_build.py <md_path>              # 個別ビルド
@@ -26,7 +27,7 @@ from pathlib import Path
 
 try:
     # DML を構造化して読むためのオプション依存（validate_dml.py と同じ依存）。
-    # 不在時は §3/§5/意思決定ログは描画スキップ（§9 の生 DML 表示にフォールバック）。
+    # 不在時は §3/§9/§7 は描画スキップ（§11 の生 DML 表示にフォールバック）。
     import yaml
 except ImportError:  # pragma: no cover
     yaml = None  # type: ignore[assignment]
@@ -92,8 +93,8 @@ class MDSections:
     header: dict = field(default_factory=dict)
     story: str = ""
     scenarios: list[dict] = field(default_factory=list)
-    # `agg_cards` は parse_md の互換 shim として残置（旧 .md §5 を読む下流スキル用）。
-    # HTML §5 の描画は DML aggs[] を使うため、ビルダーはこのフィールドを参照しない。
+    # `agg_cards` は parse_md の互換 shim として残置（旧 .md §5 = 現 §9 を読む下流スキル用）。
+    # HTML §9（新順）の描画は DML aggs[] を使うため、ビルダーはこのフィールドを参照しない。
     bc_cards: list[dict] = field(default_factory=list)
     agg_cards: list[dict] = field(default_factory=list)
     qry_cards: list[dict] = field(default_factory=list)
@@ -264,7 +265,7 @@ def parse_bc_cards(text: str) -> list[dict]:
 
 
 def parse_agg_cards(text: str) -> list[dict]:
-    """互換 shim: 旧 `.md` §5（Zod ＋ 散文）を読む parse 関数。
+    """互換 shim: 旧 `.md` §5 = 現 §9（Zod ＋ 散文）を読む parse 関数。
 
     HTML 描画は `render_agg_cards_from_dml` を使うためビルダー本体は呼ばないが、
     `parse_md` の戻り値（MDSections.agg_cards）を import している下流スキル
@@ -517,8 +518,8 @@ def parse_glossary(text: str) -> dict:
 # ============================================================
 #
 # `.dml.yaml` を yaml.safe_load した dict（MDSections.dml_model）から、
-# HTML §3（イベントフロー）・§5（集約カード）・意思決定ログを組み立てる。
-# 旧来の手書き event-flow-svg DSL や `.md` §5 Zod ブロックは廃止。
+# HTML §3（イベントフロー）・§9（集約カード）・§7（意思決定ログ）を組み立てる。
+# 旧来の手書き event-flow-svg DSL や `.md` §5 (旧)= §9 (新) Zod ブロックは廃止。
 #
 # 共有公開関数:
 #   - build_glossary_index(glossary)      → {EN識別子: 日本語ラベル}（フロー描画用）
@@ -527,7 +528,7 @@ def parse_glossary(text: str) -> dict:
 #   - aggregates_from_dml(model)          → 集約情報（下流スキル to-issues も利用）
 #
 # 描画関数:
-#   - render_agg_cards_from_dml(...)      → HTML §5 集約カード
+#   - render_agg_cards_from_dml(...)      → HTML §9 集約カード
 #   - render_decisions(...)               → HTML 意思決定ログ
 
 
@@ -596,7 +597,7 @@ def _policy_steps_to_notes(
     意図的に**出力しない**（フロー DSL の伝統的な見せ方 `$Policy > !cmd > [evt]` で
     cmd 付箋は 1 枚のみ、というのと整合）。
     側壁: 副作用専用 POLICY が cmd を持つ稀少ケースでは cmd 付箋が省略されるが、
-    pol.evt が立つことで結果は可視化される（cmd の同定は §9 生 DML を参照）。
+    pol.evt が立つことで結果は可視化される（cmd の同定は §11 生 DML を参照）。
     bulk: true の場合 evt 付箋を fanout 化（×N スタック）。
     trgs（join）の表示は呼び出し側で前レーン `joins_into_next=True` として処理する。
     """
@@ -785,23 +786,24 @@ def render_progress(status: str) -> str:
     ]
     done_count = 0
     # 順序は具体度の高いものから（"フェーズ4.6" は "フェーズ4" にもマッチするため先行評価）
-    if re.search(r"フェーズ7.*完了", status):
+    # 「フェーズ」と数字の間は半角/全角の空白を許容する（実運用で "フェーズ 4 完了" 表記が多いため）
+    if re.search(r"フェーズ\s*7.*完了", status):
         done_count = 9
-    elif re.search(r"フェーズ6", status):
+    elif re.search(r"フェーズ\s*6", status):
         done_count = 8
-    elif re.search(r"フェーズ5", status):
+    elif re.search(r"フェーズ\s*5", status):
         done_count = 7
-    elif re.search(r"フェーズ4\.6", status):
+    elif re.search(r"フェーズ\s*4\.6", status):
         done_count = 6
-    elif re.search(r"フェーズ4\.5", status):
+    elif re.search(r"フェーズ\s*4\.5", status):
         done_count = 5
-    elif re.search(r"フェーズ4", status):
+    elif re.search(r"フェーズ\s*4", status):
         done_count = 4
-    elif re.search(r"フェーズ3", status):
+    elif re.search(r"フェーズ\s*3", status):
         done_count = 3
-    elif re.search(r"フェーズ2", status):
+    elif re.search(r"フェーズ\s*2", status):
         done_count = 2
-    elif re.search(r"フェーズ1", status):
+    elif re.search(r"フェーズ\s*1", status):
         done_count = 1
 
     last_idx = len(phases) - 1
@@ -1049,11 +1051,12 @@ def render_context_map(cards: list[dict]) -> str:
         y = start_y + i * gap_y
         x = cx - box_w // 2
         bc_y[c["slug"]] = y + box_h // 2
+        # BC 名は kind-neutral な Blue Gray で描画する（Command 色との混同を避ける）。
         boxes.append(
             f'<rect x="{x}" y="{y}" width="{box_w}" height="{box_h}" rx="6" '
-            f'fill="#90CAF9" stroke="#1565C0" stroke-width="2"/>'
+            f'fill="#CFD8DC" stroke="#37474F" stroke-width="2"/>'
             f'<text x="{cx}" y="{y + box_h // 2 + 5}" text-anchor="middle" '
-            f'font-size="14" font-weight="700" fill="#0D47A1">{esc(c["slug"])}</text>'
+            f'font-size="14" font-weight="700" fill="#263238">{esc(c["slug"])}</text>'
         )
 
     arrows = []
@@ -1450,9 +1453,11 @@ DML_VALUE_CLASS_BY_KEY = {
     "agg": "v-actor",
     "cmd": "v-cmd",
     "evt": "v-evt",
-    "trg": "v-evt",
+    # trg / trgs.evts は「POL が購読するトリガ参照」。発生したイベント (evt/emits) と
+    # 同じ橙にすると因果連鎖が読みづらいので Amber (v-trg) で区別する。
+    "trg": "v-trg",
     "emits": "v-evt",
-    "evts": "v-evt",        # v2: trgs の join イベント
+    "evts": "v-trg",        # v2: trgs の join イベント（trg と同等の購読側）
     "qry": "v-qry",
     "pol": "v-pol",
     "err": "v-err",
@@ -1623,7 +1628,7 @@ def build_body_html(
     scenarios_html = render_scenarios(sections.scenarios)
     glossary_index = build_glossary_index(sections.glossary)
 
-    # DML 解析成功時のみ §3（フロー）・§5（集約）・意思決定ログを生成。
+    # DML 解析成功時のみ §3（フロー）・§9（集約）・§7（意思決定ログ）を生成。
     # 失敗時はプレースホルダーで縮退し例外を出さない。
     decisions_html = ""
     if sections.dml_model is not None:
@@ -1636,11 +1641,11 @@ def build_body_html(
     else:
         flows_html = (
             '<div class="todo-placeholder">'
-            "DML 解析不可（PyYAML 不在 / 未記述）— §9 を参照"
+            "DML 解析不可（PyYAML 不在 / 未記述）— §11 を参照"
             "</div>"
         )
         agg_cards_html = (
-            '<div class="todo-placeholder">DML 解析不可 — §9 を参照</div>'
+            '<div class="todo-placeholder">DML 解析不可 — §11 を参照</div>'
         )
 
     context_map_html = render_context_map(sections.bc_cards)
@@ -1651,8 +1656,9 @@ def build_body_html(
     dml_html = render_dml(sections.dml, sections.dml_errors)
     glossary_html = render_glossary(sections.glossary)
 
+    # §7 意思決定ログ（次のアクションを §5 に昇格した新順序）。decisions[] が空なら見出しごと非表示
     decisions_block = (
-        f"\n  <h2>8. 意思決定ログ</h2>\n  {decisions_html}\n"
+        f"\n  <h2>7. 意思決定ログ</h2>\n  {decisions_html}\n"
         if decisions_html else ""
     )
 
@@ -1677,27 +1683,27 @@ def build_body_html(
   <h2>3. Event Walkthrough</h2>
   {flows_html}
 
-  <h2>4. コンテキスト候補</h2>
+  <h2>4. 用語集</h2>
+  {glossary_html}
+
+  <h2>5. 次のアクション</h2>
+  {actions_html}
+
+  <h2>6. オープンクエスチョン</h2>
+  {questions_html}
+{decisions_block}
+  <h2>8. コンテキスト候補</h2>
   {context_map_html}
   {bc_cards_html}
 
-  <h2>5. 集約候補</h2>
+  <h2>9. 集約候補</h2>
   {agg_cards_html}
 
-  <h2>6. リードモデル候補</h2>
+  <h2>10. リードモデル候補</h2>
   {qry_cards_html}
 
-  <h2>7. オープンクエスチョン</h2>
-  {questions_html}
-{decisions_block}
-  <h2>9. 次のアクション</h2>
-  {actions_html}
-
-  <h2>10. DML</h2>
+  <h2>11. DML</h2>
   {dml_html}
-
-  <h2>11. 用語集</h2>
-  {glossary_html}
 """.strip()
 
 
@@ -1709,7 +1715,7 @@ def build_body_html(
 def _load_dml_model(dml_text: str) -> dict | None:
     """DML テキストを yaml.safe_load する。失敗・PyYAML 不在は None。
 
-    返り値 None は build_body_html の縮退フラグ（§3/§5/意思決定ログをスキップ）。
+    返り値 None は build_body_html の縮退フラグ（§3/§9/§7 をスキップ）。
     全行コメントのみ（=None）/ 空文字 / dict 以外はすべて None として扱う。
     """
     if yaml is None or not dml_text.strip():
@@ -1750,14 +1756,14 @@ def build(
     md_text = md_path.read_text(encoding="utf-8")
     sections = parse_md(md_text)
     # DML はサイドカー `<session>.dml.yaml`（純 YAML）を優先。
-    # 無ければ parse_md が §9 の埋め込み ```dml フェンスから抽出した値にフォールバック。
+    # 無ければ parse_md が §11 の埋め込み ```dml フェンスから抽出した値にフォールバック。
     dml_path = md_path.with_name(md_path.stem + ".dml.yaml")
     if dml_path.exists():
         sections.dml = dml_path.read_text(encoding="utf-8").strip()
-    # JSON Schema 検証（警告のみ・non-blocking）。違反は §9 バナーと stderr に出すが
+    # JSON Schema 検証（警告のみ・non-blocking）。違反は §11 バナーと stderr に出すが
     # ビルドは止めない（編集途中の不完全 DML でも HTML プレビューを保つ）。
     sections.dml_errors = _validate_dml_warn(sections.dml, dml_path)
-    # DML を構造化して読み込む（HTML §3/§5/意思決定ログの起点）。
+    # DML を構造化して読み込む（HTML §3/§9/§7 の起点）。
     # 失敗や PyYAML 不在は None に。build_body_html が縮退して例外を出さない。
     sections.dml_model = _load_dml_model(sections.dml)
     html = render_html(sections)

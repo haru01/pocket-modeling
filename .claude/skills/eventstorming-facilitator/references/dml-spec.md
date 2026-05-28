@@ -10,7 +10,7 @@ DDD モデリングのための情報圧縮言語。**構文 validity（形が�
 
 ## 0. 記法の原則
 
-- **YAML 直書き・`.md` と兄弟ファイル**: `docs/eventstorming/<session>.dml.yaml` に純 YAML（フェンス不要）。`.md` の §10 はこの `.dml.yaml` へのリンク参照のみ。ビルダーは `.md` + 兄弟 `.dml.yaml` から HTML を生成する
+- **YAML 直書き・`.md` と兄弟ファイル**: `docs/eventstorming/<session>.dml.yaml` に純 YAML（フェンス不要）。`.md` の §11 はこの `.dml.yaml` へのリンク参照のみ。ビルダーは `.md` + 兄弟 `.dml.yaml` から HTML を生成する
 - **トップレベルは 4 リスト + 任意 3 リスト**: `ctxs` / `aggs` / `scs` / `pols` 必須、`domains` / `flows` / `decisions` 任意。コメントによるセクション区切りは使わない（リスト構造で自然に分離される）
 - **識別子は英語 PascalCase**（`cmd` / `evt` / `agg` / `trg` / `qry` の値、`aggs[].name` 等）。`()` や `<<>>` は付けない
 - **`scs[].name` のみ日本語**で「アクター＋行為」を書く（例: `主催者がコミュニティを作成する`）
@@ -142,8 +142,8 @@ v2 までは `ctxs[].aggs[]` 内に集約宣言を持っていたが、**v3 で 
 | `constraints[]` | string list | 業務／法令／プラットフォーム由来の制約（任意・複数可） |
 | `states` | upper_snake list | 状態名（DRAFT / PUBLISHED 等） |
 | `transitions[]` | `{from,to,via,when?}` | 状態遷移。`via` は scs[].cmd と突合 |
-| `attrs[]` | `{name,type,required?,note?}` | AGG ペイロード属性。HTML §5 で属性表として描画 |
-| `events[]` | `{name, params[]?}` | この AGG が emit する EVT 宣言。`params[]` は `attrs[]` と同じ attribute 構造。HTML §5 でイベントペイロード表として描画 |
+| `attrs[]` | `{name,type,required?,note?}` | AGG ペイロード属性。HTML §9 で属性表として描画 |
+| `events[]` | `{name, params[]?}` | この AGG が emit する EVT 宣言。`params[]` は `attrs[]` と同じ attribute 構造。HTML §9 でイベントペイロード表として描画 |
 
 ### 意味整合（quality-check が担保）
 
@@ -168,7 +168,8 @@ DML（YAML）の値は HTML レンダリング時に**役割ベースの意味�
 
 | フィールド | 意味 | 付箋色 |
 |------|------|--------|
-| `evt` / `trg` / `emits` / `brs[].evt` / `aggs[].events[].name` | ドメインイベント（起きた事実・過去形） | 橙 |
+| `evt` / `emits` / `brs[].evt` / `aggs[].events[].name` | ドメインイベント（発生した事実・過去形） | 橙 |
+| `trg` / `trgs.evts` | POL が購読するトリガ参照（発生 evt と区別） | Amber |
 | `cmd` / `via` | コマンド（操作・意図） | 青 |
 | `agg` / `actor` / `aggs[].name` | 集約 / アクター | 黄 |
 | `qry` | Read Model（CMD 発行前に参照するビュー） | 緑 |
@@ -197,7 +198,7 @@ scs:
         note: "[?] Event 集約と Participation 集約どちらが定員を持つ？"
 ```
 
-**`[?]` で残した未確定判断は、選択肢が見えてきた段階で `decisions[]` に昇格させる**。`decisions[]` に書くことで「採用したもの / 不採用にしたもの / それぞれの理由」が構造化され、HTML §8 で比較カードとしてレビューできる（§9 参照）。
+**`[?]` で残した未確定判断は、選択肢が見えてきた段階で `decisions[]` に昇格させる**。`decisions[]` に書くことで「採用したもの / 不採用にしたもの / それぞれの理由」が構造化され、HTML §7 で比較カードとしてレビューできる（§9 参照）。
 
 ---
 
@@ -208,7 +209,7 @@ scs:
 | **JSON Schema**（機械・決定論的） | 構文 validity。トップレベル 4 リスト＋任意 `domains`/`flows`/`decisions`、各要素の必須フィールド、型、enum、識別子の PascalCase・lowercase-with-hyphen・UPPER_SNAKE（状態名）・camelCase（属性名）、`evt`↔`brs` 排他、`trg`↔`trgs` 排他、`bulk:true`→`qry` 必須、未知フィールド禁止 | `cmd` が PascalCase か、`sub.type` が enum 値か、`aggs[].states` が UPPER_SNAKE か |
 | **causal-check / quality-check**（LLM・文脈依存） | 意味 validity。参照の実在・因果整合・モデル品質 | `trg` が実在 EVT を指すか、`pol` が実在 POLICY か、up↔dn の双方向一致、`scs[].cmd` ↔ `aggs[].transitions[].via` 整合、`scs[].evt` ↔ `aggs[].events[].name` 整合、`flows[].steps[]` が実在 scs/pols を指すか、`decisions[].affects[]` が実在要素を指すか、分岐の MECE 性、`evt` の過去形・`cmd` の命令形 |
 
-**スキーマ通過は必要条件であって十分条件ではない。** ビルダー（`eventstorming_build.py`）は `.dml.yaml` 読込時に schema 検証し、HTML §10 にバナー（✅ / ⚠ 違反一覧）を描画する。**検証は非ブロッキング**で、違反があっても HTML は生成される。全行コメントのみ（YAML→`None`）や空ファイルは「未記述」として検証対象外（進行中セッション許容）。
+**スキーマ通過は必要条件であって十分条件ではない。** ビルダー（`eventstorming_build.py`）は `.dml.yaml` 読込時に schema 検証し、HTML §11 にバナー（✅ / ⚠ 違反一覧）を描画する。**検証は非ブロッキング**で、違反があっても HTML は生成される。全行コメントのみ（YAML→`None`）や空ファイルは「未記述」として検証対象外（進行中セッション許容）。
 
 ---
 

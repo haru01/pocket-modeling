@@ -61,7 +61,7 @@
 
     .scenario-card {
       padding: 12px 16px; background: #FFFFFF;
-      border: 1px solid #FFD54F; border-radius: 4px;
+      border: 1px solid #FFAB40; border-radius: 4px;
       margin: 8px 0; font-size: 15px;
     }
     .scenario-card h3 { margin: 0 0 6px 0; color: #E65100; }
@@ -363,7 +363,7 @@
       text-align: center;
     }
 
-    /* === DML JSON Schema 検証バナー（§9） === */
+    /* === DML JSON Schema 検証バナー（§11） === */
     .dml-banner {
       padding: 8px 12px; border-radius: 6px; margin: 0 0 10px;
       font-size: 13px; font-weight: 600;
@@ -406,12 +406,15 @@
       color: #455A64;
     }
     .constraints-section > ul { margin: 4px 0; padding-left: 22px; }
-    .purpose-section { background: #FFF3E0; border-left-color: #EF6C00; }
-    .purpose-section > strong { color: #EF6C00; }
+    /* purpose/background/constraints は AGG/BC の意図メタ情報。
+       それぞれ Event / Command / Policy と同じ border 色を使い、
+       「目的=橙系・背景=青系・制約=紫系」の意味付けを note 色と完全に揃える。 */
+    .purpose-section { background: #FFF3E0; border-left-color: #E65100; }
+    .purpose-section > strong { color: #E65100; }
     .background-section { background: #E3F2FD; border-left-color: #1565C0; }
     .background-section > strong { color: #1565C0; }
-    .constraints-section { background: #F3E5F5; border-left-color: #6A1B9A; }
-    .constraints-section > strong { color: #6A1B9A; }
+    .constraints-section { background: #F3E5F5; border-left-color: #7B1FA2; }
+    .constraints-section > strong { color: #7B1FA2; }
 
     .err-code {
       background: #FFCDD2;
@@ -434,14 +437,18 @@
     pre.code .kw { color: #80CBC4; font-weight: 700; }
     pre.code .id { color: #FFCC80; }
     pre.code .cm { color: #78909C; font-style: italic; }
-    /* === DML (YAML) 役割ベース意味色 === */
+    /* === DML (YAML) 役割ベース意味色 ===
+       付箋 (note) の BG 色とまったく同じ hex を使い、ライト面・ダーク面で
+       「Actor=黄、Command=青、Event=橙、Policy=紫、QRY=緑」の対応を完全一致させる。
+       いずれもダーク背景 #263238 上で十分なコントラスト（>4.5:1 相当）が取れる Material 200 系。 */
     pre.code .yk { color: #B0BEC5; }                 /* YAML キー: 淡い灰緑 */
     pre.code .v-str { color: #ECEFF1; }              /* 既定の値 */
-    pre.code .v-actor { color: #FFE082; }            /* 黄: actor / agg */
-    pre.code .v-cmd { color: #90CAF9; }              /* 青: command */
-    pre.code .v-evt { color: #FFAB91; }              /* 橙: event / trigger / emits */
-    pre.code .v-qry { color: #A5D6A7; }              /* 緑: read model */
-    pre.code .v-pol { color: #CE93D8; }              /* 紫: policy */
+    pre.code .v-actor { color: #FFF59D; }            /* 黄: actor / agg（note.actor BG と一致） */
+    pre.code .v-cmd { color: #90CAF9; }              /* 青: command（note.command BG と一致） */
+    pre.code .v-evt { color: #FFAB40; }              /* 橙: event / emits（発生したイベント。note.event BG と一致） */
+    pre.code .v-trg { color: #FFD740; }              /* Amber: trg / trgs.evts（POL が購読するトリガ参照。発生 evt と区別） */
+    pre.code .v-qry { color: #A5D6A7; }              /* 緑: read model（note.readmodel BG と一致） */
+    pre.code .v-pol { color: #CE93D8; }              /* 紫: policy（note.policy BG と一致） */
     pre.code .v-err { color: #EF9A9A; }              /* 赤: error type */
     pre.code .v-meta { color: #80CBC4; font-style: italic; }  /* 青緑: v2 メタ（type/vision/subdomain 等） */
 
@@ -458,8 +465,10 @@
     table.glossary td {
       padding: 6px 12px; border-top: 1px solid #ECEFF1;
     }
+    /* code-cell は識別子セル。Command の青と混同しないよう kind-neutral な
+       Blue Gray 900 にする（用語集の各カテゴリ行が全て Command 色になる drift を解消）。 */
     table.glossary td.code-cell {
-      font-family: 'SF Mono', Menlo, monospace; color: #1565C0;
+      font-family: 'SF Mono', Menlo, monospace; color: #37474F;
     }
     .glossary-section { margin: 12px 0; }
     .glossary-section h3 { color: #455A64; }
@@ -478,7 +487,7 @@
       border: 1px solid #CFD8DC; border-radius: 4px;
       margin: 8px 0; font-size: 14px;
     }
-    .bc-card h3 { margin: 0 0 6px 0; color: #1565C0; font-family: 'SF Mono', Menlo, monospace; }
+    .bc-card h3 { margin: 0 0 6px 0; color: #37474F; font-family: 'SF Mono', Menlo, monospace; }
     .bc-card .dep { font-size: 13px; color: #607D8B; }
 
     /* === 集約 属性 / イベントペイロード テーブル（v4 DML 駆動） === */
@@ -493,7 +502,7 @@
     }
     table.attr-table td { padding: 5px 10px; border-top: 1px solid #ECEFF1; }
     table.attr-table td.code-cell {
-      font-family: 'SF Mono', Menlo, monospace; color: #1565C0;
+      font-family: 'SF Mono', Menlo, monospace; color: #37474F;
     }
     table.attr-table.payload-table th { background: #FFF3E0; color: #E65100; }
     .agg-events { margin: 10px 0 4px 0; }
@@ -507,12 +516,14 @@
     .agg-subsection .why { color: #607D8B; font-size: 12px; font-style: italic; }
 
     /* === 意思決定ログ === */
+    /* decision-card は Policy と同じ紫系（note.policy border #7B1FA2）に統一。
+       「決定 = 制約 = ポリシー」の意味的近さを視覚でも合わせる。 */
     .decision-card {
       padding: 12px 16px; background: #FFFFFF;
-      border: 1px solid #CFD8DC; border-left: 4px solid #6A1B9A;
+      border: 1px solid #CFD8DC; border-left: 4px solid #7B1FA2;
       border-radius: 0 4px 4px 0; margin: 8px 0; font-size: 14px;
     }
-    .decision-card h3 { margin: 0 0 6px 0; color: #6A1B9A; font-size: 15px; }
+    .decision-card h3 { margin: 0 0 6px 0; color: #7B1FA2; font-size: 15px; }
     .decision-card .dep { font-size: 13px; color: #607D8B; margin-bottom: 8px; }
     .decision-options { display: flex; flex-direction: column; gap: 6px; }
     .opt { padding: 8px 12px; border-radius: 0 4px 4px 0; border-left: 3px solid transparent; }

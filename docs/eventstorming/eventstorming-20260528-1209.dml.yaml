@@ -1,0 +1,739 @@
+# yaml-language-server: $schema=../../.claude/skills/eventstorming-facilitator/references/dml.schema.yaml
+# ============================================================
+# DML: タップカメラ 下取交換ドメイン
+# Session: eventstorming-20260528-1209
+# Phase: 6 完了（lang 補強・aggs 詳細・rules/errs/attrs/events・decisions まで）
+#
+# - フェーズ 4.5: ctxs[].lang を BC ごとに意味の揺れを明示
+# - フェーズ 4.6: aggs[] に 5 AGG の purpose/background/constraints/states/transitions
+# - フェーズ 5: scs[].rules/errs、aggs[].attrs、aggs[].events[].params
+# - フェーズ 6: decisions[] に H1〜H7 を昇格（5 件採用＋理由付き不採用案）
+# ============================================================
+
+domains:
+  - name: trade-in-exchange
+    vision: "中古機材の下取りと新品購入を 1 注文で完結させ、買い替え体験を滑らかにする"
+    subs:
+      - name: trade-in-core
+        type: CORE_DOMAIN
+        vision: "下取り受付から査定確定までの差別化価値（10%UP・スピード査定）"
+      - name: catalog-and-sales
+        type: SUPPORTING_DOMAIN
+        vision: "新品/中古を併売する EC 一般機能"
+      - name: payment
+        type: GENERIC_SUBDOMAIN
+        vision: "決済・与信。外部 PSP に委譲する汎用領域"
+      - name: fulfillment
+        type: GENERIC_SUBDOMAIN
+        vision: "在庫引当・出荷・配送追跡"
+
+# ----------------------------------------------------------------
+# Bounded Contexts（フェーズ 4.5: lang 補強）
+# ----------------------------------------------------------------
+ctxs:
+  - name: store-front
+    type: FEATURE
+    sub: catalog-and-sales
+    vision: "会員向けの新品/中古販売 EC。注文起点で下取りを束ねる"
+    lang:
+      Order: "新品/中古購入と下取りを 1 単位に束ねる注文。下取り進行と支払い進行を統合して追跡する親集約"
+      Quote: "オンライン即時査定で算出される概算買取見積。注文時に確定額の根拠として参照される"
+      Member: "EC 会員。同時に買い手かつ売り手"
+      Item: "新品または中古の商品ライン項目（カタログ商品の参照）"
+    up: []
+    dn:
+      - { ctx: trade-in,    rel: Customer-Supplier, note: "注文に下取契約を要求" }
+      - { ctx: payment,     rel: Customer-Supplier, note: "決済処理を依頼" }
+      - { ctx: fulfillment, rel: Customer-Supplier, note: "出荷指示を依頼" }
+    aggs: [Quote, Order]
+
+  - name: trade-in
+    type: FEATURE
+    sub: trade-in-core
+    vision: "旧機種の受領から正式査定額確定までを所有"
+    lang:
+      TradeIn: "1 件の下取契約。旧機種 1 点と紐づき、linked→shipped→received→inspected→appraised→approved/rejected→settled までライフサイクル全体を保有"
+      Order: "store-front の Order を参照する識別子（こちらでは状態を変更しない）"
+      Appraisal: "TradeIn に内包される正式査定額の確定情報（独立集約ではなく Value Object として保持）"
+      EstimateAmount: "Quote から複製される概算額。受領後に Final と比較される基準値"
+      FinalAmount: "検品後に査定スタッフが確定する正式買取額"
+    up:
+      - { ctx: store-front, rel: Customer-Supplier }
+    dn:
+      - { ctx: payment, rel: Customer-Supplier, note: "成立/失敗を決済に通知" }
+      - { ctx: fulfillment, rel: Customer-Supplier, note: "返送を依頼するケースあり" }
+    aggs: [TradeIn]
+
+  - name: payment
+    sub: payment
+    vision: "差額与信から残金請求・返金までの決済責務"
+    lang:
+      Authorization: "注文の差額（または通常購入切替後の全額）を支払い保証する与信ホールド"
+      Order: "store-front の Order を参照する識別子。amount の根拠"
+      HoldAmount: "現時点でカード会社に確保している与信金額"
+      CapturedAmount: "実際に請求した金額"
+    up:
+      - { ctx: store-front, rel: Customer-Supplier }
+      - { ctx: trade-in, rel: Customer-Supplier }
+    dn: []
+    aggs: [Authorization]
+
+  - name: fulfillment
+    sub: fulfillment
+    vision: "新品の出荷指示・配送追跡、および旧機種の返送実行"
+    lang:
+      Shipment: "1 商品の出荷単位。outbound（新品の客への発送）と return（旧機種の客への返送）の両方を扱う"
+      Order: "store-front の Order を参照する識別子。出荷品目の根拠"
+      CarrierTrackingId: "外部運送会社が払い出す追跡 ID（一意）"
+    up:
+      - { ctx: store-front, rel: Customer-Supplier }
+      - { ctx: trade-in, rel: Customer-Supplier }
+    dn: []
+    aggs: [Shipment]
+
+# ----------------------------------------------------------------
+# Aggregates（フェーズ 4.6 + 5）
+# purpose は 30 字以上、constraints は業務/法令の不変条件、
+# states は upperSnake、transitions は from→to via cmd、
+# attrs は camelCase、events は emit する EVT 宣言＋params
+# ----------------------------------------------------------------
+aggs:
+  # === store-front BC ===
+  - name: Quote
+    ctx: store-front
+    purpose: "オンライン即時査定の計算結果を、注文確定時の下取見積根拠として再現可能な形で保持する"
+    background: "EC・楽天店舗・店頭で異なる査定パスが乱立していたため、計算根拠と有効期限を Quote として一元化し追跡可能にする"
+    constraints:
+      - "calculation must use the officially published pricing table at calculatedAt timestamp"
+      - "10% bonus is applied only when consumed by a purchase order (not for standalone quotes)"
+      - "Quote validity is 30 days from calculatedAt (industry convention) [?] confirm with operations"
+    states: [CALCULATED, CONSUMED, EXPIRED]
+    transitions:
+      - { from: CALCULATED, to: CONSUMED, via: PlaceOrder, when: "下取付き注文確定時に Quote を消費" }
+      - { from: CALCULATED, to: EXPIRED,  via: ExpireQuote, when: "calculatedAt + 30 日経過（H8 関連）" }
+    attrs:
+      - { name: quoteId,         type: QuoteId,      required: true }
+      - { name: memberId,        type: MemberId,     required: true }
+      - { name: itemModel,       type: string,       required: true, note: "メーカー型番（カメラ/レンズ）" }
+      - { name: conditionInputs, type: object,       required: true, note: "外観/動作/付属品の自己申告" }
+      - { name: estimateAmount,  type: Money,        required: true }
+      - { name: bonusAmount,     type: Money,        required: false, note: "10%UP 額（注文消費時のみ正値）" }
+      - { name: calculatedAt,    type: timestamp,    required: true }
+      - { name: expiresAt,       type: timestamp,    required: true }
+    events:
+      - name: EstimateCalculated
+        params:
+          - { name: quoteId,        type: QuoteId,   required: true }
+          - { name: memberId,       type: MemberId,  required: true }
+          - { name: itemModel,      type: string,    required: true }
+          - { name: estimateAmount, type: Money,     required: true }
+          - { name: calculatedAt,   type: timestamp, required: true }
+
+  - name: Order
+    ctx: store-front
+    purpose: "新品/中古購入と下取りの取引を 1 単位で束ね、決済・出荷・下取の状態を統合追跡する親集約"
+    background: "下取交換では『注文の進行』と『下取の進行』が独立した時間軸で動くため、両方を統合する親が必要"
+    constraints:
+      - "an order has at most one trade-in attachment (multi-trade-in is out of scope)"
+      - "trade-in-attached orders must reference a non-expired Quote"
+      - "order must contain at least one purchase line item"
+    states: [PLACED, AWAITING_TRADE_IN, SETTLED, CONVERTED_TO_FULL, COMPLETED, CANCELLED]
+    transitions:
+      - { from: PLACED,             to: AWAITING_TRADE_IN, via: ConfirmAuthorization, when: "AuthorizeOnOrderPlaced 完了。下取無し注文は直接 SETTLED 相当扱い [?]" }
+      - { from: AWAITING_TRADE_IN,  to: SETTLED,           via: AcknowledgeTradeInSettled, when: "SettleOnAppraisalApproved の波及" }
+      - { from: AWAITING_TRADE_IN,  to: CONVERTED_TO_FULL, via: AcknowledgeConversion, when: "ConvertOnAppraisalRejected/Timeout の波及" }
+      - { from: SETTLED,            to: COMPLETED,         via: AcknowledgeDelivery, when: "NewItemDelivered の波及" }
+      - { from: CONVERTED_TO_FULL,  to: COMPLETED,         via: AcknowledgeDelivery, when: "NewItemDelivered の波及" }
+    attrs:
+      - { name: orderId,         type: OrderId,    required: true }
+      - { name: memberId,        type: MemberId,   required: true }
+      - { name: items,           type: "LineItem[]", required: true, note: "購入する商品のリスト" }
+      - { name: tradeInQuoteId,  type: QuoteId,    required: false, note: "下取付き注文のみ" }
+      - { name: totalAmount,     type: Money,      required: true }
+      - { name: status,          type: string,     required: true, note: "states[] のいずれか" }
+      - { name: placedAt,        type: timestamp,  required: true }
+      - { name: completedAt,     type: timestamp,  required: false }
+    events:
+      - name: OrderPlaced
+        params:
+          - { name: orderId,        type: OrderId,   required: true }
+          - { name: memberId,       type: MemberId,  required: true }
+          - { name: totalAmount,    type: Money,     required: true }
+          - { name: tradeInQuoteId, type: QuoteId,   required: false }
+          - { name: placedAt,       type: timestamp, required: true }
+
+  # === trade-in BC ===
+  - name: TradeIn
+    ctx: trade-in
+    purpose: "1 件の旧機種の受領から査定確定・売買成立までのライフサイクル全体を所有し、状態遷移を統制する"
+    background: "査定スタッフのオフライン作業（検品・撮影・動作確認）と System の自動処理が混在するため、状態を明示的に追跡する必要がある"
+    constraints:
+      - "exactly one used item per TradeIn"
+      - "appraisal is two-staged: estimateAmount (from Quote) then finalAmount (post-inspection)"
+      - "cancellation before shipment does not require return; after receipt requires return shipment"
+      - "古物営業法に基づき本人確認・取引日時・品目を取引記録として保持（法定保管期間あり）"
+    states: [LINKED, SHIPPED, RECEIVED, INSPECTED, SUSPENDED, APPRAISED, APPROVED, REJECTED, SETTLED, CANCELLED, TIMED_OUT, RETURNED]
+    transitions:
+      - { from: LINKED,    to: SHIPPED,    via: ShipTradeInItem,         when: "会員が伝票登録（H1 タイマー開始）" }
+      - { from: LINKED,    to: CANCELLED,  via: CancelTradeIn,           when: "発送前の会員キャンセル（H6: 単純取消）" }
+      - { from: SHIPPED,   to: RECEIVED,   via: ReceiveTradeInItem,      when: "物流センター入荷" }
+      - { from: SHIPPED,   to: TIMED_OUT,  via: DetectTradeInTimeout,    when: "H1: 10 日経過しても未着" }
+      - { from: RECEIVED,  to: INSPECTED,  via: CompleteInspection,      when: "通常品（conditionGrade A/B/C）として動作確認・外観検査完了" }
+      - { from: RECEIVED,  to: SUSPENDED,  via: CompleteInspection,      when: "偽物・盗品疑い・重大欠陥として保留（古物営業法 15 条の確認義務）" }
+      - { from: INSPECTED, to: APPRAISED,  via: DecideFinalAppraisal,    when: "査定スタッフが finalAmount を確定" }
+      - { from: APPRAISED, to: APPROVED,   via: ApproveAppraisal,        when: "会員が承認" }
+      - { from: APPRAISED, to: REJECTED,   via: RejectAppraisal,         when: "会員が拒否" }
+      - { from: APPROVED,  to: SETTLED,    via: SettleTradeIn,           when: "POL SettleOnAppraisalApproved" }
+      - { from: REJECTED,  to: RETURNED,   via: ReturnTradeInItem,       when: "POL ReturnOnAppraisalRejected" }
+      - { from: RECEIVED,  to: RETURNED,   via: ReturnTradeInItem,       when: "H6: 受領後キャンセル時の返送（CancelTradeIn 経由）" }
+      - { from: INSPECTED, to: RETURNED,   via: ReturnTradeInItem,       when: "H6: 検品後キャンセル時の返送" }
+      - { from: APPRAISED, to: RETURNED,   via: ReturnTradeInItem,       when: "H6: 査定後キャンセル時の返送" }
+    attrs:
+      - { name: tradeInId,       type: TradeInId,   required: true }
+      - { name: orderId,         type: OrderId,     required: true, note: "親注文の参照" }
+      - { name: quoteId,         type: QuoteId,     required: true }
+      - { name: itemModel,       type: string,      required: true }
+      - { name: estimateAmount,  type: Money,       required: true }
+      - { name: finalAmount,     type: Money,       required: false, note: "APPRAISED 以降に確定" }
+      - { name: status,          type: string,      required: true }
+      - { name: linkedAt,        type: timestamp,   required: true }
+      - { name: receivedAt,      type: timestamp,   required: false }
+      - { name: decidedAt,       type: timestamp,   required: false }
+      - { name: settledAt,       type: timestamp,   required: false }
+      - { name: timedOutAt,      type: timestamp,   required: false }
+      - { name: returnedAt,      type: timestamp,   required: false }
+      - { name: identityVerification, type: object, required: true, note: "古物営業法対応：本人確認情報" }
+    events:
+      - name: TradeInItemShipped
+        params:
+          - { name: tradeInId,         type: TradeInId, required: true }
+          - { name: carrierTrackingId, type: string,    required: true }
+          - { name: shippedAt,         type: timestamp, required: true }
+      - name: TradeInItemReceived
+        params:
+          - { name: tradeInId,  type: TradeInId, required: true }
+          - { name: receivedAt, type: timestamp, required: true }
+          - { name: receiverId, type: AppraiserId, required: true }
+      - name: InspectionCompleted
+        params:
+          - { name: tradeInId,        type: TradeInId, required: true }
+          - { name: conditionGrade,   type: string,    required: true, note: "A/B/C ランク（通常品）" }
+          - { name: inspectionNotes,  type: string,    required: false }
+      - name: SuspiciousItemDetected
+        note: "古物営業法 15 条の確認義務に基づく業務分岐イベント。CompleteInspection の代替アウトカム"
+        params:
+          - { name: tradeInId,       type: TradeInId, required: true }
+          - { name: suspicionReason, type: string,    required: true, note: "counterfeit / stolen-suspect / severe-defect 等" }
+          - { name: detectedAt,      type: timestamp, required: true }
+          - { name: detectorId,      type: AppraiserId, required: true }
+      - name: FinalAppraisalDecided
+        note: "通常パス（|delta| <= 20%）。NotifyOnAppraisalDecided が直接 trg として拾い会員通知へ"
+        params:
+          - { name: tradeInId,    type: TradeInId,   required: true }
+          - { name: finalAmount,  type: Money,       required: true }
+          - { name: appraiserId,  type: AppraiserId, required: true }
+          - { name: decidedAt,    type: timestamp,   required: true }
+      - name: FinalAppraisalDecidedWithSignificantReduction
+        note: "大幅減額パス（|delta| > 20%）。HoldNotificationOnSignificantReduction を trg し、会員通知を保留して業務監督者承認を待つ"
+        params:
+          - { name: tradeInId,     type: TradeInId,   required: true }
+          - { name: finalAmount,   type: Money,       required: true }
+          - { name: estimateAmount, type: Money,      required: true }
+          - { name: reductionRatio, type: number,     required: true, note: "(estimateAmount - finalAmount) / estimateAmount" }
+          - { name: appraiserId,   type: AppraiserId, required: true }
+          - { name: decidedAt,     type: timestamp,   required: true }
+      - name: SupervisorApprovalRequested
+        note: "HoldNotificationOnSignificantReduction が emit。会員通知を保留しオペ監督者にエスカレーション"
+        params:
+          - { name: tradeInId,    type: TradeInId,   required: true }
+          - { name: requestedAt,  type: timestamp,   required: true }
+      - name: AppraisalApproved
+        params:
+          - { name: tradeInId,  type: TradeInId, required: true }
+          - { name: memberId,   type: MemberId,  required: true }
+          - { name: approvedAt, type: timestamp, required: true }
+      - name: AppraisalRejected
+        params:
+          - { name: tradeInId,   type: TradeInId, required: true }
+          - { name: memberId,    type: MemberId,  required: true }
+          - { name: rejectedAt,  type: timestamp, required: true }
+          - { name: reason,      type: string,    required: false }
+      - name: TradeInCancelled
+        params:
+          - { name: tradeInId,    type: TradeInId, required: true }
+          - { name: cancelledBy,  type: MemberId,  required: true }
+          - { name: cancelledAt,  type: timestamp, required: true }
+          - { name: stateAtCancel, type: string,   required: true, note: "H6: キャンセル時点の state を記録" }
+      - name: TradeInSettled
+        params:
+          - { name: tradeInId,   type: TradeInId, required: true }
+          - { name: finalAmount, type: Money,     required: true }
+          - { name: settledAt,   type: timestamp, required: true }
+      - name: TradeInTimedOut
+        params:
+          - { name: tradeInId,  type: TradeInId, required: true }
+          - { name: timedOutAt, type: timestamp, required: true }
+      - name: TradeInItemReturned
+        params:
+          - { name: tradeInId,        type: TradeInId,  required: true }
+          - { name: returnShipmentId, type: ShipmentId, required: true }
+          - { name: returnedAt,       type: timestamp,  required: true }
+      - name: AppraisalResultNotified
+        params:
+          - { name: tradeInId,   type: TradeInId, required: true }
+          - { name: memberId,    type: MemberId,  required: true }
+          - { name: finalAmount, type: Money,     required: true }
+          - { name: notifiedAt,  type: timestamp, required: true }
+
+  # === payment BC ===
+  - name: Authorization
+    ctx: payment
+    purpose: "注文の差額または全額に対する与信ホールドを確保し、状況変化に応じた解放・追加請求を管理する"
+    background: "下取付き注文では正式査定が確定するまで請求額が変動する。仮押さえを早期に行いつつ確定後に差額調整する責任を payment BC が持つ"
+    constraints:
+      - "initial hold amount = order.totalAmount - quote.estimateAmount (差額仮押さえ案・H2 採用)"
+      - "capture must occur within card network authorization expiry (typically 30 days)"
+      - "re-authorization is required when conversion to full purchase increases the hold amount"
+    states: [PENDING, AUTHORIZED, RE_AUTHORIZED, CAPTURED, RELEASED]
+    transitions:
+      - { from: PENDING,        to: AUTHORIZED,     via: AuthorizeDifferential, when: "POL AuthorizeOnOrderPlaced" }
+      - { from: AUTHORIZED,     to: RE_AUTHORIZED,  via: ConvertOrderToFullPurchase, when: "下取失敗で全額請求に切替（POL Convert*）" }
+      - { from: RE_AUTHORIZED,  to: CAPTURED,       via: ChargeRemainingAmount, when: "POL ChargeRemainingOnConverted" }
+      - { from: AUTHORIZED,     to: CAPTURED,       via: ChargeRemainingAmount, when: "ハッピーパス：成立後に出荷時請求" }
+      - { from: AUTHORIZED,     to: RELEASED,       via: ReleaseAuthorization, when: "全注文キャンセル時 [?] 例外フロー" }
+    attrs:
+      - { name: authorizationId, type: AuthorizationId, required: true }
+      - { name: orderId,         type: OrderId,         required: true }
+      - { name: holdAmount,      type: Money,           required: true }
+      - { name: capturedAmount,  type: Money,           required: false }
+      - { name: status,          type: string,          required: true }
+      - { name: paymentMethod,   type: string,          required: true, note: "card/bank-transfer 等" }
+      - { name: authorizedAt,    type: timestamp,       required: false }
+      - { name: capturedAt,      type: timestamp,       required: false }
+    events:
+      - name: DifferentialAuthorized
+        params:
+          - { name: authorizationId, type: AuthorizationId, required: true }
+          - { name: orderId,         type: OrderId,         required: true }
+          - { name: holdAmount,      type: Money,           required: true }
+          - { name: authorizedAt,    type: timestamp,       required: true }
+      - name: OrderConvertedToFullPurchase
+        params:
+          - { name: orderId,             type: OrderId, required: true }
+          - { name: originalHoldAmount,  type: Money,   required: true }
+          - { name: newHoldAmount,       type: Money,   required: true }
+          - { name: reason,              type: string,  required: true, note: "TIMED_OUT or REJECTED" }
+      - name: RemainingChargeSettled
+        params:
+          - { name: orderId,         type: OrderId, required: true }
+          - { name: authorizationId, type: AuthorizationId, required: true }
+          - { name: capturedAmount,  type: Money,   required: true }
+          - { name: capturedAt,      type: timestamp, required: true }
+
+  # === fulfillment BC ===
+  - name: Shipment
+    ctx: fulfillment
+    purpose: "新品の出荷指示から配送完了までのライフサイクル、および旧機種返送 Shipment を所有する"
+    background: "在庫引当・倉庫オペレーション・運送業者連携を 1 集約で統合する。outbound と return の 2 種を扱うため kind 属性で区別する"
+    constraints:
+      - "carrierTrackingId must be unique per shipment"
+      - "stock allocation is locked at INSTRUCTED and released only on cancellation/return"
+      - "return shipments are immutable once shipped (no rerouting)"
+    states: [INSTRUCTED, SHIPPED, DELIVERED, CANCELLED]
+    transitions:
+      - { from: INSTRUCTED, to: SHIPPED,   via: ShipNewItem,    when: "倉庫オペが出庫" }
+      - { from: SHIPPED,    to: DELIVERED, via: ConfirmDelivery, when: "運送会社の追跡 webhook 取り込み" }
+      - { from: INSTRUCTED, to: CANCELLED, via: CancelShipment, when: "注文キャンセル等の例外 [?]" }
+    attrs:
+      - { name: shipmentId,        type: ShipmentId, required: true }
+      - { name: orderId,           type: OrderId,    required: true }
+      - { name: kind,              type: string,     required: true, note: "outbound / return" }
+      - { name: itemRef,           type: string,     required: true, note: "新品の itemId or 返送の旧機種参照" }
+      - { name: carrierTrackingId, type: string,     required: false }
+      - { name: status,            type: string,     required: true }
+      - { name: instructedAt,      type: timestamp,  required: true }
+      - { name: shippedAt,         type: timestamp,  required: false }
+      - { name: deliveredAt,       type: timestamp,  required: false }
+    events:
+      - name: ShipmentInstructed
+        params:
+          - { name: shipmentId,  type: ShipmentId, required: true }
+          - { name: orderId,     type: OrderId,    required: true }
+          - { name: kind,        type: string,     required: true }
+          - { name: instructedAt, type: timestamp, required: true }
+      - name: NewItemShipped
+        params:
+          - { name: shipmentId,        type: ShipmentId, required: true }
+          - { name: carrierTrackingId, type: string,     required: true }
+          - { name: shippedAt,         type: timestamp,  required: true }
+      - name: NewItemDelivered
+        params:
+          - { name: shipmentId,  type: ShipmentId, required: true }
+          - { name: deliveredAt, type: timestamp,  required: true }
+
+# ----------------------------------------------------------------
+# Scenarios（フェーズ 5: rules / errs を追加）
+# ----------------------------------------------------------------
+scs:
+  # --- store-front BC ---
+  - name: 会員が概算査定を要求する
+    ctx: store-front
+    actor: Member
+    cmd: RequestQuote
+    evt: EstimateCalculated
+    agg: Quote
+    rules:
+      - { rule: "estimateAmount must be derived from the official pricing table active at calculatedAt", why: "計算根拠の追跡可能性を担保するため（クレーム対応・税務監査）" }
+      - { rule: "expiresAt must be calculatedAt + 30 days", why: "中古市場相場の変動から会員と店舗双方を守る（H8）" }
+    errs:
+      - { cond: "itemModel is unknown to pricing table", err: "UnknownItemModel", when: "型番が未登録または旧式すぎる場合" }
+      - { cond: "memberId is invalid or suspended", err: "MemberNotEligible", when: "規約違反等で買取対象外の会員" }
+
+  - name: 会員が下取付きで注文を確定する
+    ctx: store-front
+    actor: Member
+    cmd: PlaceOrder
+    evt: OrderPlaced
+    agg: Order
+    rules:
+      - { rule: "trade-in-attached order must reference a Quote that is in CALCULATED state", why: "EXPIRED や CONSUMED の Quote 流用を防ぐ" }
+      - { rule: "totalAmount must include all purchase line items net of trade-in estimateAmount with 10% bonus", why: "請求額の透明性確保" }
+    errs:
+      - { cond: "referenced Quote is expired", err: "QuoteExpired", when: "Quote.expiresAt を超過" }
+      - { cond: "referenced Quote already consumed", err: "QuoteAlreadyConsumed", when: "別注文で利用済みの Quote" }
+      - { cond: "any line item is out of stock", err: "OutOfStock", when: "注文確定時点で在庫が無い" }
+
+  # --- trade-in BC ---
+  - name: 会員が下取をキャンセルする
+    ctx: trade-in
+    actor: Member
+    cmd: CancelTradeIn
+    evt: TradeInCancelled
+    agg: TradeIn
+    rules:
+      - { rule: "cancel is allowed in LINKED, SHIPPED, RECEIVED, INSPECTED, APPRAISED states", why: "H6 採用：状態別 cmd 分岐。SETTLED 後は不可" }
+      - { rule: "cancellation after RECEIVED triggers a return shipment", why: "受領した旧機種は会員所有物なので返送義務" }
+    errs:
+      - { cond: "state is SETTLED, RETURNED, or TIMED_OUT", err: "CancelNotAllowed", when: "終端状態" }
+
+  - name: 会員が旧機種を発送する
+    ctx: trade-in
+    actor: Member
+    cmd: ShipTradeInItem
+    evt: TradeInItemShipped
+    agg: TradeIn
+    note: "宅配伝票番号の登録時刻を発送イベントとみなす"
+    rules:
+      - { rule: "shipment must occur while TradeIn.status = LINKED", why: "二重発送・他状態からの遷移を防ぐ" }
+    errs:
+      - { cond: "carrierTrackingId is empty", err: "MissingTrackingId", when: "伝票番号未入力" }
+
+  - name: 査定スタッフが旧機種を受領する
+    ctx: trade-in
+    actor: Appraiser
+    cmd: ReceiveTradeInItem
+    evt: TradeInItemReceived
+    agg: TradeIn
+    rules:
+      - { rule: "receive must occur while TradeIn.status = SHIPPED", why: "未発送 or 既受領を防ぐ" }
+      - { rule: "receiver must record identityVerification details (古物営業法 12 条)", why: "本人確認の法定義務" }
+    errs:
+      - { cond: "identity verification fails", err: "IdentityVerificationFailed", when: "提示書類不備" }
+
+  - name: 査定スタッフが検品を完了する
+    ctx: trade-in
+    actor: Appraiser
+    cmd: CompleteInspection
+    agg: TradeIn
+    brMode: exclusive
+    brs:
+      - { cond: "conditionGrade in [A, B, C] and no suspicion flag",                  evt: InspectionCompleted }
+      - { cond: "counterfeit / stolen-suspect / severe-defect detected during inspection", evt: SuspiciousItemDetected }
+    rules:
+      - { rule: "inspection must occur while TradeIn.status = RECEIVED", why: "受領前検品を防ぐ" }
+      - { rule: "conditionGrade must be one of [A, B, C, D]", why: "査定額算出ロジックの入力として固定" }
+      - { rule: "suspicious branch triggers regulatory hold per 古物営業法 15 条", why: "違法品流通防止と店舗の法令遵守" }
+
+  - name: 査定スタッフが正式査定額を確定する
+    ctx: trade-in
+    actor: Appraiser
+    cmd: DecideFinalAppraisal
+    agg: TradeIn
+    brMode: exclusive
+    brs:
+      - { cond: "|finalAmount - estimateAmount| / estimateAmount <= 0.20", evt: FinalAppraisalDecided }
+      - { cond: "|finalAmount - estimateAmount| / estimateAmount > 0.20",  evt: FinalAppraisalDecidedWithSignificantReduction }
+    rules:
+      - { rule: "finalAmount is derived from inspection.conditionGrade and current market price", why: "査定の客観性担保" }
+      - { rule: "significant reduction branch (>20% delta) triggers supervisor approval before member notification", why: "大幅減額の濫用を防ぐ社内統制" }
+    errs:
+      - { cond: "finalAmount <= 0", err: "InvalidAppraisalAmount", when: "計算エラーまたは買取不能判定" }
+
+  - name: 会員が査定額を承認する
+    ctx: trade-in
+    actor: Member
+    cmd: ApproveAppraisal
+    evt: AppraisalApproved
+    agg: TradeIn
+    rules:
+      - { rule: "approval must occur while TradeIn.status = APPRAISED", why: "状態依存の整合性" }
+      - { rule: "approval triggers SettleOnAppraisalApproved POL (eventual)", why: "Saga 起点" }
+
+  - name: 会員が査定額を拒否する
+    ctx: trade-in
+    actor: Member
+    cmd: RejectAppraisal
+    evt: AppraisalRejected
+    agg: TradeIn
+    rules:
+      - { rule: "rejection must occur while TradeIn.status = APPRAISED", why: "状態依存の整合性" }
+      - { rule: "rejection triggers two parallel POLs: return + convert", why: "並走 Saga（H3 採用：返送料会社負担）" }
+
+  - name: システムが下取タイムアウトを検知する
+    ctx: trade-in
+    actor: System
+    cmd: DetectTradeInTimeout
+    evt: TradeInTimedOut
+    agg: TradeIn
+    note: "timer 起点（H1 採用：10 日）"
+    rules:
+      - { rule: "timeout fires only when TradeIn.status = SHIPPED at SHIPPED.timestamp + 10 days", why: "H1 採用：先取交換の 10 日と統一" }
+
+  # --- fulfillment BC ---
+  - name: 物流が新品を出荷する
+    ctx: fulfillment
+    actor: System
+    cmd: ShipNewItem
+    evt: NewItemShipped
+    agg: Shipment
+    rules:
+      - { rule: "ship must occur while Shipment.status = INSTRUCTED", why: "重複出荷防止" }
+    errs:
+      - { cond: "stock allocation lost", err: "StockUnavailable", when: "引当解除されていた場合" }
+
+  - name: 配送業者が新品を届ける
+    ctx: fulfillment
+    actor: ShippingPartner
+    cmd: ConfirmDelivery
+    evt: NewItemDelivered
+    agg: Shipment
+    note: "外部運送業者の追跡 webhook を取り込み"
+
+# ----------------------------------------------------------------
+# Policies（フェーズ 4 で確定済み・本フェーズで変更なし）
+# ----------------------------------------------------------------
+pols:
+  - name: AuthorizeOnOrderPlaced
+    ctx: payment
+    trg: OrderPlaced
+    cmd: AuthorizeDifferential
+    evt: DifferentialAuthorized
+    note: "H2 採用：差額仮押さえ案。cmd 発行先 AGG: Authorization"
+
+  - name: NotifyOnAppraisalDecided
+    ctx: trade-in
+    trg: FinalAppraisalDecided
+    evt: AppraisalResultNotified
+    note: "副作用専用 POLICY（通知メール送信のみ・cmd 無し）。SignificantReduction ブランチは別 POL 経由のため本 POL は反応しない"
+
+  - name: HoldNotificationOnSignificantReduction
+    ctx: trade-in
+    trg: FinalAppraisalDecidedWithSignificantReduction
+    evt: SupervisorApprovalRequested
+    note: "副作用専用 POLICY（cmd 無し）：会員通知を保留しオペ監督者にアラート。承認後の通知再開は本セッション範囲外"
+
+  - name: SettleOnAppraisalApproved
+    ctx: trade-in
+    trg: AppraisalApproved
+    cmd: SettleTradeIn
+    evt: TradeInSettled
+    note: "cmd 発行先 AGG: TradeIn"
+
+  - name: InstructShipmentOnSettled
+    ctx: fulfillment
+    trg: TradeInSettled
+    cmd: InstructShipment
+    evt: ShipmentInstructed
+    note: "cmd 発行先 AGG: Shipment"
+
+  - name: ReturnOnAppraisalRejected
+    ctx: trade-in
+    trg: AppraisalRejected
+    cmd: ReturnTradeInItem
+    evt: TradeInItemReturned
+    note: "H3 採用：返送料会社負担。cmd 発行先 AGG: TradeIn"
+
+  - name: ConvertOnAppraisalRejected
+    ctx: payment
+    trg: AppraisalRejected
+    cmd: ConvertOrderToFullPurchase
+    evt: OrderConvertedToFullPurchase
+    note: "cmd 発行先 AGG: Authorization"
+
+  - name: ConvertOnTimeout
+    ctx: payment
+    trg: TradeInTimedOut
+    cmd: ConvertOrderToFullPurchase
+    evt: OrderConvertedToFullPurchase
+    note: "ConvertOnAppraisalRejected と同じ cmd/evt を別トリガーで発火"
+
+  - name: ChargeRemainingOnConverted
+    ctx: payment
+    trg: OrderConvertedToFullPurchase
+    cmd: ChargeRemainingAmount
+    evt: RemainingChargeSettled
+    note: "cmd 発行先 AGG: Authorization"
+
+# ----------------------------------------------------------------
+# Flows
+# ----------------------------------------------------------------
+flows:
+  - id: happy
+    title: ハッピーパス — 注文から新品到着まで
+    kind: happy
+    steps:
+      - 会員が下取付きで注文を確定する
+      - AuthorizeOnOrderPlaced
+      - 会員が旧機種を発送する
+      - 査定スタッフが旧機種を受領する
+      - 査定スタッフが検品を完了する
+      - 査定スタッフが正式査定額を確定する
+      - NotifyOnAppraisalDecided
+      - 会員が査定額を承認する
+      - SettleOnAppraisalApproved
+      - InstructShipmentOnSettled
+      - 物流が新品を出荷する
+      - 配送業者が新品を届ける
+
+  - id: alt-rejected
+    title: 代替シナリオ — 査定減額を会員が拒否
+    kind: alt
+    steps:
+      - 査定スタッフが正式査定額を確定する
+      - NotifyOnAppraisalDecided
+      - 会員が査定額を拒否する
+      - ReturnOnAppraisalRejected
+      - ConvertOnAppraisalRejected
+      - ChargeRemainingOnConverted
+      - 物流が新品を出荷する
+      - 配送業者が新品を届ける
+
+  - id: alt-timeout
+    title: 代替シナリオ — 旧機種が長期未着でタイムアウト
+    kind: alt
+    steps:
+      - 会員が下取付きで注文を確定する
+      - AuthorizeOnOrderPlaced
+      - システムが下取タイムアウトを検知する
+      - ConvertOnTimeout
+      - ChargeRemainingOnConverted
+      - 物流が新品を出荷する
+      - 配送業者が新品を届ける
+
+  - id: alt-suspicious
+    title: 代替シナリオ — 検品で偽物・盗品疑いを検出（CMD 1 → EVT 2 分岐の例 #1）
+    kind: alt
+    steps:
+      - 会員が旧機種を発送する
+      - 査定スタッフが旧機種を受領する
+      - 査定スタッフが検品を完了する     # brs: SuspiciousItemDetected ブランチ → SUSPENDED で停止
+
+  - id: alt-significant-reduction
+    title: 代替シナリオ — 査定で 20%超の大幅減額（CMD 1 → EVT 2 分岐の例 #2）
+    kind: alt
+    steps:
+      - 査定スタッフが旧機種を受領する
+      - 査定スタッフが検品を完了する
+      - 査定スタッフが正式査定額を確定する   # brs: FinalAppraisalDecidedWithSignificantReduction ブランチ
+      - HoldNotificationOnSignificantReduction
+
+# ----------------------------------------------------------------
+# Decisions（フェーズ 6: H1〜H7 を昇格）
+# ----------------------------------------------------------------
+decisions:
+  - id: D1
+    topic: "下取交換のタイムアウト日数（H1）"
+    chosen: "10-days"
+    affects: [TradeIn, ConvertOnTimeout, DetectTradeInTimeout]
+    options:
+      - name: "7-days"
+        adopted: false
+        why_not: "短すぎて遠方会員や繁忙期に到着が間に合わないクレームを誘発する。先取交換と非対称になる運用負担"
+      - name: "10-days"
+        adopted: true
+        why: "先取交換の 10 日と統一して業務オペとサポート FAQ を一本化できる。Web 上に明示済みの実績ある日数"
+      - name: "14-days"
+        adopted: false
+        why_not: "在庫予測の不確実性が増え、新品の price 変動リスクが拡大。10% UP の機会コストも増える"
+
+  - id: D2
+    topic: "注文時点の決済モデル（H2）"
+    chosen: "hold-difference"
+    affects: [Authorization, AuthorizeOnOrderPlaced]
+    options:
+      - name: "hold-difference"
+        adopted: true
+        why: "顧客カードの一時拘束を最小化しつつ、与信失敗を早期に検知できる。差額が確定済みの場面で再与信不要"
+      - name: "hold-full-then-refund"
+        adopted: false
+        why_not: "顧客の利用可能枠を圧迫し、特に高額品で UX を損なう。返金処理の運用コストが増える"
+      - name: "no-hold-until-final"
+        adopted: false
+        why_not: "査定確定時に与信失敗するとロールバックが複雑（既に出荷準備に入る場合）。決済確実性が低下"
+
+  - id: D3
+    topic: "査定減額拒否・キャンセル時の返送料負担（H3）"
+    chosen: "company-pays"
+    affects: [ReturnOnAppraisalRejected, TradeIn]
+    options:
+      - name: "company-pays"
+        adopted: true
+        why: "顧客が『送ったら買い叩かれて返送料も取られる』という不信を予防。ブランド信頼を中古市場の競合優位として確保"
+      - name: "customer-pays"
+        adopted: false
+        why_not: "短期コスト圧縮にはなるがクレーム源化しやすく、長期 LTV を毀損するリスク"
+      - name: "conditional-by-delta"
+        adopted: false
+        why_not: "ロジック複雑化（査定変動率で会社/顧客負担を分岐）、サポート工数増、判定根拠の説明負担"
+
+  - id: D4
+    topic: "下取キャンセルのモデリング（H6）"
+    chosen: "state-aware-single-cmd"
+    affects: [TradeIn, CancelTradeIn]
+    options:
+      - name: "state-aware-single-cmd"
+        adopted: true
+        why: "UI/API 表面を 1 つの CancelTradeIn に保ち、状態別の挙動分岐は AGG 内に隠蔽。会員側のメンタルモデルがシンプル"
+      - name: "split-by-state"
+        adopted: false
+        why_not: "CancelBeforeShipping / CancelAfterReceive など複数 CMD に分けると会員が状態を理解した上で操作する必要があり UX が悪化"
+      - name: "no-cancel-allowed"
+        adopted: false
+        why_not: "業務的に非現実的。会員都合のキャンセルはコールセンター経由で必ず発生する"
+
+  - id: D5
+    topic: "Saga 起点 EVT の命名（M1 警告関連／H7）"
+    chosen: "keep-current-naming"
+    affects: [OrderPlaced, AppraisalApproved, AppraisalRejected]
+    options:
+      - name: "keep-current-naming"
+        adopted: true
+        why: "命名は業務語彙と一致させ会員/オペが理解しやすさを優先。Saga 完了を別 EVT で表現すると識別子が膨らみ追跡負担が増える"
+      - name: "introduce-confirmed-suffix"
+        adopted: false
+        why_not: "OrderConfirmed/AppraisalConfirmed を別途用意すると認知負荷が上がる。本セッションスコープでは過剰設計"
+
+  - id: D6
+    topic: "Quote の有効期限（H8 関連）"
+    chosen: "30-days"
+    affects: [Quote]
+    options:
+      - name: "30-days"
+        adopted: true
+        why: "中古カメラの相場変動サイクルとカード会社の与信慣行とのバランス。業界他社の中央値"
+      - name: "7-days"
+        adopted: false
+        why_not: "概算を見てから検討する会員の標準的な意思決定タイムラインに合わない（給与日待ち等の現実を無視）"
+      - name: "no-expiry"
+        adopted: false
+        why_not: "古い Quote を理由にした請求トラブルや古物相場乖離のリスクが残る"
