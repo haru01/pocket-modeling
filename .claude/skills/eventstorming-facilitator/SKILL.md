@@ -161,7 +161,7 @@ flow:
 
 ## DML 記述ルール（要点）
 
-DML は **MD とは別の兄弟ファイル `docs/eventstorming/<session>.dml.yaml`** に **YAML 直書き**（フェンス不要）で書く。`.md` の §9 はこの `.dml.yaml` へのリンク参照のみ。完全仕様: `references/dml-spec.md`。
+DML は **MD とは別の兄弟ファイル `docs/eventstorming/<session>.dml.yaml`** に **YAML 直書き**（フェンス不要）で書く。`.md` の §9 はこの `.dml.yaml` へのリンク参照のみ。構文は `references/dml.schema.yaml`（JSON Schema）で機械検証。設計判断・哲学・付箋色は `references/dml-spec.md`。フロー DSL（`event-flow-svg`）は `references/html-render-spec.md` §5-0。
 
 - **トップレベルは `ctxs` / `aggs` / `scs` / `pols` の 4 リスト**（任意で `domains`）。`#` によるセクション区切りは使わない（リスト構造で分離）。`scs`/`pols`/`aggs` の各要素は `ctx:` で所属 BC を参照
 - **AGG 詳細はトップレベル `aggs[]` に書き、`ctxs[].aggs` は AGG 名（PascalCase 文字列）のリスト**（軽量名簿）。`aggs[]` の各要素は `name`（必須）／`ctx`（必須・所属 BC）／`purpose`／`states`／`transitions[]`（`from`/`to`/`via`/`when`）／`attrs[]`（`name`/`type`/`required`）／`events[]`（`name`/`params`）
@@ -250,7 +250,9 @@ DML は **MD とは別の兄弟ファイル `docs/eventstorming/<session>.dml.ya
 
 | ファイル | 用途 |
 |---|---|
-| `references/dml-spec.md` | DML 完全仕様（SCENARIO・POLICY・QRY・DSL 記号・記述ルール・フル例） |
+| `references/dml.schema.yaml` | DML 構文の機械検証スキーマ（JSON Schema Draft 2020-12）。識別子パターン・enum・必須・排他制約 |
+| `references/dml-spec.md` | DML 設計ガイドライン（インフラ系判定・SCENARIO 哲学・POLICY 運用・AGG v3・付箋色・最小実例） |
+| `references/html-render-spec.md` | HTML レンダリング仕様＋**フロー DSL `event-flow-svg` 文法**（§5-0） |
 | `references/session-guide.md` | ファシリテーション質問パターン |
 | `references/domain-starters.md` | よくあるドメインの候補イベントリスト |
 | `references/template.md` | MD レポート完全テンプレート（§1〜§10 詳細） |

@@ -1,247 +1,34 @@
-# DML（Domain Modeling Language）記法仕様
+# DML（Domain Modeling Language）記法仕様 — 設計ガイドライン
 
-DDDモデリングのための情報圧縮言語。**YAML フォーマット**で記述する。
-`ctxs`（BC 宣言）・`aggs`（AGG 宣言）・`scs`（EVT を起点にした業務シナリオ）・`pols`（EVENTUAL-TX）の
-4 つのトップレベルリストで 1 ドメインを表す（任意で `domains` を加えられる）。
+DDD モデリングのための情報圧縮言語。**構文 validity（形が正しいか）は [`./dml.schema.yaml`](./dml.schema.yaml)（JSON Schema Draft 2020-12）で機械検証**する。本書は schema では表現できない**設計判断・記法哲学・慣習**を扱う。
 
-**記法の原則**
-- DML は **MD とは別の兄弟ファイル `docs/eventstorming/<session>.dml.yaml`** に **YAML 直書き**（フェンス不要）で保存する。`.md` の §9 はこの `.dml.yaml` へのリンク参照のみ。ビルダーは `.md` ＋ 兄弟 `.dml.yaml` から HTML を生成する。
-  - （本仕様書内の ` ```dml ` フェンスは YAML 例の表示目的。実アーティファクトはフェンスなしの `.dml.yaml` ファイル。）
-- トップレベルは `ctxs` / `aggs` / `scs` / `pols` の 4 リスト。**コメントによるセクション区切りは使わない**（リスト構造で自然に分離される）。
-- `aggs` / `scs` / `pols` の各要素は `ctx:` フィールドで所属 BC を参照する。
-- **識別子（`cmd` / `evt` / `agg` / `trg` / `emits` / `qry` の値、`aggs[].name` 等）は英語 PascalCase**。`()` や `<<>>` は付けない。
-- **`scs[].name` は日本語**で「アクター＋行為」を書く（例：`主催者がコミュニティを作成する`）。
-- **`rules[].rule` の不変条件は英語**。日本語の補足は `why` / `when` / `note` の**構造化フィールド**へ書く（`#` 行コメントによる補足慣習は廃止）。
-- BC（`ctxs[].name`）は `lowercase-with-hyphen` 形式、略さずに書く。
-- キー順の推奨（`scs`）: `name → ctx → actor → qry → cmd → evt|brs → agg → rules → errs → pol`（YAML では強制ではないがスタイルとして統一する）。
-
-**バージョンと後方互換（DML v3）**
-- 本仕様は ContextMapper（CML）を参考にした **v3 拡張（AGG トップレベル化）**を含む。v2 で `ctxs[].aggs[]` 内に集約宣言を持っていた書式は **v3 で廃止**し、AGG は新トップレベル `aggs[]` で宣言する。`ctxs[].aggs` は **AGG 名の軽量名簿（PascalCase 文字列リスト）** に変わった。
-- v2 までの拡張フィールド（`type` / `vision` / `resp` / `tech` / `sub` / `roles` / `prRoles` / `brMode` / `trgs` / トップレベル `domains`）はそのまま optional として残る。
-- 文法は **JSON Schema（Draft 2020-12）で機械検証**できる。スキーマ本体は [`./dml.schema.yaml`](./dml.schema.yaml)。検証は構文 validity のみを保証する（意味検証は causal-check / quality-check が担う。§9 参照）。
+- スキーマ通過は必要条件であって十分条件ではない。「形が正しい」ことを schema が、「意味が正しい」ことを causal-check / quality-check が担保する（§7）
+- 検証: `python3 .claude/skills/eventstorming-facilitator/scripts/validate_dml.py docs/eventstorming/<session>.dml.yaml`
+- フル例: [`../examples/sample.dml.yaml`](../examples/sample.dml.yaml)（コミュニティイベント参加ドメイン・v3 文法）
 
 ---
 
-## 1. CONTEXT（BC 宣言）
+## 0. 記法の原則
 
-```dml
-ctxs:
-  - name: <lowercase-with-hyphen>      # BC 名（略さない）
-    lang:
-      <EnglishTerm>: "<この文脈での意味（日本語可）>"
-    mod: <module-name>
-    up:                                # この BC が依存する側（参照するモデルの所有者）
-      - ctx: <context-name>
-        rel: Customer-Supplier         # Customer-Supplier | Conformist | Shared-Kernel | ACL
-        note: "<任意の補足>"
-    dn:                                # この BC に依存される側（このモデルを参照する下流）
-      - ctx: <context-name>
-        rel: Customer-Supplier
-    aggs: [<AggregateName>, ...]       # 任意。この BC が所有する AGG の名前リスト
-```
+- **YAML 直書き・MD と兄弟ファイル**: `docs/eventstorming/<session>.dml.yaml` に純 YAML（フェンス不要）。`.md` の §9 はこの `.dml.yaml` へのリンク参照のみ。ビルダーは `.md` + 兄弟 `.dml.yaml` から HTML を生成する
+- **トップレベルは 4 リスト**: `ctxs` / `aggs` / `scs` / `pols`（任意で `domains`）。コメントによるセクション区切りは使わない（リスト構造で自然に分離される）
+- **識別子は英語 PascalCase**（`cmd` / `evt` / `agg` / `trg` / `qry` の値、`aggs[].name` 等）。`()` や `<<>>` は付けない
+- **`scs[].name` のみ日本語**で「アクター＋行為」を書く（例: `主催者がコミュニティを作成する`）
+- **`rules[].rule` の不変条件は英語**。日本語の補足は `why` / `when` / `note` の**構造化フィールド**へ書く（`#` 行コメントによる補足慣習は廃止）
+- **BC 名は `lowercase-with-hyphen`**、略さずに書く
+- **キー順の推奨**（`scs`）: `name → ctx → actor → qry → cmd → evt|brs → agg → rules → errs → pol`
 
-`lang` でユビキタス言語を定義する。
-**同じ言葉が別 CONTEXT で意味が違う場合、それぞれの CONTEXT で別々に定義する**。
-この差異が Bounded Context（BC）の境界を示す。
-
-`up` / `dn` は BC 間の依存方向を明示する（必須）。**依存がない場合は空リスト `[]`** を書く。
-
-例：
-```dml
-ctxs:
-  - name: community-events
-    lang:
-      Event: "コミュニティが主催する集会・勉強会"
-    mod: community-events
-    up: []
-    dn:
-      - ctx: participation
-        rel: Customer-Supplier
-        note: "Event を下流 BC が参照"
-    aggs: [Community, Event]
-
-  - name: participation
-    lang:
-      Event: "参加申込の対象となるエントリー"
-    mod: participation
-    up:
-      - ctx: community-events
-        rel: Customer-Supplier
-    dn:
-      - ctx: checkin
-        rel: Customer-Supplier
-    aggs: [Participation]
-
-  - name: checkin
-    lang:
-      CheckIn: "当日の来場確認"
-    mod: checkin
-    up:
-      - ctx: participation
-        rel: Customer-Supplier
-    dn: []
-    aggs: [CheckIn]
-```
-
-### 1.1 リレーション語彙の拡充（v2・任意）
-
-`rel`（粗い分類・人間向け）は従来どおり使える。より厳密に表現したいときは、CML 互換の
-`roles`（自 BC 側の役割パターン）/ `prRoles`（相手 BC 側の役割パターン）を **任意で**併記する。
-`up` / `dn` が既に方向（U/D）を示すので、`roles` から `U`/`D` は省略してよい。
-
-| ショートコード | 意味 | | ショートコード | 意味 |
-|------|------|---|------|------|
-| `U` | Upstream | | `ACL` | Anti-Corruption Layer |
-| `D` | Downstream | | `CF` | Conformist |
-| `S` | Supplier | | `SK` | Shared Kernel |
-| `C` | Customer | | `P` | Partnership |
-| `OHS` | Open Host Service | | `PL` | Published Language |
-
-```dml
-up:
-  - ctx: printing                # CML の [D,ACL]<-[U,OHS,PL] を表す
-    roles: [ACL]                 # 自分（下流）側
-    prRoles: [OHS, PL]           # 相手（上流）側
-```
-
-`rel` の enum は v1 の `Customer-Supplier` / `Conformist` / `Shared-Kernel` / `ACL` に加え、
-`Partnership` / `Upstream-Downstream` / `Open-Host-Service` / `Published-Language` を追加。
-**`rel` と `roles` はどちらか一方で十分**（両者の意味整合は quality-check が確認する）。
-
-### 1.2 BC メタデータ（v2・任意）
-
-`.md` 側（§4 の目的/背景、§5 の集約）にあった情報を DML に構造化できる。すべて optional。
-
-```dml
-ctxs:
-  - name: event-planning
-    type: FEATURE                 # FEATURE | APPLICATION | SYSTEM | MICROSERVICE
-    vision: "イベントのライフサイクルとキャパシティを所有する"   # domainVisionStatement
-    resp: [Event, Capacity, Schedule]                        # 文字列 or 文字列配列
-    tech: "TypeScript, NestJS"                               # 任意
-    sub: event-core               # §1.5 参照
-    lang:
-      Event: "単発の開催単位"
-    mod: event-planning
-    up: []
-    dn: []
-    aggs: [Event, Capacity]       # この BC が所有する AGG の名前リスト（詳細は §1.6 の aggs[]）
-```
-
-**重要（v3 変更点）：** v2 で `ctxs[].aggs[]` 内に持っていた集約メタデータ（`purpose` / `states` 等の dict 形式）は **v3 で廃止**。AGG の詳細はトップレベル `aggs[]` に宣言する（§1.6）。`ctxs[].aggs` は **AGG 名の軽量名簿（PascalCase 文字列リスト）** のみを持つ。
+詳細な型・必須フィールド・enum 値は schema を参照。
 
 ---
 
-## 1.5 Domain / Subdomain 分類（v2・任意）
+## 1. インフラ系ドメインの扱い（BC 昇格 vs POLICY 留置）
 
-戦略的設計の意図（コア／補完／汎用）を残したいとき、トップレベルに `domains` を **任意で**置く。
-`domains` を書かなくても `ctxs[].sub` は単なるタグとして使える（漸進的にビジョンと
-`type` を後から `domains` に集約できる）。
-
-```dml
-domains:
-  - name: community-event-domain
-    vision: "企画から当日参加までを一気通貫で支える"
-    subs:
-      - name: event-core
-        type: CORE_DOMAIN          # CORE_DOMAIN | SUPPORTING_DOMAIN | GENERIC_SUBDOMAIN
-        vision: "イベントの企画・公開・変更というコア価値"
-      - name: payment
-        type: GENERIC_SUBDOMAIN
-        vision: "決済・返金。外部 PSP に委譲する汎用領域"
-```
-
-`subs[].name` と `ctxs[].sub` は同じ `lowercase-with-hyphen` 名前空間。
-両者の突合（参照の実在）は quality-check が確認する。
-
----
-
-## 1.6 AGGREGATE 宣言（`aggs[]`・v3 新規）
-
-集約（AGG）はトップレベル `aggs[]` で宣言する。各要素は **所属 BC の `ctx` を持ち**、状態遷移・属性・発火イベントを構造化して持てる。すべて optional フィールドは省略可だが、`name` と `ctx` は必須。
-
-```dml
-aggs:
-  - name: <PascalCase>             # 必須。AGG 名（PascalCase）
-    ctx: <context-name>            # 必須。所属 BC（ctxs[].name を参照）
-    purpose: "<この集約の責務（日本語可）>"      # 任意
-    states: [UPPER_SNAKE, ...]                # 任意。状態名（UPPER_SNAKE）
-    transitions:                              # 任意。状態遷移
-      - from: <UPPER_SNAKE>                   # 遷移元状態（必須）
-        to: <UPPER_SNAKE> | [<UPPER_SNAKE>, ...]  # 遷移先（単一 or 配列）。必須
-        via: <PascalCase>                     # トリガー CMD（PascalCase）。scs[].cmd と一致すべき
-        when: "<日本語補足（任意）>"
-    attrs:                                    # 任意。AGG のペイロード属性
-      - name: <camelCase>                     # フィールド名
-        type: <string|int|date|EventId|...>   # 自由文字列
-        required: true                        # 任意（boolean）
-    events:                                   # 任意。AGG が emit するイベント宣言
-      - name: <PascalCase>                    # scs[].evt と一致すべき
-        params:                               # 任意。attribute と同じ形
-          - { name: <camelCase>, type: <type> }
-    note: "<任意の補足>"
-```
-
-### 1.6.1 `transitions[]`（状態遷移）
-
-最も重要な新フィールド。`from` → `to` の遷移を引き起こす CMD を `via` で宣言することで、
-**「scs[].cmd の対象 AGG が aggs[].transitions[].via に存在するか」を quality-check で機械検証**できる。
-
-```dml
-aggs:
-  - name: Event
-    ctx: community-events
-    states: [DRAFT, PUBLISHED, CANCELLED, COMPLETED]
-    transitions:
-      - { from: DRAFT,     to: PUBLISHED,              via: PublishEvent, when: "必須項目が揃いキャパシティ > 0" }
-      - { from: PUBLISHED, to: [CANCELLED, COMPLETED], via: CancelEvent }   # to は単一 or 配列（分岐先）
-```
-
-- `from` / `to`: 状態名（UPPER_SNAKE）。`to` は単一 or 配列。**配列は「同一 `via` CMD で複数の遷移先が起こりうる」ことを示す**（実際の選択は `scs[].brs[].cond` で決まる。`scs[].brMode`（exclusive/concurrent/inclusive）との MECE 整合は quality-check で確認）。
-- `via`: トリガー CMD（PascalCase）。`scs[].cmd` と一致すべき（実在性は quality-check）。
-- `when`: 日本語の遷移条件補足（任意・自然文）。
-
-### 1.6.2 `attrs[]`（属性）
-
-```dml
-aggs:
-  - name: Event
-    ctx: community-events
-    attrs:
-      - { name: title,    type: string, required: true }
-      - { name: capacity, type: int }
-      - { name: eventId,  type: EventId, required: true }
-```
-
-- `name`: camelCase（フィールド名）。
-- `type`: 自由文字列（`string` / `int` / `date` / `EventId` などのドメイン型を許容）。
-- `required`: 必須かどうか（任意・boolean）。
-
-### 1.6.3 `events[]`（発火イベント宣言）
-
-```dml
-aggs:
-  - name: Event
-    ctx: community-events
-    events:
-      - name: EventCreated
-        params:
-          - { name: eventId, type: EventId }
-          - { name: title,   type: string }
-      - name: EventPublished       # params は省略可
-```
-
-- `name`: PascalCase（`scs[].evt` と一致すべき。実在性は quality-check）。
-- `params`: イベントペイロード（`attrs[]` と同じ形）。省略可。
-
----
-
-## 2. インフラ系ドメインの扱い（通知・スケジューラ・決済・メール等）
-
-業務ドメインと独立した技術基盤（通知・バッチ・外部 API 連携）は、**BC に昇格する**か**POLICY 内に留める**かを毎回判断する。デフォルト判断基準：
+業務ドメインと独立した技術基盤（通知・バッチ・外部 API 連携・決済・メール等）は、**BC に昇格する**か**既存 BC の POLICY 内に留める**かを毎回判断する。
 
 ### POLICY 留置で十分なサイン
-- 通知 / 連携が 1 種類のみ（例：承認通知のみ）
+
+- 通知 / 連携が 1 種類のみ（例: 承認通知のみ）
 - 送信結果の監査・再送 / 失敗管理が不要
 - 状態を持たない（送ったら完了で追跡しない）
 - 他 BC から参照されない
@@ -249,141 +36,69 @@ aggs:
 → 既存 BC の `pols` に POLICY を追加する。専用 CONTEXT は作らない。
 
 ### BC に昇格すべきサイン
-- 複数種類の通知 / 連携を統一的に管理（例：APPROVAL / REMINDER / SURVEY / CANCELLATION など）
+
+- 複数種類の通知 / 連携を統一的に管理（例: APPROVAL / REMINDER / SURVEY / CANCELLATION など）
 - 送信状態（QUEUED / SENT / FAILED / RETRYING）を持つ
 - SLA・再送ポリシー・失敗時のフォールバックが業務要件
 - 他 BC から「どの通知を送ったか」を参照される（監査ログ兼用など）
 
 → `ctxs` に新規 BC を宣言し、`up` / `dn` で他 BC との関係を明示する。
 
-迷う場合は `note: "[?] ..."` で保留し、後続フェーズで再評価する。
-**「データモデル（テーブル）は存在するが BC として宣言していない」状態は原則 NG**。
+迷う場合は `note: "[?] ..."` で保留し、後続フェーズで再評価する。**「データモデル（テーブル）は存在するが BC として宣言していない」状態は原則 NG**。
 
 ---
 
-## 3. SCENARIO（EVT 起点で書く）
+## 2. SCENARIO の哲学
 
-```dml
-scs:
-  - name: <アクター>が<何をする>      # 日本語。アクター＋行為
-    ctx: <context-name>              # 所属 BC
-    actor: <ActorName>               # 必須。Organizer / Member / System など
-    qry:                             # 省略可。CMD 発行判断に必要な Read Model のみ
-      - <QueryName>
-    cmd: <CommandName>
-    evt: <EventName>                 # 単一イベント。分岐する場合は brs を使う
-    agg: <AggregateName>
-    rules:
-      - rule: <invariant in English>
-        why: "<この不変条件が必要な業務・UX 上の理由（日本語可・推奨）>"
-    errs:
-      - cond: <condition>
-        err: <ErrorType>
-        when: "<このエラーが発生する状況の日本語説明（推奨）>"
-    pol:                             # 後続 POLICY 参照（EVENTUAL-TX への接続）
-      - <PolicyName>
-```
+### なぜ EVT 起点で書くか
 
-**`why` / `when`（推奨）：** `rules[].why` でその不変条件が「なぜ必要か」を、`errs[].when` でエラー発生条件を機械可読に紐付ける。AI 実装エージェントが Issue から実装するときに意図を読み解きやすくなる。両方とも省略可（後方互換）だが強く推奨。
+「起きた事実」から始めることで、実装の都合（コマンドの存在・API の形）に引きずられず、ビジネスの本質的な流れを先に把握できる。
 
-**`why` の書き方：** `rule` を**ユーザー影響・業務文脈**に翻訳する。
-- NG: `why: "name の一意性を保つため"`（rule の言い換えで情報が増えていない）
+### `scs[].name` は日本語
+
+アクター（主催者/参加者/システム）＋行為を日本語で書く。「誰が何をするシナリオか」が一目でわかり、BC の責務やユーザーロールとの対応も明確になる（英語識別子だけだと「OrderConfirmFlow」のような形式名に逃げやすい）。
+
+### `actor` 必須
+
+コマンドを発行するアクターを明記する。典型値は `Organizer`（主催者）、`Member`（参加者）、`System`（システム/ポリシー）。
+
+### `rules[].why` の書き方（業務・UX 文脈への翻訳）
+
+`rule` を**ユーザー影響・業務文脈**に翻訳する。`rule` の言い換えは情報が増えていないので NG。
+
+- NG: `why: "name の一意性を保つため"`（rule の言い換え）
 - OK: `why: "URL slug や検索 UX で name→id 逆引きを想定するため"`（業務・UX 文脈で説明）
 
-**集約が複数イベントを発火しうる場合（brs）：**
-コマンドの処理結果に応じて発火イベントが変わる場合、`evt` の代わりに `brs` で分岐を書く。
-分岐ごとに後続ポリシーが異なる場合は各 branch に `pol` を付ける（同一トランザクション内の SAME-TX 分岐）。
+AI 実装エージェントが Issue から実装するときに意図を読み解きやすくするため、`rules[].why` / `errs[].when` は強く推奨（schema 上は optional）。
 
-```dml
-scs:
-  - name: システムが在庫を確保する
-    ctx: inventory
-    actor: System
-    cmd: ReserveInventory
-    agg: Inventory
-    rules:
-      - rule: reserved quantity must not exceed available stock
-        why: "在庫を超える引当を防ぐため"
-    brs:
-      - cond: "stock >= requested"
-        evt: InventoryReserved
-        pol: ConfirmOrder
-      - cond: "stock < requested"
-        evt: InventoryInsufficient
-        pol: CancelOnOutOfStock
-```
+### `qry` は判断材料のみ
 
-`brs` を使う場合、トップレベルの `evt` は省略する。`cond` に `>` `<` `=` を含む場合はクォートで囲む（YAML パースエラー回避）。
+アクター（「このコマンドを発行するか」）またはポリシー（「どのコマンドを発行するか・誰に対して」）が**判断するために必要なデータ**のみ書く。コマンド実装内部で必要なデータ（BULK の実行対象リストなど）は `qry` に書かない。
 
-**分岐セマンティクス（`brMode`・v2・任意）：** `brs` は省略時 `exclusive`（排他・1 つだけ発火）。
-CML の分岐演算子に対応した `brMode` を任意で明示できる。
+### 分岐（`brs`）の使い所
 
-| `brMode` | CML | 意味 | `cond` |
-|------|-----|------|------|
-| `exclusive`（既定） | `X` | 条件に応じて 1 つだけ発火 | 各分岐に必須（網羅・排他は quality-check が確認） |
-| `concurrent` | `+` | すべて同時発火 | 省略可 |
-| `inclusive` | `O` | 1 つ以上が発火 | 任意 |
+コマンドの処理結果に応じて発火イベントが変わる場合、`evt` の代わりに `brs` で分岐を書く（同一トランザクション内の SAME-TX 分岐）。EVENTUAL-TX は `pols` で表現する（§3）。
 
-```dml
-  - name: システムが申込を確定し記録する
-    ctx: ticketing
-    actor: System
-    cmd: ConfirmApplication
-    agg: Application
-    brMode: concurrent           # 両方必ず発火（cond 省略可）
-    brs:
-      - evt: ApplicationConfirmed
-        pol: NotifyConfirmation
-      - evt: AuditLogRecorded
-```
-`brMode` は `brs` がある時のみ意味を持つ（単独指定は不可）。
-
-**name は日本語：** アクター（主催者/参加者/システム）＋行為を日本語で書く。「誰が何をするシナリオか」が一目でわかり、BC の責務やユーザーロールとの対応も明確になる。
-
-**actor は必須：** コマンドを発行するアクターを明記する。典型値は `Organizer`（主催者）、`Member`（参加者）、`System`（システム/ポリシー）。
-
-**なぜ EVT 起点か？** 「起きた事実」から始めることで、実装の都合（コマンドの存在・API の形）に引きずられず、ビジネスの本質的な流れを先に把握できる。
+`brMode` の語彙（`exclusive` 既定 / `concurrent` / `inclusive`）と構造は schema 参照。
 
 ---
 
-## 4. POLICY（EVENTUAL-TX 専用）
+## 3. POLICY の運用（EVENTUAL-TX）
 
-`pols` の各要素は **EVENTUAL-TX（非同期・別トランザクション）限定**で使用する。
-同一トランザクションで処理される分岐（SAME-TX）は、発行元 SCENARIO の `brs` として書く（§3）。
+`pols` の各要素は **EVENTUAL-TX（非同期・別トランザクション）限定**で使用する。同一トランザクションで処理される分岐（SAME-TX）は、発行元 SCENARIO の `brs` として書く。
 
-```dml
-pols:
-  - name: <Name>
-    ctx: <context-name>
-    trg: <EventName>
-    qry: <QueryName>          # BULK の場合は必須。単一宛先なら省略可
-    cmd: <CommandName>        # 原則必須。副作用専用 POLICY は省略可
-    bulk: true                # × n の場合（省略時は false）
-    evt: <EventName>          # 省略可。このポリシーが生成するイベント
-    note: "<任意の補足>"
-```
+### SAME-TX と EVENTUAL-TX の判定
 
-- トランザクション種別フィールドは書かない（EVENTUAL 固定）。
-- `qry` 必須基準: `bulk: true` のときは必須（送信対象リストを明示するため）。単一宛先が `trg` ペイロードから決まる場合は省略可。
-- `cmd` 省略基準: **副作用専用 POLICY**（外部通知 / メール / プッシュ送信などの infrastructure 呼び出しで、内部 AGG を一切変更しないもの）に限り `cmd` を省略できる。この場合、対応する SCENARIO も書かない。AGG を更新する処理が含まれるなら必ず `cmd` と SCENARIO を書く。
+| TX | 書き方 | 根拠 |
+|----|-------|------|
+| SAME | SCENARIO の `brs` | コマンド内の同期処理。Repository のトランザクション境界内で完結 |
+| EVENTUAL | `pols` の要素 | EventBus 経由の非同期処理。別トランザクションで発火 |
 
-**複数トリガーの join（`trgs`・v2・任意）：** 複数のイベントが揃って初めて起動する POLICY
-（フロー DSL の `&>>` join に対応）は、`trg`（単一）の代わりに `trgs` を使う。
-`trg` と `trgs` は排他（どちらか一方）。
+### 副作用専用 POLICY の `cmd` 省略基準
 
-```dml
-pols:
-  - name: FinalizeOnBothApprovals
-    ctx: approval
-    trgs:
-      evts: [ManagerApproved, FinanceApproved]
-      mode: concurrent          # exclusive | concurrent | inclusive（§3 と同じ語彙）
-    cmd: Finalize
-```
+**副作用専用 POLICY**（外部通知 / メール / プッシュ送信などの infrastructure 呼び出しで、内部 AGG を一切変更しないもの）に限り `cmd` を省略できる。この場合、対応する SCENARIO も書かない。AGG を更新する処理が含まれるなら必ず `cmd` と SCENARIO を書く。
 
-### 副作用専用 POLICY の例
-
-```dml
+```yaml
 pols:
   - name: NotifyOnEventRelocation
     ctx: event-planning
@@ -396,22 +111,50 @@ pols:
 
 対応フロー DSL は `$ポリシー *> [event]`（CMD なし）と書く。AGG への BULK CMD（`*> !cmd > [event]`）と視覚的に区別され、AGG の責務肥大化を防げる。
 
-### SAME-TX と EVENTUAL-TX の判定
+### bulk / qry の関係
 
-| TX | 書き方 | 根拠 |
-|----|-------|------|
-| SAME | SCENARIO の `brs` | コマンド内の同期処理。Repository のトランザクション境界内で完結 |
-| EVENTUAL | `pols` の要素 | EventBus 経由の非同期処理。別トランザクションで発火 |
+`bulk: true` のとき `qry` 必須（送信対象リストを明示するため）。schema が機械検証する。単一宛先が `trg` ペイロードから決まる場合は `qry` 省略可。
+
+### 複数トリガーの join（`trgs`）
+
+複数のイベントが揃って初めて起動する POLICY（フロー DSL の `&>>` join に対応）は、`trg`（単一）の代わりに `trgs` を使う。構造と `mode` 語彙は schema 参照。
 
 ---
 
-## 5. 記号の意味（付箋色との対応）
+## 4. AGG（v3 トップレベル化）の設計意図
+
+v2 までは `ctxs[].aggs[]` 内に集約宣言を持っていたが、**v3 で AGG をトップレベル `aggs[]` に切り出した**。`ctxs[].aggs` は AGG 名（PascalCase 文字列）の**軽量名簿**として残る。
+
+### なぜトップレベル化したか
+
+- AGG は BC をまたいで参照される（quality-check / causal-check のグラフ起点）
+- `transitions[].via`（CMD 名）と `scs[].cmd` を機械的に突合できる
+- AGG の責務（`purpose` / `states` / `transitions` / `attrs` / `events`）を 1 ブロックで読める
+
+### 意味整合（quality-check が担保）
+
+| 観点 | 突合 |
+|---|---|
+| 孤立 AGG / 未定義 AGG 参照 | `scs[].agg` ⇔ `aggs[].name` |
+| CMD が AGG 状態遷移に紐付くか | `scs[].cmd` ⇔ `aggs[].transitions[].via` |
+| EVT が AGG の宣言済み発火イベントか | `scs[].evt` ⇔ `aggs[].events[].name` |
+| BC 所有 AGG の双方向参照 | `ctxs[].aggs`（名簿） ⇔ `aggs[].ctx` |
+
+スキーマは「`aggs[].name` が PascalCase か」「`states` が UPPER_SNAKE か」までしか保証しない。**意味整合は quality-check / causal-check の責務**。
+
+### AGG は所有 BC が 1 つ
+
+複数 BC で参照される AGG でも `aggs[].ctx` は 1 つに決める（所有者は 1 つ）。参照側 BC は up/dn の依存関係として表現する。
+
+---
+
+## 5. 付箋色との対応（DML 値のロール）
 
 DML（YAML）の値は HTML レンダリング時に**役割ベースの意味色**でハイライトされる（付箋フロー図と同じパレット）。
 
-| フィールド | 意味 | 付箋色 / 値の色 |
+| フィールド | 意味 | 付箋色 |
 |------|------|--------|
-| `evt` / `trg` / `emits` | ドメインイベント（起きた事実・過去形） | 橙 |
+| `evt` / `trg` / `emits` / `brs[].evt` / `aggs[].events[].name` | ドメインイベント（起きた事実・過去形） | 橙 |
 | `cmd` / `via` | コマンド（操作・意図） | 青 |
 | `agg` / `actor` / `aggs[].name` | 集約 / アクター | 黄 |
 | `qry` | Read Model（CMD 発行前に参照するビュー） | 緑 |
@@ -419,34 +162,16 @@ DML（YAML）の値は HTML レンダリング時に**役割ベースの意味�
 | `errs[].err` | エラー型（不変条件違反） | 赤 |
 | `states` / `from` / `to` | 状態名（UPPER_SNAKE） | 黄（淡） |
 | キー名 | YAML キー | 淡い灰緑 |
-| `note: "[?] ..."` | 未確認・迷い・設計判断が必要な箇所 | — |
 
-### ` ```event-flow-svg ` フロー図記法
-
-（フロー図 DSL は DML とは別のフェンス。YAML 化の対象外で従来どおり。）
-
-| 記号 | 意味 | 付箋色 |
-|------|------|--------|
-| `\|BC名\|:` | Bounded Context レーン（ヘッダー行。説明を続けて書く） | — |
-| `@アクター名` | アクター付箋 | 黄 |
-| `?クエリ名` | Read Model 付箋 | 緑 |
-| `[イベント名]` | イベント付箋 | 橙 |
-| `$ポリシー名` | ポリシー付箋 | 紫 |
-| `!コマンド名` | コマンド付箋（`!` 省略可） | 青 |
-| `>` | 同期フロー（直接連鎖） | — |
-| `>>` | 非同期遷移（レーン切り替え）。前レーン最後のフロー行の末尾に付ける | — |
-| `*>` | BULK Fork 矢印。直後の CMD/EVT が N 個の並列インスタンスのうちの 1 つを代表 | — |
-| `&>>` | Join + 非同期遷移。直前の N 個の EVT が 1 つの後続トリガーへ合流 | — |
-
-`*>` / `&>>` は **BULK POLICY**（`bulk: true` を持つ POLICY）から発火する fanout / join を表現する場合にのみ使う。
+> **フロー図 DSL**（`event-flow-svg` フェンスの `@$![]>>*>&>>`）は DML とは別の DSL。記号一覧と HTML 描画ルールは [`./html-render-spec.md`](./html-render-spec.md) §5-0 参照。
 
 ---
 
-## 6. `[?]`（未確認）の使い方
+## 6. `[?]`（未確認）の慣習
 
-確信が低い箇所や設計判断が必要な箇所には、該当要素の `note` に `[?]` を付けて理由も書く。
+確信が低い箇所や設計判断が必要な箇所には、該当要素の `note` に `[?]` を付けて理由も書く。進行中セッションを残しつつ、後続フェーズや次回セッションで再評価する。
 
-```dml
+```yaml
 scs:
   - name: 参加者がイベントに参加申込する
     ctx: participation
@@ -460,140 +185,46 @@ scs:
 
 ---
 
-## 7. 記述ルール
+## 7. 検証の境界（構文 vs 意味）
 
-1. **トップレベルは `ctxs` / `aggs` / `scs` / `pols` の 4 リスト**（任意で `domains`）。セクション区切りコメントは使わない。
-2. **キー順を推奨順で統一**（`scs`）: `name → ctx → actor → qry → cmd → evt|brs → agg → rules → errs → pol`。
-3. **省略可能フィールド**: `qry` / `brs` / `bulk` / `pol` は必要なときだけ書く。
-4. **qry は「判断に必要なデータ」にのみ書く**: アクター（「このコマンドを発行するか」）またはポリシー（「どのコマンドを発行するか・誰に対して」）が判断するために必要なデータのみ。コマンド実装内部で必要なデータ（BULK の実行対象リストなど）は `qry` に書かない。
-5. **errs は積極的に書く**: 「起きない条件」を毎回確認して `errs` に記録する — エラーが AGG の不変条件を明らかにする。
-6. **日本語補足は構造化フィールドへ**: `rules[].why` / `errs[].when` / `pols[].note` / 各要素の `note` に書く。`#` 行コメントによる補足は使わない。
-7. **`why` は業務・UX 文脈に翻訳**: rule の言い換えではなく「なぜ必要か」を書く。
-8. **完成時の発火/起動の明示**: 完成した SCENARIO は `evt` か `brs` の**いずれか一方**を、完成した POLICY は `trg` か `trgs` の**いずれか一方**を持つ（副作用専用 POLICY の cmd 省略は §4 のとおり別途許容）。スキーマは進行中セッションを許容するため両方欠如でも valid だが、完成版では必ず明示する。
-9. **AGG は `aggs[]` に集約**: `ctxs[].aggs` は名前リストのみ。詳細（`transitions` / `attrs` / `events`）はトップレベル `aggs[]` に書く。
+| レイヤ | 担保するもの | 例 |
+|------|------|------|
+| **JSON Schema**（機械・決定論的） | 構文 validity。トップレベル 4 リスト＋任意 `domains`、各要素の必須フィールド、型、enum（`rel` / `subdomainType` / `bcType` / `brMode`）、識別子の PascalCase・lowercase-with-hyphen・UPPER_SNAKE（状態名）・camelCase（属性名）、`evt`↔`brs` 排他、`trg`↔`trgs` 排他、`bulk:true`→`qry` 必須、未知フィールド禁止 | `cmd` が PascalCase か、`sub.type` が enum 値か、`aggs[].states` が UPPER_SNAKE か |
+| **causal-check / quality-check**（LLM・文脈依存） | 意味 validity。参照の実在・因果整合・モデル品質 | `trg` が実在 EVT を指すか、`pol` が実在 POLICY か、up↔dn の双方向一致、`scs[].cmd` ↔ `aggs[].transitions[].via` 整合、`scs[].evt` ↔ `aggs[].events[].name` 整合、分岐の MECE 性、`evt` の過去形・`cmd` の命令形 |
+
+**スキーマ通過は必要条件であって十分条件ではない。** ビルダー（`eventstorming_build.py`）は `.dml.yaml` 読込時に schema 検証し、HTML §9 にバナー（✅ / ⚠ 違反一覧）を描画する。**検証は非ブロッキング**で、違反があっても HTML は生成される。全行コメントのみ（YAML→`None`）や空ファイルは「未記述」として検証対象外（進行中セッション許容）。
 
 ---
 
-## 8. フル例（コミュニティイベント参加ドメイン）
+## 8. 最小実例
 
-```dml
+```yaml
 ctxs:
   - name: community-events
     lang:
       Event: "コミュニティが主催する集会・勉強会"
-      Capacity: "イベントの定員（最大参加者数）"
     mod: community-events
     up: []
-    dn:
-      - ctx: participation
-        rel: Customer-Supplier
-    aggs: [Community, Event]
-
-  - name: participation
-    lang:
-      Event: "参加申込の対象となるエントリー"
-      Capacity: "参加ステータスの枠（pending 含む）"
-    mod: participation
-    up:
-      - ctx: community-events
-        rel: Customer-Supplier
     dn: []
-    aggs: [Participation]
+    aggs: [Event]
 
 aggs:
-  - name: Community
-    ctx: community-events
-    purpose: "コミュニティのアイデンティティとオーナーシップを管理する"
-    states: [ACTIVE, ARCHIVED]
-    transitions:
-      - { from: ACTIVE, to: ARCHIVED, via: ArchiveCommunity, when: "オーナーがアーカイブを選択" }
-    attrs:
-      - { name: communityId,   type: CommunityId, required: true }
-      - { name: communityName, type: string,      required: true }
-      - { name: description,   type: string,      required: true }
-      - { name: ownerId,       type: UserId,      required: true }
-    events:
-      - name: CommunityCreated
-        params:
-          - { name: communityId,   type: CommunityId }
-          - { name: communityName, type: string }
-          - { name: ownerId,       type: UserId }
-
   - name: Event
     ctx: community-events
     purpose: "イベントのライフサイクルとキャパシティの単一の真実源"
-    states: [DRAFT, PUBLISHED, CANCELLED, COMPLETED]
+    states: [DRAFT, PUBLISHED, CANCELLED]
     transitions:
-      - { from: DRAFT,     to: PUBLISHED,              via: PublishEvent, when: "必須項目が揃いキャパシティ > 0" }
-      - { from: PUBLISHED, to: [CANCELLED, COMPLETED], via: CancelEvent }
+      - { from: DRAFT,     to: PUBLISHED, via: PublishEvent, when: "必須項目が揃いキャパシティ > 0" }
+      - { from: PUBLISHED, to: CANCELLED, via: CancelEvent }
     attrs:
       - { name: eventId,  type: EventId, required: true }
       - { name: title,    type: string,  required: true }
       - { name: capacity, type: int,     required: true }
-      - { name: heldAt,   type: date }
     events:
-      - name: EventCreated
-        params:
-          - { name: eventId, type: EventId }
-          - { name: title,   type: string }
       - name: EventPublished
       - name: EventCancelled
-        params:
-          - { name: eventId, type: EventId }
-
-  - name: Participation
-    ctx: participation
-    purpose: "イベント参加の申込・承認・キャンセルを追跡する"
-    states: [APPLIED, APPROVED, CANCELLED, WAITLISTED]
-    transitions:
-      - { from: APPLIED,   to: APPROVED,  via: ApproveParticipation }
-      - { from: APPLIED,   to: CANCELLED, via: CancelParticipation }
-      - { from: APPROVED,  to: CANCELLED, via: CancelParticipation }
-    attrs:
-      - { name: participationId, type: ParticipationId, required: true }
-      - { name: eventId,         type: EventId,         required: true }
-      - { name: memberId,        type: UserId,          required: true }
-    events:
-      - name: ParticipationApplied
-      - name: ParticipationWaitlisted
-      - name: ParticipationApproved
-      - name: ParticipationCancelled
 
 scs:
-  - name: 主催者がコミュニティを作成する
-    ctx: community-events
-    actor: Organizer
-    cmd: CreateCommunity
-    evt: CommunityCreated
-    agg: Community
-    rules:
-      - rule: communityName must be unique system-wide
-        why: "URL slug や検索 UX で name→id 逆引きを想定するため"
-      - rule: name and description must not be empty
-      - rule: owner must always exist
-    errs:
-      - cond: duplicateName
-        err: DuplicateCommunityNameError
-      - cond: emptyName
-        err: InvalidCommunityDataError
-      - cond: emptyDescription
-        err: InvalidCommunityDataError
-
-  - name: 主催者がイベントを作成する
-    ctx: community-events
-    actor: Organizer
-    cmd: CreateEvent
-    evt: EventCreated
-    agg: Event
-    rules:
-      - rule: event must belong to an existing community
-      - rule: capacity must be positive integer
-    errs:
-      - cond: communityNotFound
-        err: CommunityNotFoundError
-      - cond: invalidCapacity
-        err: InvalidCapacityError
-
   - name: 主催者がイベントを公開する
     ctx: community-events
     actor: Organizer
@@ -602,113 +233,20 @@ scs:
     agg: Event
     rules:
       - rule: event must be in DRAFT status
+        why: "公開済み・キャンセル済みからの再公開は別フロー"
     errs:
       - cond: alreadyPublished
         err: EventAlreadyPublishedError
-
-  - name: 主催者がイベントをキャンセルする
-    ctx: community-events
-    actor: Organizer
-    cmd: CancelEvent
-    evt: EventCancelled
-    agg: Event
-    rules:
-      - rule: event must not have already occurred
-        why: "開催済みイベントはキャンセル不可"
-    errs:
-      - cond: eventAlreadyOccurred
-        err: EventAlreadyOccurredError
-    pol:
-      - NotifyEventCancelled
-
-  - name: 参加者がイベントに参加申込する
-    ctx: participation
-    actor: Member
-    qry:
-      - GetRemainingCapacity
-    cmd: ApplyForEvent
-    agg: Participation
-    rules:
-      - rule: event must be published
-      - rule: user must not have existing participation for same event
-        why: "同一イベントへの二重申込を防ぐため"
-    errs:
-      - cond: eventNotPublished
-        err: EventNotAvailableError
-      - cond: duplicateParticipation
-        err: AlreadyAppliedError
-    brs:
-      - cond: "capacity > 0"
-        evt: ParticipationApplied
-      - cond: "capacity = 0"
-        evt: ParticipationWaitlisted
-
-  - name: 主催者が参加申込を承認する
-    ctx: participation
-    actor: Organizer
-    cmd: ApproveParticipation
-    evt: ParticipationApproved
-    agg: Participation
-    rules:
-      - rule: participation must be in APPLIED status
-    errs:
-      - cond: invalidStatus
-        err: InvalidStatusTransitionError
-
-  - name: 参加者が参加をキャンセルする
-    ctx: participation
-    actor: Member
-    cmd: CancelParticipation
-    evt: ParticipationCancelled
-    agg: Participation
-    rules:
-      - rule: participation must be in APPLIED or APPROVED status
-    errs:
-      - cond: invalidStatus
-        err: InvalidStatusTransitionError
-    pol:
-      - WaitlistPromotion
+        when: "既に PUBLISHED 状態の Event に PublishEvent が来た"
 
 pols:
   - name: NotifyEventCancelled
     ctx: community-events
     trg: EventCancelled
     qry: AllApprovedParticipations
-    cmd: SendCancellationNotification
     bulk: true
     evt: CancellationNotificationSent
-    note: "イベントキャンセル時に参加者へ通知"
-
-  - name: WaitlistPromotion
-    ctx: participation
-    trg: ParticipationCancelled
-    qry: NextWaitlistedParticipation
-    cmd: PromoteWaitlistEntry
-    evt: WaitlistPromoted
-    note: "キャンセル時にキャンセル待ちを繰り上げ（非同期・別トランザクション）"
+    note: "副作用専用 POLICY（メール送信のみ・cmd 省略）"
 ```
 
----
-
-## 9. JSON Schema による検証
-
-DML は [`./dml.schema.yaml`](./dml.schema.yaml)（JSON Schema Draft 2020-12・YAML 記述）で
-**構文 validity** を機械検証できる。検証ツールは `scripts/validate_dml.py`。
-
-```bash
-python3 .claude/skills/eventstorming-facilitator/scripts/validate_dml.py docs/eventstorming/<session>.dml.yaml
-```
-
-- ビルダー（`eventstorming_build.py`）は `.dml.yaml` 読込時に検証し、HTML §9 にバナー
-  （✅ / ⚠ 違反一覧）を描画する。**検証は非ブロッキング**で、違反があっても HTML は生成される。
-- 全行コメントのみ（YAML→`None`）や空ファイルは「未記述」として検証対象外（進行中セッション許容）。
-
-### 構文 validity と意味 validity の境界
-
-| レイヤ | 担保するもの | 例 |
-|------|------|------|
-| **JSON Schema**（機械・決定論的） | 構文 validity。トップレベル 4 リスト（`ctxs` / `aggs` / `scs` / `pols`）＋任意 `domains`、各要素の必須フィールド、型、enum（rel / subdomainType / bcType / brMode）、識別子の PascalCase・lowercase-with-hyphen・UPPER_SNAKE（状態名）・camelCase（attrs/params 名）、`evt`↔`brs` 排他、`trg`↔`trgs` 排他、`bulk:true`→`qry` 必須、未知フィールド禁止 | `cmd` が PascalCase か、`sub.type` が enum 値か、`aggs[].states` が UPPER_SNAKE か |
-| **causal-check / quality-check**（LLM・文脈依存） | 意味 validity。参照の実在・因果整合・モデル品質 | `trg` が実在 EVT を指すか、`pol` が実在 POLICY か、up↔dn の双方向一致、`sub` 参照の突合、`scs[].cmd` ↔ `aggs[].transitions[].via` 整合、`scs[].evt` ↔ `aggs[].events[].name` 整合、`scs[].agg` ↔ `aggs[].name` 整合、`ctxs[].aggs`（名前リスト）↔ `aggs[].ctx` 双方向参照、`aggs[].transitions[].from`/`to` ↔ `states` 整合、`rel` と `roles` の意味矛盾、分岐の MECE 性、`evt` の過去形・`cmd` の命令形 |
-
-**スキーマ通過は必要条件であって十分条件ではない。** 「形が正しい」ことを Schema が、
-「意味が正しい」ことを causal-check / quality-check が担保する。
+**コミュニティイベント参加ドメイン全体のフル例**: [`../examples/sample.dml.yaml`](../examples/sample.dml.yaml)（2 BC・複数 AGG・SCENARIO / POLICY を含む 190 行の参照モデル）。

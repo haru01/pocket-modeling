@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "python3 -c 'import json, sys, subprocess, re; data = json.load(sys.stdin); fp = data.get(\"tool_input\", {}).get(\"file_path\", \"\"); m = re.search(r\"docs/eventstorming/.+\\.(md|dml\\.yaml)$\", fp); sys.exit(0) if not m else subprocess.run([\"python3\", \".claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py\", fp])'"
+          },
+          {
+            "type": "command",
+            "command": "python3 -c 'import json, sys, subprocess, re; data = json.load(sys.stdin); fp = data.get(\"tool_input\", {}).get(\"file_path\", \"\"); m = re.search(r\"docs/eventstorming/.+\\.dml\\.yaml$\", fp); sys.exit(0) if not m else None; r = subprocess.run([\"python3\", \".claude/skills/eventstorming-facilitator/scripts/validate_dml.py\", fp], capture_output=True, text=True); sys.stderr.write(r.stderr); sys.exit(2 if r.returncode != 0 else 0)'"
           }
         ]
       }

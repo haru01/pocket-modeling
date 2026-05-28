@@ -99,6 +99,29 @@ python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py 
 
 ## 5. Event Flow グリッド（Big Picture 形式）
 
+### 5-0. フロー DSL 文法（`event-flow-svg` フェンス）
+
+MD §2・§3 の `` ```event-flow-svg `` フェンス内で使う **付箋フロー記述 DSL**。DML（YAML）とは別の文法で、HTML §3 の Big Picture グリッドにレンダリングされる Single Source of Truth。
+
+| 記号 | 意味 | 付箋色 |
+|------|------|--------|
+| `\|BC名\|:` | Bounded Context レーン（ヘッダー行。説明を続けて書く） | — |
+| `@アクター名` | アクター付箋 | 黄 |
+| `?クエリ名` | Read Model 付箋 | 緑 |
+| `[イベント名]` | イベント付箋（過去形） | 橙 |
+| `$ポリシー名` | ポリシー付箋 | 紫 |
+| `!コマンド名` | コマンド付箋（`!` 省略可） | 青 |
+| `>` | 同期フロー（直接連鎖。同レーン内） | — |
+| `>>` | 非同期遷移（レーン切り替え）。前レーン最後のフロー行の**末尾**に付ける | — |
+| `*>` | BULK Fork 矢印。直後の CMD/EVT が N 個の並列インスタンスのうちの 1 つを代表 | — |
+| `&>>` | Join + 非同期遷移。直前の N 個の EVT が 1 つの後続トリガーへ合流（`>>` の Join 版） | — |
+
+**順序ルール**: 1 行内は `@Actor > ?ReadModel > !Command > [Event]` の順。`?ReadModel` は**操作対象集約以外**からのデータ取得にのみ付ける（同一集約参照には付けない）。
+
+**BULK Fork / Join の使い所**: `*>` / `&>>` は **BULK POLICY**（`bulk: true` を持つ POLICY）から発火する fanout / join を表現する場合にのみ使う。詳細は `dml-spec.md` §3（POLICY の運用）。
+
+ラベル日本語化方針: コマンド=動詞句、イベント=過去形、ポリシー=目的名詞句、アクター=役割名、BC 名=英語（`lowercase-with-hyphen`）。DML ファイル（`.dml.yaml`）側の識別子は英語維持。HTML 表示時は DSL 記号（`@$![]`）をビルダーが自動削除する（§5-3）。
+
 ### 5-1. レイアウト原則
 
 - **時系列 = 横軸（列）**、**BC = 縦軸（行）**
