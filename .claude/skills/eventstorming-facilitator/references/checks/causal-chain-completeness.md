@@ -49,9 +49,9 @@ unresolved な step は構造チェック側で先に検出済みであること
 
 - ✅ complete: ハッピーパスが切れ目なくつながっており、代替フローも網羅されている
 - ⚠ gap: 「検品完了 → 査定確定 → 通知」の流れで `承認` step が抜けている
-- ❌ missing_branch: 偽物検出後の補償フロー（SUSPENDED 解除）が flows[] に無い
+- ❌ missing_branch: 偽物検出後の補償フロー（SUSPENDED 解除）が narratives[] / scenarios[].next 連鎖に無い
 
 ## 連携する構造チェック
 
-- `flow_step_resolution` — unresolved step を先に修正
+- `flow_chain_resolution` — unresolved entry/next/terminal を先に修正
 - `unknown_evt_in_policy` — POLICY のトリガー整合を先に修正

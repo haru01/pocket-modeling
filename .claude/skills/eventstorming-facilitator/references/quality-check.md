@@ -15,13 +15,13 @@ DML 品質チェックは **2 段階**で行う：
 
 | `--check=<name>` | 何を検出するか | 修正先 |
 |---|---|---|
-| `orphan_agg` | どの scenario からも参照されない AGG | scs[].agg を追記 / 不要なら AGG 削除 |
-| `dangling_cmd` | `aggs[].transitions[].via` が scs[].cmd に未宣言 | scs を追加するか transitions を修正 |
-| `unknown_evt_in_policy` | `pols[].trg` / `pols[].trgs.evts` が aggs[].events[].name に未宣言 | EVT 宣言を補強 |
-| `language_coverage` | AGG/CMD/EVT/POL が ctxs[].lang に未登録 | ctxs[].lang に英→日辞書を追加 |
-| `state_reachability` | aggs[].states に到達可能な transitions が無い状態（初期状態除く） | transitions を補強 |
-| `orphan_event` | EVT 宣言済みだが scs/pols のいずれからも参照されない | 削除 or 参照追加 |
-| `flow_step_resolution` | `flows[].steps[]` が scs.name / pols.name に解決できない | typo 修正 |
+| `orphan_agg` | どの scenario からも参照されない AGG | scenarios[].agg を追記 / 不要なら AGG 削除 |
+| `dangling_cmd` | `aggregates[].transitions[].via` が scenarios[].cmd に未宣言 | scenarios を追加するか transitions を修正 |
+| `unknown_evt_in_policy` | `policies[].trg` / `policies[].trgs.evts` が aggregates[].events[].name に未宣言 | EVT 宣言を補強 |
+| `language_coverage` | AGG/CMD/EVT/POL が contexts[].lang に未登録 | contexts[].lang に英→日辞書を追加 |
+| `state_reachability` | aggregates[].states に到達可能な transitions が無い状態（初期状態除く） | transitions を補強 |
+| `orphan_event` | EVT 宣言済みだが scenarios/policies のいずれからも参照されない | 削除 or 参照追加 |
+| `flow_chain_resolution` | `narratives[].entry` / `scenarios[].next` / `brs[].terminal` の参照が解決できない | typo 修正・narratives[].id の存在確認 |
 | `question_decision_link` | closed question の `decision_id` が decisions[].id に存在しない | リンク修正 |
 
 実行例：

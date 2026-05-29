@@ -2,7 +2,7 @@
 
 > **v5（YAML-only / dmlctl 運用）**: 各フェーズの「書き戻し先」は `.dml.yaml` の
 > トップレベルフィールド。本文書中の「`.md` を書く」記述は対応する DML フィールド
-> （`story` / `narratives` / `actions` / `questions` / `qrys` / `ctxs[].description` 等）
+> （`narratives` / `actions` / `questions` / `queries` / `contexts[].description` 等）
 > への書き込みと読み替える。
 
 ## 0〜10分：フレーミング
@@ -94,7 +94,7 @@
    - `Shared-Kernel`: 両 BC で共有するモデル部分
    - `ACL`（Anti-Corruption Layer）: 下流が上流を変換レイヤで隔離
 
-決定結果を DML（YAML）の `ctxs[].up` / `dn` に反映する（`rel` に関係タイプを併記。`references/dml-spec.md` 参照）。
+決定結果を DML（YAML）の `contexts[].up` / `dn` に反映する（`rel` に関係タイプを併記。`references/dml-spec.md` 参照）。
 
 ### 集約候補の見つけ方
 - 「一緒に変わるもの」をひとつの集約にする
@@ -103,26 +103,26 @@
 
 ### 集約属性の DML 記述（必須）
 
-集約候補が固まったら、不変条件を書き出す直前に **DML の `aggs[].attrs[]` で属性を固める**：
+集約候補が固まったら、不変条件を書き出す直前に **DML の `aggregates[].attrs[]` で属性を固める**：
 
 - 各属性は `{ name, type, required, note }`（`name` は camelCase、`type` は `EventId` / `string` / `int` / `date` 等の自由文字列）
 - Branded ID は `type: EventId` のような型名で参照する（実装側で別途定義）
 - 列挙値は `type: string` + `note: "DRAFT / PUBLISHED / CANCELLED のいずれか"` のように補足する（`states[]` と一致させる）
-- 不変条件は `scs[].rules[]`、エラーは `scs[].errs[]`、AGG が emit するイベントペイロードは `aggs[].events[].params[]` に書く（`params[]` の構造は `attrs[]` と同じ）
+- 不変条件は `scenarios[].rules[]`、エラーは `scenarios[].errs[]`、AGG が emit するイベントペイロードは `aggregates[].events[].params[]` に書く（`params[]` の構造は `attrs[]` と同じ）
 
-属性を書くことで **抜け漏れ**（例: `format`・`startsAt`・`endsAt` などの基本フィールド欠落）を防ぐ。Zod ブロックを `.md` 側に書く慣習は廃止された（属性表は HTML §8 が `aggs[].attrs[]` から自動描画する）。
+属性を書くことで **抜け漏れ**（例: `format`・`startsAt`・`endsAt` などの基本フィールド欠落）を防ぐ。Zod ブロックを `.md` 側に書く慣習は廃止された（属性表は HTML §7 が `aggregates[].attrs[]` から自動描画する）。
 
 ## 80〜85分：集約の目的・背景・制約を言語化する（フェーズ 4.6）
 
 属性で「形」を固めた直後、**不変条件（RULE）と例外（ERR）を引き出す前** に、各 AGG が「なぜこの単位で切り出されるか」を 3 つの問いで言語化する。RULE は制約の機械化、ERR は制約違反の表面化なので、その上流に「意図」を固めると不変条件が自然と出やすい。
 
-各 AGG について 1 ターンずつ以下を確認し、**`.dml.yaml` の `aggs[]` エントリ** に記録する（HTML §8 が自動描画する）：
+各 AGG について 1 ターンずつ以下を確認し、**`.dml.yaml` の `aggregates[]` エントリ** に記録する（HTML §7 が自動描画する）：
 
 | 問い | 質問例 | 出力先（DML） |
 |---|---|---|
-| **目的（必須・30字以上）** | 「この AGG が無いと業務はどう困るか？単一の責任主体として何のソース・オブ・トゥルースになるか？」 | `aggs[].purpose`（1 文） |
-| **背景（推奨）** | 「なぜ今この AGG を切り出すか？既存運用の何が痛い／重複していて、この AGG を入れると何が変わる？」 | `aggs[].background`（1〜3 文） |
-| **制約（推奨）** | 「業務／法令／プラットフォーム由来で守るべき非機能・ルールは？プラン制限・上限・SLA・規制は？」 | `aggs[].constraints[]`（文字列リスト） |
+| **目的（必須・30字以上）** | 「この AGG が無いと業務はどう困るか？単一の責任主体として何のソース・オブ・トゥルースになるか？」 | `aggregates[].purpose`（1 文） |
+| **背景（推奨）** | 「なぜ今この AGG を切り出すか？既存運用の何が痛い／重複していて、この AGG を入れると何が変わる？」 | `aggregates[].background`（1〜3 文） |
+| **制約（推奨）** | 「業務／法令／プラットフォーム由来で守るべき非機能・ルールは？プラン制限・上限・SLA・規制は？」 | `aggregates[].constraints[]`（文字列リスト） |
 
 **書き分けのコツ：**
 - 「目的」は CMD で表現済みの **what** を書かない（「コミュニティを作成・削除する」は NG）。**why / どんな単位の責任か** を書く（「コミュニティの所有権と公開設定を管理する単一の責任主体」が OK）
@@ -130,20 +130,20 @@
 
 **BC レベルは任意：** `.md` §7 コンテキスト候補カードの `#### 目的` / `#### 背景` / `#### 制約` は任意。「BC 共通の戦略的判断」を 1 文で書ける場合のみ追加する。AGG レベルと重複する内容なら BC レベルは省略してよい。
 
-**不足検知：** 全 AGG の `aggs[].purpose` が 30 字以上書かれているか確認。空・短すぎる項目はホットスポット `H-WHY` 候補としてマークし、`references/quality-check.md` の S8 で再走時に検出される。
+**不足検知：** 全 AGG の `aggregates[].purpose` が 30 字以上書かれているか確認。空・短すぎる項目はホットスポット `H-WHY` 候補としてマークし、`references/quality-check.md` の S8 で再走時に検出される。
 
-**DML への反映（必須）：** §5 で確定した AGG メタを `.dml.yaml` のトップレベル `aggs[]` に追加する。各エントリは `name`（必須・PascalCase）・`ctx`（必須・所属 BC の `ctxs[].name`）・`purpose`（必須）・`background`（推奨）・`constraints[]`（推奨）・`states`（推奨・upper-snake 配列）。AGG は所有 BC は 1 つ。同時に、所属 BC の `ctxs[].aggs` には AGG 名（PascalCase 文字列）を**軽量名簿**として追加する（詳細を持たない）。
+**DML への反映（必須）：** §5 で確定した AGG メタを `.dml.yaml` のトップレベル `aggregates[]` に追加する。各エントリは `name`（必須・PascalCase）・`ctx`（必須・所属 BC の `contexts[].name`）・`purpose`（必須）・`background`（推奨）・`constraints[]`（推奨）・`states`（推奨・upper-snake 配列）。AGG は所有 BC は 1 つ。同時に、所属 BC の `contexts[].aggs` には AGG 名（PascalCase 文字列）を**軽量名簿**として追加する（詳細を持たない）。
 
 **推奨追加項目（フェーズ5でもよい）：**
-- `aggs[].transitions[]`: 1〜2 件、`from`/`to`/`via`（scs[].cmd と一致するトリガー CMD 名）／必要なら `when`
-- `aggs[].events[]`: AGG が emit する EVT を `name`／`params` で列挙
-- `aggs[].attrs[]`: ペイロード属性を `name`／`type`／`required`／`note` で
+- `aggregates[].transitions[]`: 1〜2 件、`from`/`to`/`via`（scenarios[].cmd と一致するトリガー CMD 名）／必要なら `when`
+- `aggregates[].events[]`: AGG が emit する EVT を `name`／`params` で列挙
+- `aggregates[].attrs[]`: ペイロード属性を `name`／`type`／`required`／`note` で
 
 これにより quality-check / causal-check が以下の整合を検証できる：
-- `scs[].agg` ⇔ `aggs[].name`（孤立 AGG / 未定義 AGG 参照の検出）
-- `scs[].cmd` ⇔ `aggs[].transitions[].via`（CMD が AGG 状態遷移に紐付くか）
-- `scs[].evt` ⇔ `aggs[].events[].name`（EVT が AGG の宣言済み発火イベントか）
-- `ctxs[].aggs` 名簿 ⇔ `aggs[].ctx`（双方向参照の整合）
+- `scenarios[].agg` ⇔ `aggregates[].name`（孤立 AGG / 未定義 AGG 参照の検出）
+- `scenarios[].cmd` ⇔ `aggregates[].transitions[].via`（CMD が AGG 状態遷移に紐付くか）
+- `scenarios[].evt` ⇔ `aggregates[].events[].name`（EVT が AGG の宣言済み発火イベントか）
+- `contexts[].aggs` 名簿 ⇔ `aggregates[].ctx`（双方向参照の整合）
 
 ## 85〜88分：意思決定ログのファシリテーション（フェーズ 6）
 
@@ -192,9 +192,9 @@
 - イベントリスト（フェーズ別）
 - コマンド / ポリシー / アクター テーブル
 - コンテキスト候補と集約候補
-- 集約ごとの DML 属性（`aggs[].attrs[]`）・イベントペイロード（`aggs[].events[].params[]`）
+- 集約ごとの DML 属性（`aggregates[].attrs[]`）・イベントペイロード（`aggregates[].events[].params[]`）
 - BC 間依存方向（UPSTREAM / DOWNSTREAM）
-- DML `ctxs[].lang` の日本語↔英語辞書（全フロー図ラベルが登録済みか確認）
+- DML `contexts[].lang` の日本語↔英語辞書（全フロー図ラベルが登録済みか確認）
 
 「この内容でよければファイルを出力します」と確認する。
 

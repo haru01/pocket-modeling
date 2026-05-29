@@ -4,9 +4,9 @@
 # ============================================================
 # ContextMapper 由来の v2 拡張 + v3 で AGG をトップレベル化:
 #   ① リレーション語彙の拡充（roles / prRoles、rel enum 追加）
-#   ② Domain / Subdomain 分類（domains + ctxs[].sub）
-#   ③ フロー分岐セマンティクス（brMode / pols[].trgs）
-#   ④ BC メタデータ（type / vision / resp / ctxs[].aggs は名前リスト）
+#   ② Domain / Subdomain 分類（domains + contexts[].sub）
+#   ③ フロー分岐セマンティクス（brMode / policies[].trgs）
+#   ④ BC メタデータ（type / vision / resp / contexts[].aggs は名前リスト）
 #   ⑤ AGG はトップレベル `aggs:` に集約（ctx 参照で BC と紐付け）
 #      → states / transitions(from→to via cmd) / attrs / events を 1 ブロックで宣言
 # 拡張フィールドはすべて optional（省略すれば v1 記法のまま valid）。
@@ -23,7 +23,7 @@ domains:
         type: GENERIC_SUBDOMAIN
         vision: "決済・返金。外部 PSP に委譲する汎用領域"
 
-ctxs:
+contexts:
   # ④ BC メタ + ① roles / prRoles を使う BC
   - name: event-planning
     type: FEATURE
@@ -40,7 +40,7 @@ ctxs:
       - ctx: participation
         rel: Customer-Supplier
         note: "Event を下流 BC が参照"
-    aggs: [Event]                  # ⑤ AGG 名簿（詳細はトップレベル aggs[] へ）
+    aggs: [Event]                  # ⑤ AGG 名簿（詳細はトップレベル aggregates[] へ）
 
   - name: participation
     type: FEATURE
@@ -73,7 +73,7 @@ ctxs:
 
 # ⑤ Aggregate（トップレベル）— ctx 参照で BC と紐付く。
 # states / transitions / attrs / events をフラットに 1 ブロックで宣言。
-aggs:
+aggregates:
   - name: Event
     ctx: event-planning
     purpose: "イベントのライフサイクル（企画→公開→変更/中止）とキャパシティの単一の真実源"
@@ -155,13 +155,14 @@ aggs:
       - name: PaymentRefunded
         params: [{ name: paymentId, type: PaymentId }]
 
-scs:
+scenarios:
   - name: 主催者がイベントを作成する
     ctx: event-planning
     actor: Organizer
     cmd: CreateEvent
     evt: EventCreated
     agg: Event
+    next: 参加者がイベントに参加申込する
     rules:
       - rule: capacity must be a positive integer
         why: "定員 0 のイベントは申込導線が成立しないため"
@@ -177,6 +178,7 @@ scs:
     qry: [GetRemainingCapacity]
     cmd: ApplyForEvent
     agg: Participation
+    next: システムが申込を確定し監査記録する          # 通常分岐の継続先
     brMode: exclusive
     brs:
       - cond: "remainingCapacity > 0"
@@ -184,6 +186,7 @@ scs:
         pol: RequestPayment
       - cond: "remainingCapacity = 0"
         evt: ParticipationWaitlisted
+        terminal: alt-waitlist                       # この分岐は alt-waitlist フロー終端
 
   # ③ brMode: concurrent — 複数イベントを同時発火（cond 省略）
   - name: システムが申込を確定し監査記録する
@@ -197,12 +200,13 @@ scs:
         pol: NotifyParticipant
       - evt: AuditLogRecorded
 
-pols:
+policies:
   # 単一トリガーの v1 記法
   - name: RequestPayment
     ctx: payment
     trg: ParticipationApplied
     cmd: ExecutePayment
+    evt: PaymentCompleted                 # 完了イベント（FinalizeOn の trgs.evts と連鎖）
     note: "申込確定で決済を開始"
 
   # ③ trgs（join）— 複数イベントが揃って起動
@@ -223,29 +227,29 @@ pols:
     evt: ParticipantNotified
     note: "確定時に参加者へ通知（メール送信のみ・状態遷移なし）"
 
-# ⑥ flows[] — フロー構成（ハッピーパス + 代替シナリオ）。
-# steps[] は scs[].name（日本語）または pols[].name（PascalCase）の混在。
-# HTML §3 のフロー図はこの flows[] を起点に scs/pols を辿って自動生成される。
-flows:
+# ⑥ narratives[] — フロー定義 + 散文（v6: 旧 flows[] / v8: 旧 story: と統合された単一情報源）。
+# - kind は必須（happy / alt）。kind:happy は 1 本、kind:alt は複数可
+# - HTML §1 ストーリーは kind:happy 先頭・kind:alt 後続の順で描画される
+# - `entry` を指定したエントリだけが HTML §2 にフロー図 1 行として描画される
+# - フロー連鎖は scenarios[].next を辿って自動構成（policy は evt→trg マッチで自動挿入）
+# - 分岐終端は scenarios[].brs[].terminal: <narrative.id> で宣言
+narratives:
   - id: happy
     title: ハッピーパス — イベント作成から参加確定まで
     kind: happy
-    steps:
-      - 主催者がイベントを作成する          # scs[].name
-      - 参加者がイベントに参加申込する      # scs[].name（brs で APPLIED 分岐）
-      - RequestPayment                      # pols[].name（EVENTUAL-TX 決済）
-      - FinalizeOnPaymentAndApproval        # pols[].name（join: 決済完了 + 承認）
-      - システムが申込を確定し監査記録する  # scs[].name
-      - NotifyParticipant                   # pols[].name（BULK 通知）
+    entry: 主催者がイベントを作成する
+    prose: |
+      主催者がイベントを作成し、参加者が定員内で申込・決済を完了する正規フロー。
 
   - id: alt-waitlist
     title: 代替シナリオ — 残席ゼロで繰上待ちに入る
     kind: alt
-    steps:
-      - 参加者がイベントに参加申込する      # brs で WAITLISTED 分岐
+    entry: 参加者がイベントに参加申込する
+    prose: |
+      残席ゼロの状態で申込が来た場合、WAITLISTED へ遷移し繰上待ち列に並ぶ。
 
 # ⑦ decisions[] — 意思決定ログ（採用/不採用理由を構造化）。
-# HTML §8 で比較カードとして自動描画される。
+# HTML §5 で比較カードとして自動描画される。
 decisions:
   - id: D1
     topic: 繰上待ち（WAITLIST）の管理単位

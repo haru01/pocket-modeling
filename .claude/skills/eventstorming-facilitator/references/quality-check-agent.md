@@ -11,7 +11,8 @@
 python3 .claude/skills/eventstorming-facilitator/scripts/validate_dml.py <session>.dml.yaml
 
 for c in orphan_agg dangling_cmd unknown_evt_in_policy language_coverage \
-         state_reachability orphan_event flow_step_resolution question_decision_link; do
+         state_reachability orphan_event flow_chain_resolution \
+         narrative_entry_consistency question_decision_link; do
     python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py check <session>.dml.yaml --check=$c
 done
 ```
@@ -31,7 +32,7 @@ Agent(
 以下の手順で評価してください。
 
 1. `python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py view \
-   <session>.dml.yaml --view=scenarios` を Bash で実行し、scs[] スライスを得る
+   <session>.dml.yaml --view=scenarios` を Bash で実行し、scenarios[] スライスを得る
 2. `.claude/skills/eventstorming-facilitator/references/checks/scenario-rules-quality.md` を Read
 3. 同 .md の「LLM へのプロンプト」と「出力フォーマット」に従って、上記 1 のスライスを評価
 4. 出力フォーマットに沿った JSON で所見を返す
@@ -57,12 +58,12 @@ Agent(
 ```
 ### 意味チェック所見
 [scenario-rules-quality]
-- [?] scs「会員が下取をキャンセルする」 — rule に why 不足。
+- [?] scenarios「会員が下取をキャンセルする」 — rule に why 不足。
       推奨: why: "...（業務文脈で言語化）"
 
 [saga-completeness]
 - [?] flow `alt-significant-reduction` — open-ended (社内承認後の終端 EVT が無い)
-      推奨: SupervisorApprovalGranted を追加し flows[] 末尾につなぐ
+      推奨: SupervisorApprovalGranted を追加し scenarios[].next 連鎖の末尾につなぐ
 ```
 
 ---

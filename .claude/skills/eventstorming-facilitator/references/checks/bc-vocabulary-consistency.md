@@ -32,7 +32,7 @@ python3 scripts/dmlctl.py view <session>.dml.yaml --view=bc-language
   {
     "kind": "synonym" | "homonym" | "naming",
     "identifier": "<英語識別子 or 日本語ラベル>",
-    "ctxs": ["<bc-1>", "<bc-2>"],
+    "contexts": ["<bc-1>", "<bc-2>"],
     "issue": "<日本語で何が問題か>",
     "suggestion": "<日本語で改善案>"
   }

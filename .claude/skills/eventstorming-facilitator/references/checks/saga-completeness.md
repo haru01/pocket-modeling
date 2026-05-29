@@ -8,8 +8,7 @@ EVENTUAL-TX（POLICY 連鎖）の **Saga が業務的に完結しているか** 
 python3 scripts/dmlctl.py view <session>.dml.yaml --view=flow-causality
 ```
 
-すべての `flows[]` と、各ステップに紐づく scs/pols の cmd/evt/trg/ctx を抽出した
-スライスを取得。
+すべての `narratives[]`（entry 付き）から派生する各フローと、各ステップに紐づく scenarios/policies の cmd/evt/trg/ctx を抽出したスライスを取得。
 
 補助的に、`dmlctl view --view=policies` も評価対象に追加すると POL チェーンの全貌が見える。
 

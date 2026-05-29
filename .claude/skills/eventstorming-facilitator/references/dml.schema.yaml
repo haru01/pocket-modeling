@@ -1,10 +1,14 @@
 # DML (Domain Modeling Language) JSON Schema — Draft 2020-12
 #
-# DML は YAML 形式のドメインモデル（ctxs / aggs / scs / pols の 4 リスト + 任意の domains / flows / decisions）。
-# v3 で AGG をトップレベル `aggs[]` に切り出した（旧 v2 の `ctxs[].aggs[]` 内 dict 形式は廃止）。
-# v4 で「フローの構成（happy + alternatives）」と「意思決定ログ（採用/不採用理由）」を
-# それぞれ `flows[]` / `decisions[]` トップレベルとして追加。HTML §3 フロー図はこの
-# `flows[]` を起点に `scs[]`/`pols[]` を辿って自動生成される（旧 event-flow-svg DSL は廃止）。
+# DML は YAML 形式のドメインモデル（contexts / aggregates / scenarios / policies の 4 リスト + 任意の
+# domains / decisions）。
+# v3 で AGG をトップレベル `aggregates[]` に切り出した（旧 v2 の `contexts[].aggs[]` 内 dict 形式は廃止）。
+# v4 で「意思決定ログ（採用/不採用理由）」を `decisions[]` トップレベルとして追加。
+# v6 でトップレベル `flows[]` を廃止し、`scenarios[].next` / `brs[].next` / `brs[].terminal` の
+# 連鎖と `narratives[].entry` + `narratives[].kind` の組み合わせでフローを表現するモデルに移行。
+# HTML §3 フロー図は narratives[] の各エントリを起点に scenarios[].next を辿り、
+# 途中で scenarios[].evt → policies[].trg をマッチさせて policy を自動挿入して生成される
+# （旧 event-flow-svg DSL は廃止）。
 # このスキーマは「構文 validity（形が正しいか）」のみを機械検証する。
 # 「意味 validity（参照の実在・因果整合・モデル品質）」は causal-check / quality-check が担う。
 # スキーマ通過は必要条件であって十分条件ではない。
@@ -16,16 +20,21 @@
 #   list(Draft202012Validator(schema).iter_errors(doc))
 #
 # 構造の要点:
-#   - `ctxs[].aggs` は AGG 名の軽量名簿（PascalCase 文字列のリスト）
-#   - 詳細はトップレベル `aggs[]` に集約: name / ctx（所属 BC）/ purpose / states /
+#   - `contexts[].aggs` は AGG 名の軽量名簿（PascalCase 文字列のリスト）
+#   - 詳細はトップレベル `aggregates[]` に集約: name / ctx（所属 BC）/ purpose / states /
 #     transitions（from→to via cmd）/ attrs（ペイロード属性）/ events（emit する EVT 宣言）
 #
 # 拡張フィールド（type/vision/resp/sub/roles/prRoles/brMode/trgs/domains 等）はすべて optional。
 # 進行中セッション（多くの項目が空）でも valid。
 #
-# 略語化方針: 長いキー名は略語化、短いキー名（name/type/vision/note/lang/mod/qry/cmd/evt/agg/pol 等）は維持。
-# 主な略語: ctxs / scs / pols / ctx / aggs / sub(s) / up / dn / rel / prRoles / brMode / brs /
-#          cond / err / errs / resp / tech / trg / trgs / evts / lang / mod / via
+# 命名方針:
+#   - トップレベルキーは略語禁止（contexts / aggregates / scenarios / policies / queries /
+#     decisions / questions / actions / narratives / domains / session）
+#   - 散文は narratives[] に一本化。ハッピーパスは kind: happy のエントリ、代替は kind: alt
+#     （旧トップレベル `story:` は v8 で廃止）
+#   - ネストの短いキー（name/type/vision/note/lang/mod/qry/cmd/evt/agg/pol 等）は維持
+#   - 主なネスト略語: ctx / aggs / sub(s) / up / dn / rel / prRoles / brMode / brs /
+#     cond / err / errs / resp / tech / trg / trgs / evts / cmds / lang / mod / via
 
 $schema: "https://json-schema.org/draft/2020-12/schema"
 $id: "https://pocket-modeling/schemas/dml.schema.yaml"
@@ -34,36 +43,32 @@ title: DML Document
 # トップレベルは object。必須キーは無い（空 {} も valid）。
 # 全行コメントのみの .dml.yaml は yaml.safe_load で None になるが、これは検証ツール層
 # （validate_dml.py / ビルダー）が「未記述」として検証前にスキップする（進行中セッション許容）。
-# スキーマを object に固定することで、違反が (root) に潰れず深いパス（例 scs/3/cmd）で報告される。
+# スキーマを object に固定することで、違反が (root) に潰れず深いパス（例 scenarios/3/cmd）で報告される。
 type: object
 additionalProperties: false
 properties:
   domains:
     type: array
     items: { $ref: "#/$defs/domain" }
-  ctxs:
+  contexts:
     type: array
     items: { $ref: "#/$defs/context" }
-  aggs:
+  aggregates:
     type: array
     items: { $ref: "#/$defs/aggregate" }
-  scs:
+  scenarios:
     type: array
     items: { $ref: "#/$defs/scenario" }
-  pols:
+  policies:
     type: array
     items: { $ref: "#/$defs/policy" }
-  flows:                                       # 要素⑤・任意（HTML §3 のフロー図を駆動）
-    type: array
-    items: { $ref: "#/$defs/flow" }
   decisions:                                   # 要素⑥・任意（意思決定ログ：採用/不採用理由）
     type: array
     items: { $ref: "#/$defs/decision" }
   # v5: MD 廃止に伴い散文・セッションメタ・Q/QRY/アクションを DML 内に統合（すべて任意）
   session:                                     # セッションメタ（旧 .md ヘッダー相当）
     $ref: "#/$defs/session"
-  story: { type: string }                      # ハッピーパス散文（旧 .md §1）
-  narratives:                                  # 代替シナリオ散文（旧 .md §2）
+  narratives:                                  # ハッピーパス＋代替シナリオ散文（旧 .md §1〜§2）
     type: array
     items: { $ref: "#/$defs/narrative" }
   questions:                                   # オープンクエスチョン（旧 .md §5 / Q1..Qn）
@@ -72,7 +77,7 @@ properties:
   actions:                                     # 次のアクション（旧 .md §4）
     type: array
     items: { $ref: "#/$defs/action" }
-  qrys:                                        # リードモデル候補カード（旧 .md §9）
+  queries:                                     # リードモデル候補カード（旧 .md §9）
     type: array
     items: { $ref: "#/$defs/qry" }
 
@@ -105,8 +110,16 @@ $defs:
     type: string
     enum: [U, D, S, C, OHS, PL, ACL, CF, SK, P]
   subdomainType:
+    # subs[] 配下のサブドメイン種別。3 値とも `_SUBDOMAIN` で揃え（フィールド名 `subs` と整合）、
+    # `CORE_DOMAIN` / `SUPPORTING_DOMAIN` の旧表記との混在で typo を踏まないようにする。
+    # 旧表記（CORE_DOMAIN / SUPPORTING_DOMAIN）も後方互換として許容する。
     type: string
-    enum: [CORE_DOMAIN, SUPPORTING_DOMAIN, GENERIC_SUBDOMAIN]
+    enum:
+      - CORE_SUBDOMAIN
+      - SUPPORTING_SUBDOMAIN
+      - GENERIC_SUBDOMAIN
+      - CORE_DOMAIN           # 後方互換: ≤ v6 で書かれた既存セッション用
+      - SUPPORTING_DOMAIN     # 後方互換: ≤ v6 で書かれた既存セッション用
   bcType:
     type: string
     enum: [FEATURE, APPLICATION, SYSTEM, MICROSERVICE]
@@ -174,7 +187,7 @@ $defs:
           - { $ref: "#/$defs/upperSnake" }
           - type: array
             items: { $ref: "#/$defs/upperSnake" }
-      via: { $ref: "#/$defs/pascalCase" }       # トリガー CMD（scs[].cmd と一致）
+      via: { $ref: "#/$defs/pascalCase" }       # トリガー CMD（scenarios[].cmd と一致）
       when: { type: string }                    # 日本語補足
       note: { type: string }
 
@@ -188,16 +201,18 @@ $defs:
       params:
         type: array
         items: { $ref: "#/$defs/attribute" }
+      terminal:                                  # v7・true なら orphan_event 検出から除外
+        type: boolean                            # （業務的に「ここで止まる」失敗系/タイムアウト系 EVT 用）
       note: { type: string }
 
-  # ---------- Aggregate（トップレベル `aggs` の要素） ----------
+  # ---------- Aggregate（トップレベル `aggregates` の要素） ----------
   aggregate:
     type: object
     additionalProperties: false
     required: [name, ctx]
     properties:
       name: { $ref: "#/$defs/pascalCase" }
-      ctx: { $ref: "#/$defs/contextName" }     # 所属 BC（必須・ctxs[].aggs と双方向参照）
+      ctx: { $ref: "#/$defs/contextName" }     # 所属 BC（必須・contexts[].aggs と双方向参照）
       purpose: { type: string }
       background: { type: string }              # 「なぜ今この AGG を切り出すか」（v4・任意）
       constraints:                              # 業務/法令/プラットフォーム由来の制約（v4・任意）
@@ -241,7 +256,7 @@ $defs:
             items: { type: string }
       tech: { type: string }
       sub: { $ref: "#/$defs/contextName" }      # 要素②・軽量参照
-      aggs:                                     # AGG 名の軽量名簿（詳細はトップレベル aggs[] へ）
+      aggs:                                     # AGG 名の軽量名簿（詳細はトップレベル aggregates[] へ）
         type: array
         items: { $ref: "#/$defs/pascalCase" }
       # --- v1 既存 ---
@@ -289,6 +304,10 @@ $defs:
       note: { type: string }
 
   # ---------- Branch（要素③） ----------
+  # next/terminal はフロー連鎖を駆動する追加属性（v6）:
+  #   - next: この分岐が発火した直後に進む scenarios[].name（同一フロー内継続）
+  #   - terminal: この分岐がフロー終端（narratives[].id を指定して「このフローはここで終わる」と宣言）
+  # next と terminal は排他。terminal: <flow_id> なら以降は policy 自動挿入のみで終わる。
   branch:
     type: object
     additionalProperties: false
@@ -301,9 +320,17 @@ $defs:
           - { $ref: "#/$defs/pascalCase" }
           - type: array
             items: { $ref: "#/$defs/pascalCase" }
+      next: { type: string }                                # この分岐が発火した時に進む scenarios[].name
+      terminal: { $ref: "#/$defs/contextName" }             # この分岐がフロー終端（narratives[].id 参照）
       note: { type: string }
+    not:
+      required: [next, terminal]                            # next と terminal の同時指定を禁止
 
   # ---------- Scenario ----------
+  # next はフロー連鎖の継続先を表す（v6）:
+  #   - 文字列形式: 全フローで同一の次 scenario.name を指す（フロー間で next が共通な時）
+  #   - dict 形式:  narratives[].id をキーとし、フロー別に次 scenario.name を指定（分岐点）
+  # 省略 → このフロー上で次の scenario が無い（policy 自動挿入のみで終わるか、終端）
   scenario:
     type: object
     additionalProperties: false
@@ -322,6 +349,12 @@ $defs:
         type: array
         minItems: 1
         items: { $ref: "#/$defs/branch" }
+      next:                                    # v6・フロー連鎖の次 scenario（任意）
+        oneOf:
+          - type: string                                          # 全フロー共通
+          - type: object
+            additionalProperties: { type: string }                # narratives[].id → 次 scenario.name
+            minProperties: 1
       agg: { $ref: "#/$defs/pascalCase" }
       rules:
         type: array
@@ -364,6 +397,7 @@ $defs:
       cmd: { $ref: "#/$defs/pascalCase" }        # 副作用専用 POLICY では省略可
       bulk: { type: boolean }
       evt: { $ref: "#/$defs/pascalCase" }
+      agg: { $ref: "#/$defs/pascalCase" }        # v7・POL の cmd が変更する AGG（scenarios と対称化）
       note: { type: string }
     allOf:
       - not:
@@ -374,26 +408,6 @@ $defs:
             bulk: { const: true }
         then:
           required: [qry]                        # bulk: true のとき qry 必須
-
-  # ---------- Flow（v4・happy + alternatives を構成して HTML §3 図を駆動） ----------
-  # steps[] は scs[].name（日本語）または pols[].name（PascalCase）の混在文字列リスト。
-  # 順序は因果連鎖と整合する想定（causal-check が突合）。同一 ctx の連続ステップは
-  # ビルダー側で 1 レーンに併合され、ctx 変化やポリシー遷移は非同期矢印で描画される。
-  flow:
-    type: object
-    additionalProperties: false
-    required: [id, title, steps]
-    properties:
-      id: { $ref: "#/$defs/contextName" }       # e.g. happy / alt-cancel / alt-waitlist
-      title: { type: string }                   # HTML §3 でフロー図の見出しに使用
-      kind:
-        type: string
-        enum: [happy, alt]                      # 任意・分類ヒント（HTML 表示には影響しない）
-      steps:
-        type: array
-        minItems: 1
-        items: { type: string }                 # scs[].name（日本語）or pols[].name（PascalCase）
-      note: { type: string }
 
   # ---------- Decision / Option（v4・意思決定ログ） ----------
   # 各 decision は「採用したもの + なぜ + 不採用のもの + なぜでない」を構造化して残す。
@@ -435,23 +449,34 @@ $defs:
     properties:
       id: { type: string }                      # セッション ID（例: 20260528-1209）
       domain: { type: string }                  # 対象ドメイン名
-      status: { type: string }                  # フェーズ進捗（自由文字列）
+      phase:                                    # v7・直近完了フェーズ（構造化）
+        type: string                            #     SKILL.md ワークフロー 9 ステップに対応
+        enum: ["1", "2", "3", "4", "4.5", "4.6", "5", "6", "7"]
+        # HTML 進捗タブはこの値を最優先で参照する。"7" で全完了（最終 ✅）扱い。
+        # 未設定なら status 文字列を regex で解釈するレガシー挙動にフォールバック。
+      status: { type: string }                  # 補足説明（自由文字列）。タブ表示には使われない（phase が真実源）
       goal: { type: string }                    # 当該セッションのゴール
       started_at: { type: string }              # 開始日時（ISO 8601 推奨）
       html_link: { type: string }               # 生成 HTML の相対パス（任意）
       note: { type: string }
 
-  # ---------- Narrative（v5・代替シナリオ散文：旧 .md §2） ----------
-  # 任意で flows[].id と紐づく散文。flow に対応しないユーザー視点の代替シナリオも記述できる。
+  # ---------- Narrative（v5・散文：旧 .md §1〜§2） ----------
+  # v6: フロー定義の起点も兼ねる。`entry` を指定すると HTML §3 でフロー図 1 行を駆動する。
+  # entry を持たない narrative はプロセ散文だけのエントリ（フロー図には描画されない）。
+  # v8: トップレベル `story:` 廃止に伴い、ハッピーパスは kind: happy のエントリとしてここに統合。
+  #     kind を必須化、enum は [happy, alt]。kind: happy は 0 or 1 件（複数指定は narrative-happy-unique で検出）。
   narrative:
     type: object
     additionalProperties: false
-    required: [id, prose]
+    required: [id, kind, prose]
     properties:
-      id:                                       # 散文識別子（例: alt-1 / cancel-by-customer）
+      id:                                       # 散文識別子・兼フロー ID（例: happy / alt-rejected）
         $ref: "#/$defs/contextName"
-      flow_id: { $ref: "#/$defs/contextName" }  # 対応する flows[].id（任意）
-      title: { type: string }                   # 表示用見出し（任意・省略時は flows[].title）
+      title: { type: string }                   # 表示用見出し（HTML §1 散文カード／§3 フロー図見出しに使用）
+      kind:                                     # フロー種別（HTML §1 では happy が先頭、alt が後続）
+        type: string
+        enum: [happy, alt]
+      entry: { type: string }                   # v6・このフローの開始 scenarios[].name（指定時のみ §3 に描画）
       prose: { type: string }                   # 散文本文
       note: { type: string }
 

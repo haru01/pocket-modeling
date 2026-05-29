@@ -96,7 +96,7 @@ def _parse_path(path: str) -> list:
     """ドット区切りパスをセグメント列に変換する。
 
     数値インデックスは `users.0.name` のように記述する。引用付き
-    （`ctxs[name="store-front"].lang.cmds.PlaceOrder`）には未対応で、
+    （`contexts[name="store-front"].lang.cmds.PlaceOrder`）には未対応で、
     まずは単純な `key.0.key` 形式のみサポート。
     """
     segments = []

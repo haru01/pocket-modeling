@@ -10,7 +10,7 @@
 python3 scripts/dmlctl.py view <session>.dml.yaml --view=scenarios [--ctx <bc-name>]
 ```
 
-返り値の `scs[]` の各要素を 1 件ずつ評価対象とする。LLM へは **rules[] / errs[] を持つ scenario のみ**
+返り値の `scenarios[]` の各要素を 1 件ずつ評価対象とする。LLM へは **rules[] / errs[] を持つ scenario のみ**
 を抽出して渡す（rules/errs 空のものはチェック対象外）。
 
 ## LLM へのプロンプト

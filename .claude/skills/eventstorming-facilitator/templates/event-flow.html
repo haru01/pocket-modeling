@@ -596,6 +596,20 @@
     .transitions-details[open] summary::before { transform: rotate(90deg); }
     .transitions-details > ul { margin-top: 6px; }
 
+    /* === DML セクション（§9・<details> でデフォルト折り畳み） === */
+    .dml-details > summary {
+      cursor: pointer; user-select: none; list-style: none;
+      display: flex; align-items: center;
+    }
+    .dml-details > summary::-webkit-details-marker { display: none; }
+    .dml-details > summary::before {
+      content: "▶"; display: inline-block;
+      margin-right: 8px; color: #78909C;
+      transition: transform 0.15s;
+    }
+    .dml-details[open] > summary::before { transform: rotate(90deg); }
+    .dml-details > summary > h2 { display: inline; margin: 0; }
+
     /* === 状態遷移図（Mermaid） === */
     .state-diagram {
       margin: 12px 0;

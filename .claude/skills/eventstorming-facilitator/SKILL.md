@@ -5,7 +5,7 @@ description: Facilitate DDD domain modeling sessions via EventStorming conversat
 
 # EventStorming + DDD モデリング ファシリテーター
 
-会話でドメインイベントを発見し DML（Domain Modeling Language）に情報圧縮する。**`docs/eventstorming/<session>.dml.yaml` 1 ファイルがモデル唯一の真実源**（v5 以降）。物語（`story`）・代替シナリオ（`narratives`）・次のアクション（`actions`）・オープンクエスチョン（`questions`）・BC 散文（`ctxs[].description`）・リードモデル（`qrys`）・意思決定ログ（`decisions`）・集約カード（`aggs`）・フロー（`flows`）・コンテキスト言語（`ctxs[].lang`）・依存方向（`ctxs[].up/dn`）はすべて DML 内のトップレベル項目として保持される。`.md` は廃止された。
+会話でドメインイベントを発見し DML（Domain Modeling Language）に情報圧縮する。**`docs/eventstorming/<session>.dml.yaml` 1 ファイルがモデル唯一の真実源**（v5 以降）。散文（`narratives` — v8 で旧 `story:` を統合、`kind: happy`/`alt` で区別）・次のアクション（`actions`）・オープンクエスチョン（`questions`）・BC 散文（`contexts[].description`）・リードモデル（`queries`）・意思決定ログ（`decisions`）・集約カード（`aggregates`）・コンテキスト言語（`contexts[].lang`）・依存方向（`contexts[].up/dn`）はすべて DML 内のトップレベル項目として保持される。`.md` は廃止された。
 
 AI は **`scripts/dmlctl.py` 経由で観点別スライスだけ読み書き** する（全文 `Read`/`Edit` は避ける）。`dmlctl view --view=<name>` で必要な観点だけを取得、`dmlctl set/add/remove` で構造化された編集を行う。直接 `Edit` で書き換えるのも可能だが、テキストサイズが大きいと context を圧迫するため小さな変更でも dmlctl を優先する。
 
@@ -15,7 +15,7 @@ PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/even
 
 ---
 
-## ワークフロー（8フェーズ）
+## ワークフロー（9フェーズ）
 
 各フェーズの「書き出し対象」は **`.dml.yaml` のトップレベルフィールド**。AI は dmlctl 経由
 （`set` / `add` / `remove`）で更新する。直接 Edit も可だが context 節約のため dmlctl 優先。
@@ -23,12 +23,12 @@ PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/even
 | フェーズ | 書き出し対象（`.dml.yaml` フィールド） |
 |---------|--------------------------------------|
 | 1. スコープ確認 | `session`（id/domain/goal/status） |
-| **2. ストーリー確認** | **`story`（ハッピーパス散文）＋ `narratives[]`（代替シナリオ散文 2〜3 本）＋ `flows[]` の枠** → `Bash open <session>.html` |
-| 3. イベント発見 | `scs[]` 仮 entries ＋ `ctxs[].lang` 新規識別子 |
-| 4. CMD→EVT→POLICY チェーン | `scs[]` / `pols[]` / `flows[]`（happy + 代替 1〜2）／ `ctxs[]` の `up`/`dn` |
-| 4.5. BC 境界 | `ctxs[].lang` 充実（文脈で意味が変わる言葉を記録） |
-| **4.6. 目的・背景・制約** | **`aggs[]` の `name`/`ctx`/`purpose`/`background`/`constraints[]`/`states` ＋ `ctxs[].description`（BC 散文）** |
-| **5. 不変条件・エラー＋属性・イベントペイロード** | **`scs[].rules[]`（rule/why）／`scs[].errs[]`（cond/err/when）／`aggs[].transitions[]`／`aggs[].attrs[]`／`aggs[].events[].params[]` ＋ `qrys[]`（リードモデル候補）** |
+| **2. ストーリー確認** | **`narratives[]`（`kind: happy` のハッピーパス散文 1 本 + `kind: alt` の代替シナリオ 2〜3 本）** → `Bash open <session>.html` |
+| 3. イベント発見 | `scenarios[]` 仮 entries ＋ `contexts[].lang` 新規識別子 |
+| 4. CMD→EVT→POLICY チェーン | `scenarios[]`（`next`/`brs[].terminal` 付き）／ `policies[]` / `narratives[]`（happy + 代替 1〜2 を `entry` 付きで）／ `contexts[]` の `up`/`dn` |
+| 4.5. BC 境界 | `contexts[].lang` 充実（文脈で意味が変わる言葉を記録） |
+| **4.6. 目的・背景・制約** | **`aggregates[]` の `name`/`ctx`/`purpose`/`background`/`constraints[]`/`states` ＋ `contexts[].description`（BC 散文）** |
+| **5. 不変条件・エラー＋属性・イベントペイロード** | **`scenarios[].rules[]`（rule/why）／`scenarios[].errs[]`（cond/err/when）／`aggregates[].transitions[]`／`aggregates[].attrs[]`／`aggregates[].events[].params[]` ＋ `queries[]`（リードモデル候補）** |
 | **6. 意思決定ログ** | **`decisions[]`**（id/topic/chosen/options/affects・options ごとに why/why_not） |
 | 7. 整合性チェック → 出力 | `dmlctl check` を全観点実行 → 観点別 LLM 評価 → 確定版 `.dml.yaml` |
 
@@ -66,7 +66,7 @@ PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/even
 
 HTML 更新・DML 抜粋は出さない。本文末尾は問い 1 つで終わる。
 
-**(b) フェーズ完了** — Markdown + 構造化テーブル + DML 抜粋（`ctxs[].lang` の追加識別子も含む）+ HTML パス案内：
+**(b) フェーズ完了** — Markdown + 構造化テーブル + DML 抜粋（`contexts[].lang` の追加識別子も含む）+ HTML パス案内：
 
 ```
 **フェーズ{N} 完了: <フェーズ名>** ✅
@@ -86,10 +86,10 @@ HTML 更新・DML 抜粋は出さない。本文末尾は問い 1 つで終わ�
 
 ### 追加された DML
 ```dml
-<該当フェーズで確定した ctxs/aggs/scs/pols/flows/decisions のみ（YAML）>
+<該当フェーズで確定した contexts/aggregates/scenarios/policies/flows/decisions のみ（YAML）>
 ```
 
-### 新規ラベルの追加（DML `ctxs[].lang`）
+### 新規ラベルの追加（DML `contexts[].lang`）
 | 英語識別子 | 日本語ラベル | 所属 BC | 種別 |
 |---|---|---|---|
 
@@ -135,31 +135,48 @@ HTML 更新・DML 抜粋は出さない。本文末尾は問い 1 つで終わ�
 
 ---
 
-## Event Flow（DML 駆動）
+## Event Flow（DML 駆動・v6）
 
-§3 のフロー図は **`.dml.yaml` の `flows[]` ＋ `scs[]`/`pols[]` からビルダーが自動生成**する。AI/人間が手書きの DSL を書く場面は無い。
-
-`flows[]` の各エントリは：
+§3 のフロー図は **`narratives[].entry` を起点に `scenarios[].next` を辿り、`scenarios[].evt → policies[].trg` のマッチで policy を自動挿入してビルダーが自動生成**する。AI/人間が手書きの DSL を書く場面は無い。
 
 ```yaml
-flows:
+narratives:
   - id: happy
-    title: ハッピーパス — 注文確定から発送まで
+    title: ハッピーパス — イベント作成から参加確定まで
     kind: happy
-    steps:
-      - 主催者がコミュニティを作成する          # scs[].name（日本語）
-      - 参加者がイベントに参加申込する          # scs[].name（日本語）
-      - RequestPayment                          # pols[].name（PascalCase）
-      - システムが申込を確定し監査記録する
+    entry: 主催者がイベントを作成する         # フロー開始 scenarios[].name
+    prose: |
+      <ハッピーパス散文>
   - id: alt-waitlist
     title: 代替シナリオ — 残席ゼロで繰上待ち
     kind: alt
-    steps:
-      - 参加者がイベントに参加申込する
-      - NotifyWaitlistPromotion
+    entry: 参加者がイベントに参加申込する     # 任意。指定なし → §3 描画は省略
+    prose: |
+      <代替シナリオ散文>
+
+scenarios:
+  - name: 主催者がイベントを作成する
+    cmd: CreateEvent
+    evt: EventCreated
+    next: 参加者がイベントに参加申込する      # 全フロー共通の次（文字列）
+
+  - name: 参加者がイベントに参加申込する
+    cmd: ApplyForEvent
+    next: システムが申込を確定し監査記録する  # 通常分岐の継続先
+    brs:
+      - { cond: "...", evt: ParticipationApplied }
+      - { cond: "...", evt: ParticipationWaitlisted, terminal: alt-waitlist }  # この分岐は alt-waitlist 終端
+
+  - name: 注文確定（分岐点の例）
+    cmd: PlaceOrder
+    evt: OrderPlaced
+    next:                                     # フロー分岐時は dict 形式
+      happy: 旧機種発送
+      alt-timeout: タイムアウト検知
 ```
 
-- **`steps[]` の値は `scs[].name`（日本語）または `pols[].name`（PascalCase）の混在**。順序は因果連鎖と整合させる
+- **scenarios[].next**: 文字列 = 全フロー共通の次／dict = `narratives[].id` ごとの次。省略 = フロー終端
+- **scenarios[].brs[].terminal**: `<narratives[].id>` を指定すると「この brs 分岐が発火したらそのフローはここで終わる」と宣言
 - 同一 `ctx` の連続ステップはビルダー側で **1 レーンに併合**され、`ctx` 変化やポリシー遷移は非同期矢印で描画
 - POLICY が `trgs`（複数トリガー join）を持てば **BPMN シンクバー（Σ N）** で表現、`bulk: true` であれば **fanout（× N）** で描画
 - 図の HTML 表現詳細は `references/html-render-spec.md` §5
@@ -170,17 +187,18 @@ flows:
 
 DML は **`docs/eventstorming/<session>.dml.yaml`** 1 ファイルに **YAML 直書き**（フェンス不要）で書く。構文は `references/dml.schema.yaml`（JSON Schema）で機械検証。設計判断・哲学は `references/dml-spec.md`。
 
-- **トップレベル**（v5）: モデル本体 `ctxs` / `aggs` / `scs` / `pols` / `flows` / `decisions` ＋ 散文系 `session` / `story` / `narratives` / `actions` / `questions` / `qrys` ＋ 任意 `domains`。`scs`/`pols`/`aggs` の各要素は `ctx:` で所属 BC を参照
-- **AGG 詳細はトップレベル `aggs[]` に集約**：`name`（必須）／`ctx`（必須）／`purpose`／`background`／`constraints[]`／`states`／`transitions[]`（`from`/`to`/`via`/`when`）／`attrs[]`（`name`/`type`/`required`/`note`）／`events[]`（`name`/`params[]`）。`ctxs[].aggs` は AGG 名（PascalCase 文字列）の軽量名簿
-- **`scs[].name` は日本語**でアクター＋行為。`actor` 必須（典型値: `Organizer` `Member` `System`）
+- **トップレベル**（v8）: モデル本体 `contexts` / `aggregates` / `scenarios` / `policies` / `decisions` ＋ 散文＋フロー定義 `session` / `narratives`（v8 で `story:` を統合・`kind: happy`/`alt` で区別） / `actions` / `questions` / `queries` ＋ 任意 `domains`。`scenarios`/`policies`/`aggregates` の各要素は `ctx:` で所属 BC を参照。**フロー連鎖は `narratives[].entry` ＋ `scenarios[].next` / `brs[].terminal` で表現**（旧 `flows[]` は廃止）
+- **AGG 詳細はトップレベル `aggregates[]` に集約**：`name`（必須）／`ctx`（必須）／`purpose`／`background`／`constraints[]`／`states`／`transitions[]`（`from`/`to`/`via`/`when`）／`attrs[]`（`name`/`type`/`required`/`note`）／`events[]`（`name`/`params[]`）。`contexts[].aggs` は AGG 名（PascalCase 文字列）の軽量名簿
+- **`scenarios[].name` は日本語**でアクター＋行為。`actor` 必須（典型値: `Organizer` `Member` `System`）
 - **キー順 `name → ctx → actor → qry → cmd → evt|brs → agg → rules → errs → pol`** を推奨
 - **`cmd/evt/agg/trg/emits/qry` の値は英語識別子**。日本語補足は `rules[].why` / `errs[].when` / `note` へ
 - **`errs` は `cond` + `err`（ErrorType）+ 任意 `when`**、**`rules` は `rule`（英語の不変条件）+ 任意の `why`**
-- **`ctxs[]` に `up`/`dn` 必須**（依存なしは空リスト `[]`、`rel` 併記）。BC 名は `lowercase-with-hyphen`
-- **`pols` は EVENTUAL-TX 専用**。SAME-TX 分岐は発行元 scenario の `brs` で書く
+- **`contexts[]` の `up`/`dn` は推奨**（schema 上は optional だが、依存方向を明示すると BC マップが立体化する）。**依存なしは空リスト `[]`** を書いて「考慮済み」と示す。`rel` を併記すれば CML リレーション語彙が HTML §6 に描画される。BC 名は `lowercase-with-hyphen`
+- **`policies` は EVENTUAL-TX 専用**。SAME-TX 分岐は発行元 scenario の `brs` で書く
 - **副作用専用 POLICY**（通知・メール送信など）は `cmd` 省略可（`trg`/`qry`/`bulk`/`evt` のみ）
+- **POLICY の `cmd` が AGG を変更するなら `agg` を併記する**（v7 追加。scenarios と対称化）。dangling_cmd チェックは `policies[].cmd` も declared として扱う
 - **`qry` は判断材料のみ**（コマンド実装内部のデータは含めない）
-- **`flows[].steps[]` は実在 scs / pols を参照**（typo は causal-check で検出）
+- **`scenarios[].next` / `brs[].terminal` の参照は `dmlctl check --check=flow_chain_resolution` で検証**（typo・存在しない narrative ID を検出）
 - **`decisions[]` は「採用/不採用理由つきの選択肢ログ」**。`chosen` は `options[].name` のいずれかと一致。各 option に `why`（採用なら）または `why_not`（不採用なら）を書く
 
 ---
@@ -192,12 +210,12 @@ DML は **`docs/eventstorming/<session>.dml.yaml`** 1 ファイルに **YAML 直
 
 | タイミング | 更新するフィールド |
 |-----------|--------------------|
-| フェーズ 2 完了 | `session` / `story` / `narratives[]` / `flows[]` の枠（初回 `Write`、テンプレ: `references/template.dml.yaml`） → `Bash open <session>.html` 初回起動 |
-| フェーズ 3 完了 | `scs[]` 仮 entries ＋ `ctxs[].lang` の新規識別子 |
-| フェーズ 4 完了 | `scs[]` / `pols[]` / `flows[]`（happy + 代替 1〜2）／ `ctxs[].lang` ／ `ctxs[].up`/`dn` ／ `ctxs[].description`（BC 散文） |
-| フェーズ 4.5 完了 | `ctxs[].lang` を充実 |
-| **フェーズ 4.6 完了** | **`aggs[]` の `name`/`ctx`/`purpose`/`background`/`constraints[]`/`states`、`ctxs[].aggs` に AGG 名** |
-| **フェーズ 5 完了** | **`scs[].rules[]`（rule/why）／`scs[].errs[]`（cond/err/when）／`aggs[].transitions[]`／`aggs[].attrs[]`／`aggs[].events[].params[]` ＋ `qrys[]`** |
+| フェーズ 2 完了 | `session` / `narratives[]`（`id`/`title`/`kind`/`entry`/`prose` — `kind: happy` 1 本 + `kind: alt` 2〜3 本、prose は粗で可）（初回 `Write`、テンプレ: `references/template.dml.yaml`） → `Bash open <session>.html` 初回起動 |
+| フェーズ 3 完了 | `scenarios[]` 仮 entries ＋ `contexts[].lang` の新規識別子 |
+| フェーズ 4 完了 | `scenarios[]`（`next` / `brs[].terminal` を含む）／ `policies[]` ／ `narratives[].entry`（happy + 代替 1〜2）／ `contexts[].lang` ／ `contexts[].up`/`dn` ／ `contexts[].description`（BC 散文） |
+| フェーズ 4.5 完了 | `contexts[].lang` を充実 |
+| **フェーズ 4.6 完了** | **`aggregates[]` の `name`/`ctx`/`purpose`/`background`/`constraints[]`/`states`、`contexts[].aggs` に AGG 名** |
+| **フェーズ 5 完了** | **`scenarios[].rules[]`（rule/why）／`scenarios[].errs[]`（cond/err/when）／`aggregates[].transitions[]`／`aggregates[].attrs[]`／`aggregates[].events[].params[]` ＋ `queries[]`** |
 | **フェーズ 6 完了** | **`decisions[]`**（id/topic/chosen/options/affects・options ごとに why/why_not）。`questions[].status` を closed にして `decision_id` を紐付け |
 | フェーズ 7（最終） | `dmlctl check` 全観点クリア → 観点別 LLM 評価 → `actions[].done` 更新 |
 | ユーザーが「保存して」 | 即座に該当フィールドに反映 |
@@ -210,31 +228,29 @@ DML は **`docs/eventstorming/<session>.dml.yaml`** 1 ファイルに **YAML 直
 **途中保存と再開**: `session.status` フィールドにフェーズ進捗を書く（例: `"Phase 4.6 完了"`）。
 再開時は `dmlctl view --view=session-meta` でフェーズを確認、`actions[].done` で進捗を引き継ぐ。
 
-### DML トップレベル構成（v5）
+### DML トップレベル構成（v8）
 
 | フィールド | 編集者 | 役割 |
 |----|--------|------|
 | `session` | AI/人間 | セッションメタ（id/domain/goal/status/started_at） |
-| `story` | AI/人間 | ハッピーパス散文（400〜600 字） |
-| `narratives[]` | AI/人間 | 代替シナリオ散文（`flow_id` で `flows[]` と紐付け） |
+| `narratives[]` | AI/人間 | 散文（v8 で旧 `story:` を統合）。`id`/`kind`(`happy`\|`alt`)/`title`/`entry`/`prose`。`kind: happy` は 1 本（400〜600 字）、`kind: alt` は複数可（100〜200 字）。`entry` を持つ narrative は HTML §2 フロー図 1 行を駆動 |
 | `actions[]` | AI/人間 | 次のアクション（done フラグで進捗管理） |
 | `questions[]` | AI/人間 | オープンクエスチョン（status: open/closed・closed は decision_id 必須） |
-| `qrys[]` | AI/人間 | リードモデル候補（name/ctx/purpose/users/sources/formula） |
+| `queries[]` | AI/人間 | リードモデル候補（name/ctx/purpose/users/sources/formula） |
 | `domains[]` | AI/人間 | ドメイン分類（任意） |
-| `ctxs[]` | AI/人間 | BC 宣言（name/description 散文/lang/up/dn/aggs 軽量名簿） |
-| `aggs[]` | AI/人間 | AGG 詳細（name/ctx/purpose/background/constraints/states/transitions/attrs/events） |
-| `scs[]` | AI/人間 | Scenario（name/ctx/actor/cmd/evt/agg/rules/errs/brs） |
-| `pols[]` | AI/人間 | Policy / EVENTUAL-TX（name/ctx/trg/cmd/evt） |
-| `flows[]` | AI/人間 | フロー（id/title/kind/steps[]）— HTML §3 を駆動 |
+| `contexts[]` | AI/人間 | BC 宣言（name/description 散文/lang/up/dn/aggregates 軽量名簿） |
+| `aggregates[]` | AI/人間 | AGG 詳細（name/ctx/purpose/background/constraints/states/transitions/attrs/events） |
+| `scenarios[]` | AI/人間 | Scenario（name/ctx/actor/cmd/evt/agg/rules/errs/brs/`next`）。`next` と `brs[].terminal` でフロー連鎖を駆動 |
+| `policies[]` | AI/人間 | Policy / EVENTUAL-TX（name/ctx/trg/cmd/evt/agg） |
 | `decisions[]` | AI/人間 | 意思決定ログ（id/topic/chosen/options/affects） |
 
-HTML の 10 セクションは上記フィールドから機械的に組み立てられる。レンダリング詳細は
+HTML の 9 セクション（v8 で §1/§2 統合）は上記フィールドから機械的に組み立てられる。レンダリング詳細は
 `references/html-render-spec.md` 参照。
 
-**`ctxs[].description`（BC 散文）**: 境界の理由 / 含むシナリオ / 目的 / 背景 / 制約 を
+**`contexts[].description`（BC 散文）**: 境界の理由 / 含むシナリオ / 目的 / 背景 / 制約 を
 Markdown 風の散文として書く。bullet (`- foo`) と `**強調**` は HTML 化で解釈される。
 
-**`qrys[]` リードモデル候補の粒度**: 単一集約への単純ルックアップは省略し、(a) 計算値を含む /
+**`queries[]` リードモデル候補の粒度**: 単一集約への単純ルックアップは省略し、(a) 計算値を含む /
 (b) 複数集約・複数 BC を横断 / (c) BULK クエリ（一覧取得）のいずれかのみ記載。
 
 ---
@@ -268,7 +284,7 @@ Markdown 風の散文として書く。bullet (`- foo`) と `**強調**` は HTM
 
 | ファイル | 用途 |
 |---|---|
-| `references/dml.schema.yaml` | DML 構文の機械検証スキーマ（JSON Schema Draft 2020-12）。v5 で session/story/narratives/questions/actions/qrys と ctxs[].description を追加 |
+| `references/dml.schema.yaml` | DML 構文の機械検証スキーマ（JSON Schema Draft 2020-12）。v5 で session/narratives/questions/actions/queries と contexts[].description を追加、v8 で旧 `story:` を `narratives[]` に統合 |
 | `references/dml-spec.md` | DML 設計ガイドライン（インフラ系判定・SCENARIO 哲学・POLICY 運用・AGG v3・flows/decisions の哲学・付箋色・最小実例） |
 | `references/html-render-spec.md` | HTML レンダリング仕様（DML → HTML マッピング、フロー Big Picture グリッド、属性表、意思決定ログ） |
 | `references/session-guide.md` | ファシリテーション質問パターン（フェーズ別） |
@@ -283,4 +299,4 @@ Markdown 風の散文として書く。bullet (`- foo`) と `**強調**` は HTM
 | `references/causal-check-agent.md` | フロー整合性起動プロンプト |
 | `references/chat-output-format.md` | チャット出力テンプレート完全版 |
 | `templates/event-flow.html` | HTML 出力の汎用テンプレート |
-| `examples/sample.dml.yaml` | DML 参照例（コミュニティイベント参加ドメイン、`flows[]` / `decisions[]` を含む） |
+| `examples/sample.dml.yaml` | DML 参照例（コミュニティイベント参加ドメイン、`narratives[]`（entry 付き）/ `decisions[]` を含む） |
