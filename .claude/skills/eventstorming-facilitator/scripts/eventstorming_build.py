@@ -1095,8 +1095,9 @@ def _render_state_diagram(agg: dict, glossary_index: dict[str, str]) -> str:
         s_name = str(s)
         jp = localize(s_name, glossary_index)
         label = jp if jp and jp != s_name else s_name
-        # Mermaid のラベル: " で囲む。日本語に含まれうる " はないので素直に出す
-        lines.append(f'    state "{label}" as {s_name}')
+        # ラベル/識別子は信頼できない DML 由来。esc() で HTML エスケープし、
+        # <pre class="mermaid"> からの要素脱出（</pre> 注入による stored XSS）を防ぐ
+        lines.append(f'    state "{esc(label)}" as {esc(s_name)}')
         declared.add(s_name)
 
     # 遷移行（from -> to : via）
@@ -1115,14 +1116,14 @@ def _render_state_diagram(agg: dict, glossary_index: dict[str, str]) -> str:
                 continue
             for needed in (frm, tgt):
                 if needed and needed not in declared:
-                    lines.append(f'    state "{needed}" as {needed}')
+                    lines.append(f'    state "{esc(needed)}" as {esc(needed)}')
                     declared.add(needed)
             if via:
                 via_jp = localize(via, glossary_index)
                 via_label = via_jp if via_jp and via_jp != via else via
-                lines.append(f"    {frm} --> {tgt} : {via_label}")
+                lines.append(f"    {esc(frm)} --> {esc(tgt)} : {esc(via_label)}")
             else:
-                lines.append(f"    {frm} --> {tgt}")
+                lines.append(f"    {esc(frm)} --> {esc(tgt)}")
 
     return (
         '<div class="state-diagram">\n'

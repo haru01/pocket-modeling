@@ -662,6 +662,8 @@
     if (window.mermaid) {
       mermaid.initialize({
         startOnLoad: true,
+        // securityLevel: 'strict' で Mermaid 側のラベル HTML/スクリプトを無害化（多層防御）
+        securityLevel: 'strict',
         theme: 'default',
         themeVariables: { fontFamily: "'Hiragino Sans', 'Noto Sans JP', sans-serif" },
       });
