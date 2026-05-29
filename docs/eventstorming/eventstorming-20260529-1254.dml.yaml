@@ -1,0 +1,865 @@
+# =============================================================================
+# EventStorming セッション: ミートアップ・プラットフォーム
+# =============================================================================
+# AI 単独で 9 フェーズ全自動実行。ユーザー指示「全自動」モード。
+# 進捗・問題検出は docs/skill-improvements/eventstorming-facilitator-20260529.md
+# =============================================================================
+
+session:
+  id: meetup-20260529
+  domain: community-meetup
+  phase: "7"
+  status: "Phase 7 完了 (構造10観点 PASS・意味6観点指摘反映)"
+  goal: "コミュニティ主催者がミートアップを企画・公開し、参加者が申込から当日参加・フィードバックまで完結できる"
+  started_at: "2026-05-29T12:54:00+09:00"
+  html_link: ../../dist/eventstorming/eventstorming-20260529-1254.html
+
+# ---------- Narratives ----------
+narratives:
+  - id: happy
+    title: ハッピーパス — 企画から参加・フィードバックまで
+    kind: happy
+    entry: 主催者がイベントを下書きする
+    prose: |
+      ある技術コミュニティの主催者 Takeshi は、月例のミートアップを開きたいと考えていた。
+      会場を確保してから参加者を集めるのか、参加意向を先に募ってから会場を決めるのか、
+      毎回のように悩み、結果として案内が出る時期が遅れて参加者が集まりきらないことが続いていた。
+
+      新しいミートアップ・プラットフォームでは、Takeshi はまず開催したいテーマと
+      おおよその日時・想定定員でイベントを下書きする。公開準備が整った時点で公開操作を行うと、
+      コミュニティのメンバーに通知が届き、参加申込が開かれる。各メンバーは自分の予定と
+      照らし合わせて申込し、定員内なら確定、定員到達後は繰上待ちに自動でまわる。
+
+      開催が近づくと、システムが 24 時間前と 1 時間前にリマインドを送る。当日、
+      参加者は受付で QR コードをかざしてチェックインし、Takeshi の手元には今この瞬間
+      会場にいる人数がリアルタイムで見える。終了後、参加者には任意のフィードバック
+      フォームが届き、得点と自由記述が集計されて次回の企画に活かされる。
+      Takeshi が「とにかく案内を出す」だけの作業から解放され、参加者の体験設計と
+      コンテンツ準備に集中できるようになることが、このプラットフォームの目的である。
+
+  - id: alt-waitlist
+    title: 代替シナリオ — 定員到達・繰上待ち
+    kind: alt
+    entry: 参加者がイベントに申込する
+    prose: |
+      人気テーマのミートアップは公開直後に定員に達する。定員到達後の申込は
+      自動で繰上待ち（FIFO）に登録される。確定者がキャンセルした瞬間、
+      待ち列の先頭者に席が割り当てられ、通知される。一定時間内に応答がなければ
+      次点に移る。Takeshi は満席後も「待っている人数」が見え、追加開催の判断材料にできる。
+
+  - id: alt-cancel
+    title: 代替シナリオ — 主催者キャンセル
+    kind: alt
+    entry: 主催者がイベントをキャンセルする
+    prose: |
+      会場トラブルや講師都合でイベントを開催できなくなった場合、Takeshi は
+      キャンセル操作を行う。システムは確定参加者と繰上待ち全員に同時に通知し、
+      アンケートで「振替希望」を集める。Takeshi はキャンセル理由を 1 回入力するだけで
+      参加者個別の連絡作業から解放される。
+
+  - id: alt-noshow
+    title: 代替シナリオ — 当日 no-show 検知
+    kind: alt
+    entry: システムが no-show を判定する
+    prose: |
+      開催開始から 30 分が経過してもチェックインしていない確定参加者は no-show として
+      集計される。罰則は設けず、Takeshi の手元に「確定者のうち実出席率」のサマリが
+      残るのみ。これにより、次回の定員設計・繰上ポリシーのチューニングに使える。
+
+# ---------- Bounded Contexts ----------
+contexts:
+  - name: event-planning
+    type: FEATURE
+    label_ja: イベント企画
+    description: |
+      イベントの **企画・公開・キャンセル** を主催者の意思で完結させる文脈。
+      テーマ・日時・定員・公開状態を持つ Event 集約が中核。
+      参加者の動きは参照するが、Event の状態遷移には関与しない。
+
+      - **含むシナリオ**: 下書き / 公開 / キャンセル
+      - **目的**: 主催者が「とにかく案内を出す」雑務から解放され、企画作業に集中できること
+      - **背景**: 既存ツール（チャット + フォーム + カレンダー）では公開連絡と参加管理が分散
+      - **制約**: 公開後の日時変更は再公開フロー扱い（本セッションでは対象外）
+    aggs: [Event]
+    lang:
+      aggs:
+        Event: イベント
+      actors:
+        Organizer: 主催者
+      cmds:
+        DraftEvent: イベントを下書きする
+        PublishEvent: イベントを公開する
+        CancelEvent: イベントをキャンセルする
+      evts:
+        EventDrafted: イベントが下書きされた
+        EventPublished: イベントが公開された
+        EventCancelled: イベントがキャンセルされた
+      states:
+        DRAFT: 下書き
+        PUBLISHED: 公開中
+        CANCELLED: イベント中止済
+    up: []
+    dn:
+      - { ctx: participation, rel: Customer-Supplier, roles: [U, OHS], prRoles: [D, CF] }
+
+  - name: participation
+    type: FEATURE
+    label_ja: 参加申込
+    description: |
+      イベント単位での **申込・確定・繰上・キャンセル** を扱う文脈。
+      Event の公開・キャンセルをシグナルとして受け取り、Participation 集約の
+      ライフサイクルを進める。
+
+      - **含むシナリオ**: 申込 / 自動確定 / 繰上 / 参加キャンセル
+      - **目的**: 定員管理と公平な繰上を主催者の手作業ナシで実現する
+      - **背景**: フォーム + スプレッドシートでは定員到達後の繰上対応が漏れがち
+      - **制約**: 定員到達後の申込は自動的に繰上待ち FIFO へ。同一 Event への重複申込は拒否
+    aggs: [Participation]
+    lang:
+      aggs:
+        Participation: 参加申込
+      actors:
+        Member: 参加者
+        System: システム
+      cmds:
+        ApplyForEvent: イベントに申込する
+        ConfirmParticipation: 参加を確定する
+        PromoteFromWaitlist: 繰上を実行する
+        CancelParticipation: 参加をキャンセルする
+      evts:
+        ParticipationApplied: 申込された
+        ParticipationWaitlisted: 繰上待ちに登録された
+        ParticipationConfirmed: 参加が確定した
+        ParticipationPromoted: 繰上が実行された
+        ParticipationCancelled: 参加がキャンセルされた
+      pols:
+        ConfirmOnApplied: 申込即時確定
+        PromoteOnCancelled: キャンセル時繰上
+        NotifyParticipantsOnEventCancelled: イベント中止時の参加者通知
+      qrys:
+        AvailableSeatsForEvent: 残席数
+        ActiveParticipationsForEvent: 確定参加者一覧
+        WaitlistForEvent: 繰上待ち列
+      states:
+        APPLIED: 申込済
+        CONFIRMED: 確定
+        WAITLISTED: 繰上待ち
+        PROMOTED: 繰上完了
+        CANCELLED: 参加キャンセル済
+      vos:
+        EventId: イベント ID
+        ApplyDeadline: 申込締切
+    up:
+      - { ctx: event-planning, rel: Customer-Supplier, roles: [D, CF], prRoles: [U, OHS] }
+    dn:
+      - { ctx: attendance, rel: Customer-Supplier, roles: [U, OHS], prRoles: [D, CF] }
+
+  - name: attendance
+    type: FEATURE
+    label_ja: 当日出席
+    description: |
+      開催 **当日** の出席記録を扱う文脈。チェックイン QR・no-show 判定・
+      参加者数のリアルタイム可視化を担う。
+
+      - **含むシナリオ**: リマインド送信 / チェックイン / no-show 判定
+      - **目的**: 主催者の受付業務をゼロに近づけ、参加体験の改善に集中できること
+      - **背景**: 紙の受付名簿は当日のオペ負荷が高く、no-show 集計も翌週送り
+      - **制約**: チェックインは開催開始 30 分前から開始 60 分後まで
+    aggs: [Attendance]
+    lang:
+      aggs:
+        Attendance: 出席記録
+      actors:
+        Member: 参加者
+        System: システム
+      cmds:
+        SendReminder: リマインドを送信する
+        CheckIn: チェックインする
+        DetectNoShow: no-show を判定する
+      evts:
+        ReminderSent: リマインドが送信された
+        ParticipantCheckedIn: 参加者がチェックインした
+        AttendanceNoShowDetected: no-show が検知された
+      pols:
+        ScheduleRemindersOnConfirmed: 確定時リマインド予約
+        InviteFeedbackOnCheckedIn: チェックイン時フィードバック招待
+      qrys:
+        CurrentAttendanceCount: 現在の出席数
+        NoShowRateByEvent: イベント別 no-show 率
+      states:
+        SCHEDULED: 予定
+        CHECKED_IN: チェックイン済
+        NO_SHOW: 不参加
+      vos:
+        CheckInWindow: チェックイン受付時間帯
+    up:
+      - { ctx: participation, rel: Customer-Supplier, roles: [D, CF], prRoles: [U, OHS] }
+    dn:
+      - { ctx: feedback, rel: Customer-Supplier, roles: [U, OHS], prRoles: [D, CF] }
+
+  - name: feedback
+    type: FEATURE
+    label_ja: フィードバック
+    description: |
+      開催 **終了後** にフィードバックを収集する文脈。任意提出。
+
+      - **含むシナリオ**: フィードバック送信
+      - **目的**: 主催者が次回企画の改善材料を得る
+      - **背景**: 既存運用ではアンケート URL を別途配布する手間と回収率低下
+      - **制約**: 終了から 72 時間以内のみ受付
+    aggs: [Feedback]
+    lang:
+      aggs:
+        Feedback: フィードバック
+      actors:
+        Member: 参加者
+      cmds:
+        SubmitFeedback: フィードバックを送信する
+      evts:
+        FeedbackSubmitted: フィードバックが送信された
+      qrys:
+        FeedbackSummaryByEvent: イベント別フィードバック集計
+      states:
+        PENDING: 未提出
+        SUBMITTED: 提出済
+      vos:
+        SubmissionDeadline: 提出締切
+    up:
+      - { ctx: attendance, rel: Customer-Supplier, roles: [D, CF], prRoles: [U, OHS] }
+    dn: []
+
+# ---------- Aggregates（フェーズ 5: transitions / attrs / events.params 完成） ----------
+aggregates:
+  - name: Event
+    ctx: event-planning
+    purpose: 主催者が公開・キャンセルできる開催単位を一意に表現し、ライフサイクルを保証する
+    background: |
+      従来の運用では「下書き状態のイベント」と「公開済イベント」がスプレッドシート上で混在し、
+      誰がいつ公開操作をしたか追跡できなかった。Event 集約として状態と操作主体を一元化する。
+    constraints:
+      - 公開後の日時変更は本セッション範囲外（再公開フロー扱い）
+      - キャンセル後は再公開不可
+      - 定員上限は公開時点で確定（公開後の縮小は禁止）
+    states: [DRAFT, PUBLISHED, CANCELLED]
+    transitions:
+      - { from: DRAFT, to: PUBLISHED, via: PublishEvent, when: 主催者が公開準備を整えた時 }
+      - { from: PUBLISHED, to: CANCELLED, via: CancelEvent, when: 主催者が中止判断をした時 }
+    attrs:
+      - { name: eventId, type: EventId, required: true }
+      - { name: organizerId, type: OrganizerId, required: true }
+      - { name: title, type: string, required: true }
+      - { name: description, type: string }
+      - { name: scheduledAt, type: datetime, required: true }
+      - { name: location, type: string }
+      - { name: capacity, type: int, required: true, note: 公開時点で確定 }
+      - { name: applyDeadline, type: datetime, required: true }
+      - { name: publishedAt, type: datetime }
+      - { name: cancelledAt, type: datetime }
+      - { name: cancelReason, type: string }
+    events:
+      - name: EventDrafted
+        params:
+          - { name: eventId, type: EventId }
+          - { name: organizerId, type: OrganizerId }
+          - { name: title, type: string }
+          - { name: scheduledAt, type: datetime }
+      - name: EventPublished
+        params:
+          - { name: eventId, type: EventId }
+          - { name: capacity, type: int }
+          - { name: applyDeadline, type: datetime }
+          - { name: publishedAt, type: datetime }
+      - name: EventCancelled
+        params:
+          - { name: eventId, type: EventId }
+          - { name: cancelReason, type: string }
+          - { name: cancelledAt, type: datetime }
+
+  - name: Participation
+    ctx: participation
+    purpose: 1 参加者 1 イベントへの申込状態を保持し、定員と繰上ルールを満たす遷移のみ許す
+    background: |
+      フォーム送信の重複申込・キャンセル後の手動繰上漏れが運用課題。Participation 集約で
+      状態を強制し、定員到達時の自動繰上待ち、キャンセル時の自動繰上を保証する。
+    constraints:
+      - 同一 Event への同一 Member の重複申込は拒否
+      - 繰上待ちは FIFO
+      - 繰上通知後一定時間（24 時間）応答なしは次点へ
+    states: [APPLIED, CONFIRMED, WAITLISTED, PROMOTED, CANCELLED]
+    transitions:
+      - { from: APPLIED, to: [CONFIRMED, WAITLISTED], via: ApplyForEvent, when: 申込受領時に定員状況で分岐 }
+      - { from: APPLIED, to: CONFIRMED, via: ConfirmParticipation, when: ConfirmOnApplied 起動時 }
+      - { from: WAITLISTED, to: PROMOTED, via: PromoteFromWaitlist, when: 確定者キャンセルで繰上 }
+      - { from: CONFIRMED, to: CANCELLED, via: CancelParticipation, when: 参加者キャンセル or 主催者キャンセル }
+      - { from: WAITLISTED, to: CANCELLED, via: CancelParticipation, when: 繰上待ち中のキャンセル }
+      - { from: PROMOTED, to: CANCELLED, via: CancelParticipation, when: 繰上後のキャンセル }
+    attrs:
+      - { name: participationId, type: ParticipationId, required: true }
+      - { name: eventId, type: EventId, required: true }
+      - { name: memberId, type: MemberId, required: true }
+      - { name: appliedAt, type: datetime, required: true }
+      - { name: confirmedAt, type: datetime }
+      - { name: waitlistedAt, type: datetime }
+      - { name: waitlistPosition, type: int }
+      - { name: promotedAt, type: datetime }
+      - { name: cancelledAt, type: datetime }
+      - { name: cancelReason, type: string }
+    events:
+      - name: ParticipationApplied
+        params:
+          - { name: participationId, type: ParticipationId }
+          - { name: eventId, type: EventId }
+          - { name: memberId, type: MemberId }
+          - { name: appliedAt, type: datetime }
+      - name: ParticipationWaitlisted
+        params:
+          - { name: participationId, type: ParticipationId }
+          - { name: eventId, type: EventId }
+          - { name: memberId, type: MemberId }
+          - { name: waitlistPosition, type: int }
+      - name: ParticipationConfirmed
+        params:
+          - { name: participationId, type: ParticipationId }
+          - { name: eventId, type: EventId }
+          - { name: memberId, type: MemberId }
+          - { name: confirmedAt, type: datetime }
+      - name: ParticipationPromoted
+        params:
+          - { name: participationId, type: ParticipationId }
+          - { name: eventId, type: EventId }
+          - { name: promotedAt, type: datetime }
+      - name: ParticipationCancelled
+        params:
+          - { name: participationId, type: ParticipationId }
+          - { name: eventId, type: EventId }
+          - { name: cancelReason, type: string }
+          - { name: cancelledAt, type: datetime }
+
+  - name: Attendance
+    ctx: attendance
+    purpose: 確定参加者が実際に会場に来たか／来なかったかを当日に記録する
+    background: |
+      紙受付では当日記録と集計のタイムラグが大きく、no-show 率が翌週まで分からなかった。
+      Attendance 集約に QR チェックインと自動 no-show 判定を実装し、当日中の見える化を実現する。
+    constraints:
+      - チェックインは開催開始 30 分前から開始 60 分後まで
+      - 開始 30 分後までに未チェックインなら自動 NO_SHOW
+      - 一度 CHECKED_IN になったら NO_SHOW へ戻れない
+    states: [SCHEDULED, CHECKED_IN, NO_SHOW]
+    transitions:
+      - { from: SCHEDULED, to: CHECKED_IN, via: CheckIn, when: QR スキャン or 主催者手動 }
+      - { from: SCHEDULED, to: NO_SHOW, via: DetectNoShow, when: 開始 30 分後の自動判定 }
+    attrs:
+      - { name: attendanceId, type: AttendanceId, required: true }
+      - { name: participationId, type: ParticipationId, required: true }
+      - { name: eventId, type: EventId, required: true }
+      - { name: checkInWindowStart, type: datetime, required: true }
+      - { name: checkInWindowEnd, type: datetime, required: true }
+      - { name: checkedInAt, type: datetime }
+      - { name: noShowDetectedAt, type: datetime }
+    events:
+      - name: ReminderSent
+        params:
+          - { name: attendanceId, type: AttendanceId }
+          - { name: eventId, type: EventId }
+          - { name: reminderType, type: string, note: 24h / 1h }
+      - name: ParticipantCheckedIn
+        params:
+          - { name: attendanceId, type: AttendanceId }
+          - { name: eventId, type: EventId }
+          - { name: checkedInAt, type: datetime }
+      - name: AttendanceNoShowDetected
+        params:
+          - { name: attendanceId, type: AttendanceId }
+          - { name: eventId, type: EventId }
+          - { name: noShowDetectedAt, type: datetime }
+        terminal: true
+
+  - name: Feedback
+    ctx: feedback
+    purpose: 開催終了後の任意フィードバック（評点 + 自由記述）を 1 参加者 1 件で保持する
+    background: |
+      既存運用ではアンケート URL の別配布で回収率が伸びず、改善材料が薄い。
+      Feedback 集約として参加者ごとに集約しつつ、提出は任意とする。
+    constraints:
+      - 終了から 72 時間以内のみ受付
+      - 1 参加者 1 Event につき 1 件（再送は上書き）
+    states: [PENDING, SUBMITTED]
+    transitions:
+      - { from: PENDING, to: SUBMITTED, via: SubmitFeedback, when: 参加者が提出フォーム送信時 }
+    attrs:
+      - { name: feedbackId, type: FeedbackId, required: true }
+      - { name: eventId, type: EventId, required: true }
+      - { name: memberId, type: MemberId, required: true }
+      - { name: rating, type: int, note: 1-5 }
+      - { name: comment, type: string }
+      - { name: submittedAt, type: datetime }
+      - { name: submissionDeadline, type: datetime, required: true }
+    events:
+      - name: FeedbackSubmitted
+        params:
+          - { name: feedbackId, type: FeedbackId }
+          - { name: eventId, type: EventId }
+          - { name: memberId, type: MemberId }
+          - { name: rating, type: int }
+          - { name: submittedAt, type: datetime }
+        terminal: true
+
+# ---------- Scenarios（フェーズ 5: rules / errs 完成） ----------
+scenarios:
+  # event-planning
+  - name: 主催者がイベントを下書きする
+    ctx: event-planning
+    actor: Organizer
+    cmd: DraftEvent
+    evt: EventDrafted
+    agg: Event
+    next: 主催者がイベントを公開する
+    rules:
+      - { rule: Event title must be non-empty, why: 公開時に参加者が何のイベントか判別できる必要がある }
+      - { rule: scheduledAt must be in the future, why: 過去日付の下書きは運用ミス }
+      - { rule: capacity must be positive integer, why: 0 や負数は申込フローが破綻 }
+    errs:
+      - { cond: title が空, err: EventTitleRequired, when: 下書き作成時 }
+      - { cond: scheduledAt が現在以前, err: EventSchedulePast, when: 下書き作成時 }
+      - { cond: capacity が 0 以下, err: EventCapacityInvalid, when: 下書き作成時 }
+
+  - name: 主催者がイベントを公開する
+    ctx: event-planning
+    actor: Organizer
+    cmd: PublishEvent
+    evt: EventPublished
+    agg: Event
+    next: 参加者がイベントに申込する
+    rules:
+      - { rule: Only DRAFT events can be published, why: 公開済 / キャンセル済の二重公開を防ぐ }
+      - { rule: applyDeadline must be earlier than scheduledAt, why: 開始後の申込は受付不可とする業務ルール }
+    errs:
+      - { cond: 状態が DRAFT 以外, err: EventNotInDraft, when: 公開操作時 }
+      - { cond: applyDeadline >= scheduledAt, err: ApplyDeadlineInvalid, when: 申込締切が開催以降では業務的に成立しない }
+
+  - name: 主催者がイベントをキャンセルする
+    ctx: event-planning
+    actor: Organizer
+    cmd: CancelEvent
+    evt: EventCancelled
+    agg: Event
+    rules:
+      - { rule: Only PUBLISHED events can be cancelled, why: 下書き状態はそのまま削除可能でキャンセル不要 }
+      - { rule: cancelReason must be provided, why: 参加者通知に理由を含める必要があるため }
+    errs:
+      - { cond: 状態が PUBLISHED 以外, err: EventNotPublished, when: キャンセル操作時 }
+      - { cond: cancelReason が空, err: CancelReasonRequired, when: キャンセル操作時 }
+
+  # participation
+  - name: 参加者がイベントに申込する
+    ctx: participation
+    actor: Member
+    cmd: ApplyForEvent
+    agg: Participation
+    brMode: exclusive
+    brs:
+      - { cond: 定員未達, evt: ParticipationApplied, next: システムが参加を確定する }
+      - { cond: 定員到達, evt: ParticipationWaitlisted, terminal: alt-waitlist }
+    rules:
+      - { rule: Event must be in PUBLISHED state, why: 下書きやキャンセル済イベントへの申込は無効 }
+      - { rule: Application must be before applyDeadline, why: 締切後申込は業務的に受け付けない }
+      - { rule: A member can apply only once per event, why: 重複申込は定員管理を破綻させる }
+    errs:
+      - { cond: Event 状態が PUBLISHED 以外, err: EventNotOpenForApplication, when: 申込時 }
+      - { cond: 現在時刻 > applyDeadline, err: ApplicationDeadlinePassed, when: 申込時 }
+      - { cond: 同一 Member の同一 Event への申込が既に存在, err: AlreadyApplied, when: 申込時 }
+
+  - name: システムが参加を確定する
+    ctx: participation
+    actor: System
+    cmd: ConfirmParticipation
+    evt: ParticipationConfirmed
+    agg: Participation
+    next: システムがリマインドを送信する
+    rules:
+      - { rule: Participation must be in APPLIED state, why: WAITLISTED や CONFIRMED への二重確定を防ぐ }
+      - { rule: Confirmed count must not exceed Event.capacity, why: 並行申込で定員超過するのを防ぐ }
+    errs:
+      - { cond: Participation 状態が APPLIED 以外, err: ParticipationNotApplied, when: 確定処理時 }
+      - { cond: 確定処理時点で capacity 到達, err: EventCapacityReached, when: 並行申込で定員超過するエッジケース }
+
+  - name: システムが繰上を実行する
+    ctx: participation
+    actor: System
+    cmd: PromoteFromWaitlist
+    evt: ParticipationPromoted
+    agg: Participation
+    rules:
+      - { rule: Promote from WAITLISTED head only, why: FIFO 公平性を保証 }
+      - { rule: Promotion offer expires 24 hours after notification then promotes next in line, why: 反応のない先頭で繰上が止まらないようにする (D2 採用値 = FIFO + 24h タイムアウト) }
+      - { rule: Skip promotion when Event itself is CANCELLED, why: alt-cancel フローで bulk Cancel が走った後の暴発防止 (PromoteOnCancelled ガード) }
+    errs:
+      - { cond: 繰上対象の WAITLISTED が存在しない, err: NoWaitlistEntry, when: 繰上トリガー時 }
+      - { cond: 該当 Participation が既に CANCELLED, err: ParticipationAlreadyCancelled, when: 繰上対象選定時 }
+      - { cond: 対応する Event が CANCELLED, err: EventAlreadyCancelled, when: alt-cancel フロー連鎖中の繰上試行 }
+
+  - name: 参加者が参加をキャンセルする
+    ctx: participation
+    actor: Member
+    cmd: CancelParticipation
+    evt: ParticipationCancelled
+    agg: Participation
+    rules:
+      - { rule: Cancellation allowed from CONFIRMED / WAITLISTED / PROMOTED, why: APPLIED 中の即時取消は ConfirmOnApplied 競合で扱わない }
+      - { rule: Cannot cancel after check-in window opens, why: 当日キャンセルは no-show 扱いとする業務ルール }
+    errs:
+      - { cond: 既に CANCELLED, err: ParticipationAlreadyCancelled, when: キャンセル操作時 }
+      - { cond: チェックイン受付開始以降, err: CancellationDeadlinePassed, when: 当日キャンセル試行時 }
+
+  # attendance
+  - name: システムがリマインドを送信する
+    ctx: attendance
+    actor: System
+    cmd: SendReminder
+    evt: ReminderSent
+    agg: Attendance
+    next: 参加者がチェックインする
+    rules:
+      - { rule: Reminders sent at 24h and 1h before scheduledAt, why: 直前再周知で出席率を上げる }
+      - { rule: Do not send reminder to CANCELLED participations, why: 通知ノイズを避ける }
+    errs:
+      - { cond: 対応する Participation が CANCELLED, err: ParticipationCancelledForReminder, when: スケジューラ実行時 }
+      - { cond: 送信時刻が過去, err: ReminderScheduleExpired, when: 遅延ジョブ実行時 }
+
+  - name: 参加者がチェックインする
+    ctx: attendance
+    actor: Member
+    cmd: CheckIn
+    evt: ParticipantCheckedIn
+    agg: Attendance
+    next: 参加者がフィードバックを送信する
+    rules:
+      - { rule: Check-in window is 30min before to 60min after start, why: 早すぎ / 遅すぎチェックインを排除 }
+      - { rule: Only SCHEDULED can be checked in, why: 既に NO_SHOW のエントリへの再チェックインは矛盾 }
+      - { rule: Participation must be CONFIRMED or PROMOTED, why: WAITLISTED や CANCELLED のチェックインを拒否 }
+    errs:
+      - { cond: checkInWindow 範囲外, err: CheckInWindowClosed, when: 当日チェックイン時 }
+      - { cond: Attendance 状態が SCHEDULED 以外, err: AttendanceAlreadyProcessed, when: 重複チェックインや no-show 後 }
+      - { cond: 対応 Participation が CONFIRMED/PROMOTED 以外, err: ParticipationNotEligible, when: チェックイン試行時 }
+
+  - name: システムが no-show を判定する
+    ctx: attendance
+    actor: System
+    cmd: DetectNoShow
+    evt: AttendanceNoShowDetected
+    agg: Attendance
+    rules:
+      - { rule: Run 30 minutes after scheduledAt, why: 遅刻者の余裕を確保 }
+      - { rule: Target SCHEDULED entries only, why: CHECKED_IN や既 NO_SHOW を二重処理しない }
+    errs:
+      - { cond: 判定時刻 < scheduledAt + 30min, err: NoShowDetectionTooEarly, when: 早期判定試行（遅刻者の余裕未確保） }
+      - { cond: 該当エントリが SCHEDULED 以外, err: AttendanceAlreadyProcessed, when: 重複起動エッジケース }
+
+  # feedback
+  - name: 参加者がフィードバックを送信する
+    ctx: feedback
+    actor: Member
+    cmd: SubmitFeedback
+    evt: FeedbackSubmitted
+    agg: Feedback
+    rules:
+      - { rule: Submission must be within 72h after scheduledAt, why: 期間外は次回改善のシグナルとして遅すぎる }
+      - { rule: rating must be 1-5 if provided, why: スケール外は集計を歪める }
+      - { rule: One feedback per member per event, why: 同一参加者の多重提出は集計を歪める（再送は上書き） }
+    errs:
+      - { cond: 提出時刻 > scheduledAt + 72h, err: FeedbackDeadlinePassed, when: フォーム送信時 }
+      - { cond: rating が 1-5 範囲外, err: FeedbackRatingInvalid, when: フォーム送信時 }
+      - { cond: 対応する Attendance が NO_SHOW, err: NoShowCannotSubmitFeedback, when: フォーム送信時 }
+
+# ---------- Policies（EVENTUAL-TX） ----------
+policies:
+  - name: ConfirmOnApplied
+    ctx: participation
+    trg: ParticipationApplied
+    cmd: ConfirmParticipation
+    evt: ParticipationConfirmed
+    agg: Participation
+
+  - name: PromoteOnCancelled
+    ctx: participation
+    trg: ParticipationCancelled
+    cmd: PromoteFromWaitlist
+    evt: ParticipationPromoted
+    agg: Participation
+
+  - name: ScheduleRemindersOnConfirmed
+    ctx: attendance
+    trg: ParticipationConfirmed
+    cmd: SendReminder
+    evt: ReminderSent
+    agg: Attendance
+
+  - name: NotifyParticipantsOnEventCancelled
+    ctx: participation
+    trg: EventCancelled
+    bulk: true
+    qry: ActiveParticipationsForEvent
+    cmd: CancelParticipation
+    evt: ParticipationCancelled
+    agg: Participation
+    note: bulk Cancel が PromoteOnCancelled を連鎖発火しないよう、PromoteFromWaitlist 側に EventAlreadyCancelled ガードを実装
+
+  - name: InviteFeedbackOnCheckedIn
+    ctx: attendance
+    trg: ParticipantCheckedIn
+    note: 副作用専用 POLICY。チェックイン直後に「終了後フィードバックお願い」の案内を予約する（実際の提出は Member の自発操作 SubmitFeedback）。EventConcluded イベント未モデルのため暫定的に CheckIn を trg にしている
+
+# ---------- Queries（フェーズ 5: リードモデル候補） ----------
+queries:
+  - name: AvailableSeatsForEvent
+    ctx: participation
+    purpose: 申込時の即時判定（残席があれば確定、無ければ繰上待ち）
+    users: Member（申込画面）／ApplyForEvent 処理
+    sources:
+      - Event.capacity
+      - Participation（CONFIRMED 件数）
+    formula: capacity - count(Participation where state=CONFIRMED and eventId=:eventId)
+
+  - name: ActiveParticipationsForEvent
+    ctx: participation
+    purpose: BULK 通知用の確定 + 繰上待ち全件リスト（イベントキャンセル時に一括通知へファンアウト）
+    users: NotifyParticipantsOnEventCancelled policy
+    sources:
+      - Participation（CONFIRMED + WAITLISTED + PROMOTED）
+    formula: SELECT * FROM Participation WHERE eventId=:eventId AND state IN (CONFIRMED, WAITLISTED, PROMOTED)
+
+  - name: WaitlistForEvent
+    ctx: participation
+    purpose: 繰上待ち列の表示（主催者が満席後の追加開催判断材料に使う）
+    users: Organizer（運営ダッシュボード）
+    sources:
+      - Participation（WAITLISTED）
+    formula: ORDER BY waitlistPosition ASC
+
+  - name: CurrentAttendanceCount
+    ctx: attendance
+    purpose: 当日「今この瞬間会場にいる人数」をリアルタイム表示
+    users: Organizer（受付モニタ）
+    sources:
+      - Attendance（CHECKED_IN）
+    formula: count(Attendance where state=CHECKED_IN and eventId=:eventId)
+
+  - name: NoShowRateByEvent
+    ctx: attendance
+    purpose: 過去イベントの no-show 率（次回定員設計・繰上ポリシー調整の判断材料）
+    users: Organizer（振り返り）
+    sources:
+      - Attendance（CHECKED_IN + NO_SHOW）
+    formula: count(NO_SHOW) / (count(NO_SHOW) + count(CHECKED_IN))
+
+  - name: FeedbackSummaryByEvent
+    ctx: feedback
+    purpose: イベント別フィードバック集計（平均評点・提出率・自由記述抜粋）
+    users: Organizer（振り返り）
+    sources:
+      - Feedback
+      - Participation（提出率算出に CONFIRMED 数も使う）
+    formula: avg(rating), count(SUBMITTED) / count(eligible)
+
+# ---------- Decisions（フェーズ 6: 意思決定ログ 7 件） ----------
+decisions:
+  - id: D1
+    topic: 課金モデル
+    chosen: free-with-optional-paid
+    options:
+      - name: free-with-optional-paid
+        label: 無料 + オプション課金（採用）
+        adopted: true
+        why: コミュニティの裾野を広げることが本サービスの主目的。完全有料は技術勉強会の文化に逆行する
+      - name: all-paid
+        label: 全イベント有料
+        adopted: false
+        why_not: 無料勉強会主体の Takeshi のような主催者層を取り込めず、市場規模が縮む
+      - name: all-free
+        label: 全イベント無料
+        adopted: false
+        why_not: 設備費・配信費が必要な大型イベントが運営できず、上限が低くなる
+      - name: organizer-charged
+        label: 主催者課金（参加者は無料）
+        adopted: false
+        why_not: 主催者の負担が増えコミュニティ立ち上げの障壁になる
+    affects: [Event, Participation]
+
+  - id: D2
+    topic: 繰上待ち戦略
+    chosen: fifo-with-timeout
+    options:
+      - name: fifo-with-timeout
+        label: FIFO + 24h 応答待ち（採用）
+        adopted: true
+        why: 公平性（先着順）と運用効率（応答なしで次点へ）を両立。実装も単純で説明しやすい
+      - name: random-lottery
+        label: 抽選
+        adopted: false
+        why_not: 早く申し込んだ人の機会損失感が大きく、初期コミュニティでは継続意欲を削ぐ
+      - name: organizer-manual
+        label: 主催者手動選定
+        adopted: false
+        why_not: 主催者の運営負荷を増やす（本サービスの目的に逆行）
+      - name: broadcast-invite
+        label: 一斉招待（早押し）
+        adopted: false
+        why_not: 通知タイミングへの不公平感が大きく、深夜などのケースで参加機会が偏る
+    affects: [Participation, PromoteOnCancelled]
+
+  - id: D3
+    topic: no-show 罰則
+    chosen: aggregate-only
+    options:
+      - name: aggregate-only
+        label: 集計のみ罰則なし（採用）
+        adopted: true
+        why: コミュニティの心理的安全性を優先。データは振り返りに使い、罰則は主催者の判断に委ねる
+      - name: reputation-score
+        label: 評判スコア
+        adopted: false
+        why_not: コミュニティ志向のサービスで「点数」を導入するとカルチャーが変質する
+      - name: temporary-ban
+        label: 一定期間の利用停止
+        adopted: false
+        why_not: 急用での欠席が珍しくないコミュニティ参加で過剰罰則
+      - name: cancellation-fee
+        label: キャンセル料課金
+        adopted: false
+        why_not: 無料前提のモデルでは決済導入のオーバーヘッドが大きい
+    affects: [Attendance]
+
+  - id: D4
+    topic: チェックイン方式
+    chosen: qr-with-manual-fallback
+    options:
+      - name: qr-with-manual-fallback
+        label: QR コード + 主催者手動補正可（採用）
+        adopted: true
+        why: 受付の自動化と例外対応の両立。QR 表示エラー時も主催者が手動でチェック可能
+      - name: organizer-rollcall
+        label: 主催者点呼
+        adopted: false
+        why_not: 主催者の運営負荷を増やす（本サービスの目的に逆行）
+      - name: self-declaration
+        label: 自己申告のみ
+        adopted: false
+        why_not: 検証性に欠け、no-show 集計の信頼性が下がる
+      - name: geolocation
+        label: 位置情報判定
+        adopted: false
+        why_not: プライバシー懸念とオフライン会場での精度問題（地下・室内）が大きい
+    affects: [Attendance, ParticipantCheckedIn]
+
+  - id: D5
+    topic: リマインド頻度
+    chosen: 24h-and-1h
+    options:
+      - name: 24h-and-1h
+        label: 24 時間前 + 1 時間前（採用）
+        adopted: true
+        why: 翌日予定の認知 + 直前の最終確認の 2 段階で、出席率向上に経験的に効果がある
+      - name: 24h-only
+        label: 24 時間前のみ
+        adopted: false
+        why_not: 直前確認がなく、当日の no-show 率が上がる
+      - name: 7d-and-24h-and-1h
+        label: 1 週間前 + 24h + 1h（3 回）
+        adopted: false
+        why_not: 通知過多でユーザー離脱リスク。OFF にされると効果ゼロ
+      - name: none
+        label: リマインドなし
+        adopted: false
+        why_not: 出席率低下は明白で、本サービスの価値提供（運営自動化）から逆行
+    affects: [Attendance, ScheduleRemindersOnConfirmed]
+
+  - id: D6
+    topic: フィードバック必須度
+    chosen: optional
+    options:
+      - name: optional
+        label: 任意（採用）
+        adopted: true
+        why: 心理的負担を最小化し、書きたい人のリッチな声を集める方針。提出率より質を重視
+      - name: required
+        label: 必須
+        adopted: false
+        why_not: 強制感が次回参加意欲を下げ、書き殴り化で質も下がる
+      - name: strong-nudge
+        label: 強い催促
+        adopted: false
+        why_not: 通知過多と催促文面の調整負荷が大きい割に提出率向上は限定的
+    affects: [Feedback]
+
+  - id: D7
+    topic: 申込締切のデフォルト設定
+    chosen: 1h-before-start
+    options:
+      - name: 1h-before-start
+        label: 開始 1 時間前まで（採用）
+        adopted: true
+        why: 直前判断派のメンバーを取りこぼさず、当日運営側にも 1 時間の準備バッファを確保
+      - name: until-start
+        label: 開始まで申込可
+        adopted: false
+        why_not: 当日運営の人数確定タイミングが取れず、受付資料の用意もしづらい
+      - name: 24h-before-start
+        label: 24 時間前まで
+        adopted: false
+        why_not: 直前参加判断派を取りこぼし、コミュニティイベントの実情と合わない
+      - name: organizer-set
+        label: 主催者が個別設定
+        adopted: false
+        why_not: 設定 UI と説明文書のコストが増え、MVP には早すぎる
+    affects: [Event, Participation]
+
+# ---------- Questions（フェーズ 6: closed 紐付け） ----------
+questions:
+  - id: Q1
+    topic: 課金モデルをどうするか
+    why: 全体アーキテクチャと運用体制（決済 BC の要否）に影響する
+    status: closed
+    decision_id: D1
+  - id: Q2
+    topic: 繰上待ち戦略の公平性ルール
+    why: 参加者体験とコミュニティ文化に直結
+    status: closed
+    decision_id: D2
+  - id: Q3
+    topic: no-show 罰則の有無
+    why: コミュニティの心理的安全性に直結。誤った設計はユーザー離脱を招く
+    status: closed
+    decision_id: D3
+  - id: Q4
+    topic: 主催者キャンセル時の振替希望集計フォーマット
+    why: 通知文面と集計画面の UX に影響
+    status: open
+  - id: Q5
+    topic: フィードバック集計の公開範囲（参加者にも見せるか）
+    why: 主催者専用か全公開かでフォームの心理的負担が変わる
+    status: open
+
+# ---------- Actions ----------
+actions:
+  - id: A1
+    text: 7 件の decisions をユーザー（人間 PO）にレビューしてもらい、特に D3 (no-show 罰則) の方針合意を取る
+    done: false
+  - id: A2
+    text: Q4/Q5 のオープン質問について、デザイナ／PO と週次ミーティングで議論する
+    done: false
+  - id: A3
+    text: 本セッションで使用した「ミートアップ」スターターを domain-starters.md に逆輸入する（スキル改善）
+    done: false
+  - id: A4
+    text: Event 集約に EventConcluded（終了マイルストーン）を追加し、no-show 判定・feedback 招待・締切計算の trg を統一する（causal-chain-completeness 指摘）
+    done: false
+  - id: A5
+    text: Participation 集約の PROMOTED ステート名を再考（PROMOTED は語感が強い、CONFIRMED_FROM_WAITLIST 等）— bc-vocabulary-consistency 指摘
+    done: false
+  - id: A6
+    text: Feedback 集約の transitions に SUBMITTED → SUBMITTED の self-loop（再送上書き）または冪等性を明示（agg-purpose-quality 指摘）
+    done: false
+  - id: A7
+    text: 「参加申込」概念が Participation / Apply / Application の 3 系統に分裂している件、用語を Apply 系か Participate 系に統一する設計判断（bc-vocabulary-consistency 指摘）
+    done: false
