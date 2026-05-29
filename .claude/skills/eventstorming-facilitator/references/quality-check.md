@@ -1,107 +1,77 @@
-# EventStorming / DDD 表記品質チェックリスト
+# DML 品質チェック（観点別フィルタ → LLM 方式）
 
-MDファイルを書き出した後、サブエージェントがこのチェックリストに従って検査・修正する。
+DML 品質チェックは **2 段階**で行う：
 
----
+1. **構造チェック（Python のみ）** — `dmlctl check <file> --check=<name>` で参照整合性・
+   命名・到達可能性を機械的に判定する。LLM は使わない。
+2. **意味チェック（観点別フィルタ + LLM）** — `dmlctl view <file> --view=<name>` で必要な
+   スライスだけを切り出し、それを `references/checks/<name>.md` のプロンプトで LLM に渡す。
 
-## 1. DML記法チェック（兄弟 `.dml.yaml` ファイル・YAML 直書き）
-
-DML は兄弟 `<session>.dml.yaml` ファイル（純 YAML・フェンスなし）。`ctxs` / `aggs` / `scs` / `pols` の 4 トップレベルリスト（任意で `domains`）で構成される。AGG 詳細はトップレベル `aggs[]` に集約し、`ctxs[].aggs` は AGG 名（PascalCase 文字列）の軽量名簿として保持する。
-
-> **JSON Schema との分担**: 形式（正規表現で判定できるもの）= **D1 / D6 / D8** と、`evt`↔`brs` 排他・`trg`↔`trgs` 排他・`bulk:true`→`qry` 必須・未知フィールド禁止・enum 違反は `references/dml.schema.yaml` が機械検証する（`scripts/validate_dml.py`）。サブエージェントはまず兄弟 `.dml.yaml` を Read し、Schema 違反（あれば build バナー / validate_dml の出力）を判断材料にする。**時制・命令形・言語・意図の判断（D2 / D3 / D4 / D7）は Schema では不可能**なので、引き続きこのチェックリストで確認・修正する。
-
-| # | ルール | NG例 | OK例 |
-|---|-------|------|------|
-| D1 | `evt`/`cmd`/`agg` の値は英語PascalCaseのみ | `evt: 注文確定` | `evt: OrderConfirmed` |
-| D2 | `evt`（および `trg`/`emits`/`brs[].evt`）の値は過去形 | `evt: PlaceOrder` | `evt: OrderPlaced` |
-| D3 | `cmd` の値は命令形 | `cmd: OrderPlaced` | `cmd: PlaceOrder` |
-| D4 | `scs[].name` は日本語でアクター＋行為 | `name: OrderFlow` | `name: 顧客が注文を確定する` |
-| D5 | 各 `scs[]` に `actor` がある | （actor なし） | `actor: Customer` |
-| D6 | `ctxs[].name` は `lowercase-with-hyphen` | `name: OrderManagement` | `name: order-management` |
-| D7 | 日本語補足は `rules[].why` / `errs[].when` / `note` フィールドへ。`#` 行コメントは使わない | `# 在庫数は0以上`<br>`- rule: StockNonNegative` | `- rule: stock must be non-negative`<br>`  why: "在庫数は0以上"` |
-| D8 | `cmd`/`evt`/`agg` 等の値に `()` `<<>>` を付けない | `evt: (OrderPlaced)` | `evt: OrderPlaced` |
-| D9 | `pols` は EVENTUAL-TX 限定。同期分岐（SAME-TX）は `pols` に置かず、発行元 `scs[].brs` に書く | 同期分岐用の `pols` 要素 | scenario 内 `brs:`<br>`  - cond: ...`<br>`    evt: ...` |
-| D10 | 各 `ctxs[]` に `up` / `dn` がある（依存なしは空リスト `[]`、`rel` 併記） | `- name: foo`<br>`  lang: {...}` | `- name: foo`<br>`  up: []`<br>`  dn:`<br>`    - ctx: bar`<br>`      rel: Customer-Supplier` |
+旧運用（DML 全文を 1 件の LLM に投げる）は **廃止**。LLM コンテキスト圧迫と再現性低下のため。
 
 ---
 
-## 2. event_flow 図チェック（セクション2・3の `` ```event-flow-svg `` ブロック、旧記法 `:::diagram-svg event_flow` も対象）
+## 構造チェック観点（dmlctl check）
 
-| # | ルール | NG例 | OK例 |
-|---|-------|------|------|
-| F1 | `$Policy` の直後に必ず `!Command` がある（`$Policy > [Event]` は禁止） | `$在庫確認ポリシー > [在庫が不足した]` | `$在庫確認ポリシー > !在庫を確認 > [在庫が不足した]` |
-| F2 | イベントは `[日本語過去形]` で表記 | `[在庫不足]` | `[在庫が不足した]` |
-| F3 | コマンドは `!動詞句（日本語）` で表記 | `[注文確定]` や `OrderConfirm` | `!注文を確定` |
-| F4 | BC名は `|lowercase-with-hyphen|` | `|OrderManagement|` | `|order-management|` |
-| F5 | アクターは `@役割名（日本語）` で表記 | `@Customer` | `@顧客` |
-| F6 | `?ReadModel` は**操作対象集約以外**からのデータ取得にのみ付ける。同一集約の参照には付けない。順序は `@Actor > ?ReadModel > !Command` | 書き込む集約と同じデータを `?ビュー` で表記する | 別集約の残席数を確認する `?残席数 > !参加申込` |
+| `--check=<name>` | 何を検出するか | 修正先 |
+|---|---|---|
+| `orphan_agg` | どの scenario からも参照されない AGG | scenarios[].agg を追記 / 不要なら AGG 削除 |
+| `dangling_cmd` | `aggregates[].transitions[].via` が scenarios[].cmd に未宣言 | scenarios を追加するか transitions を修正 |
+| `unknown_evt_in_policy` | `policies[].trg` / `policies[].trgs.evts` が aggregates[].events[].name に未宣言 | EVT 宣言を補強 |
+| `language_coverage` | AGG/CMD/EVT/POL が contexts[].lang に未登録 | contexts[].lang に英→日辞書を追加 |
+| `state_reachability` | aggregates[].states に到達可能な transitions が無い状態（初期状態除く） | transitions を補強 |
+| `orphan_event` | EVT 宣言済みだが scenarios/policies のいずれからも参照されない | 削除 or 参照追加 |
+| `flow_chain_resolution` | `narratives[].entry` / `scenarios[].next` / `brs[].terminal` の参照が解決できない | typo 修正・narratives[].id の存在確認 |
+| `question_decision_link` | closed question の `decision_id` が decisions[].id に存在しない | リンク修正 |
 
----
+実行例：
 
-## 3. セクション完全性チェック
+```bash
+python3 scripts/dmlctl.py check docs/eventstorming/<session>.dml.yaml --check=orphan_agg
+python3 scripts/dmlctl.py checks  # 観点名の一覧
+```
 
-| # | ルール |
-|---|-------|
-| S1 | セクション1（ハッピーパスストーリー）が400〜600字で記述されているか |
-| S2 | セクション2（代替シナリオ）は**テキストのみ**。`` ```event-flow-svg `` / `:::diagram-svg` ブロックがあれば削除する（図はセクション3に集約） |
-| S3 | セクション3（Event Walkthrough）に **ハッピーパス図が最初** に来ているか |
-| S4 | セクション3の代替シナリオにも `` ```event-flow-svg `` 図があるか（ハッピーパス図の後。旧記法 `:::diagram-svg event_flow` も可） |
-| S5 | セクション5（集約候補）の各 AGG に ` ```ts ` の Zod スキーマブロックが存在するか |
-| S6 | セクション4（コンテキスト候補）の各 BC に「依存方向」項目（UPSTREAM / DOWNSTREAM）が存在するか |
-| S7 | セクション10（用語集）が存在し、フロー図で使われている `@` / `!` / `[]` / `$` / `?` 付き日本語ラベルがすべて登録されているか |
-| **S8** | **セクション5（集約候補）の各 AGG に `#### 目的` サブセクションがあり、本文が 30 字以上書かれているか**。空・未記入・短すぎる項目は **自動修正せず**、ホットスポット候補 `[?-WHY] S8_<AggName>: 目的が未記入または短すぎる` として返す（M 系と同じ運用） |
-| **S9** | **`aggs[].name` で宣言された AGG が `scs[].agg` でも参照されているか（孤立 AGG の検出）／逆に `scs[].agg` が `aggs[].name` に存在するか（未定義 AGG 参照の検出）**。違反は **自動修正せず**、ホットスポット候補として返す: `[?] S9_<AggName>: aggs[] に宣言されているが scs[].agg で未参照（孤立 AGG）` または `[?] S9_<AggName>: scs[].agg で参照されているが aggs[] に未宣言` |
+各チェックは JSON で `{ "check": ..., "count": N, "findings": [...] }` を stdout に出す。
+exit code は違反 0 件＝0、それ以外＝1。
 
 ---
 
-## 3-B. WHY/WHEN 推奨チェック（W1〜W2）
+## 意味チェック観点（観点別フィルタ → LLM）
 
-「**形式違反ではない・あるとより良い**」を見るカテゴリ。違反は自動修正せず、ホットスポット候補 `[?-WHY] W_N` として返す。
+`references/checks/<name>.md` を 1 観点 1 ファイルで持つ。各 .md は次を含む：
 
-| # | ルール | 検出ロジック | 違反例 → 推奨 |
-|---|-------|------|------|
-| W1 | 各 `rules[]` に `why` キーが書かれていることを推奨 | YAML パースで `rules[]` 要素に `why` が無い | `- rule: communityName must be unique system-wide` → `why: "URL slug や検索 UX で name → id 逆引きを想定するため"` を推奨 |
-| W2 | 各 `errs[]` に `when` キーが書かれていることを推奨 | 同上、`errs[]` 要素に `when` が無い | `- cond: duplicateName`<br>`  err: DuplicateCommunityNameError` → `when: "name が既存と重複"` を推奨 |
+- 抽出条件（呼ぶべき `dmlctl view --view=<...>` コマンド）
+- LLM へのプロンプト（評価観点・出力フォーマット）
+- 期待される所見（合格 / 不合格の具体例）
 
-**S8 / W1 / W2 の運用方針:** D / F / S1〜S7 のような自動修正は **しない**。意味判断を伴うため、検出後はホットスポット候補 `[?-WHY]` プレフィックスで列挙し、ファシリテーター本体が次ターン以降に **1 件ずつ会話補完**（詳細は `chat-output-format.md` §10A「WHY 補完モード」）。
+現在の観点一覧：
 
----
+| 観点ファイル | 評価対象 | 対応する dmlctl view |
+|---|---|---|
+| `checks/scenario-rules-quality.md` | rules/errs の業務語彙適切性 | `scenarios` |
+| `checks/saga-completeness.md` | POLICY 連鎖と Saga 完結性 | `flow-causality` + `policies` |
+| `checks/bc-vocabulary-consistency.md` | BC 間の同義語/異義語 | `bc-language` |
+| `checks/agg-purpose-quality.md` | AGG の purpose 30 字以上・単一責任 | `agg-detail` |
+| `checks/causal-chain-completeness.md` | フローの因果連鎖の途切れ | `flow-causality` |
+| `checks/decision-rationale-clarity.md` | 意思決定の why/why_not の明瞭さ | `decisions` |
 
-## 4. モデリング意味チェック（M1〜M5）
+実行手順：
 
-D・F・S 系が「**表記** の正しさ」を見るのに対し、M 系は「**意味** の正しさ」を見る。CMD / EVT の命名が業務概念と一致しているか、CRUD 的に技術側へ寄っていないかを確認する。
-
-| # | ルール | 検出ロジック | 違反例 | 推奨 |
-|---|-------|-----|------|------|
-| M1 | CMD と直後 EVT の **動詞語幹が一致** しており、かつその EVT が **他 BC を経由する Saga の起点** になっている場合、CMD 発行時点は「真の業務完了」ではないため、命名が早すぎる可能性がある | (1) `SCENARIO X` の `CMD V_X` と直後の `EVT X_V_ed` の動詞語幹が一致<br>(2) その EVT を `TRIGGER` とする `POLICY` が存在<br>(3) その POLICY チェーンが別 BC を経由 → 警告 | `CMD PlaceOrder` (注文を**確定**) ↔ `EVT OrderPlaced` (注文が**確定**された) で、後続に在庫予約・決済 Saga が続く | CMD `PlaceOrder` (注文する) / EVT `OrderPlaced` (注文された) に **過渡状態** を表現し、Saga 完了時の別 SCENARIO で `ConfirmOrder` / `OrderConfirmed` を導入 |
-| M2 | CMD 名に **技術的・CRUD 的動詞** が含まれる | CMD 名に次の prefix を検出: `Mark`, `Set`, `Update`, `Modify`, `Change`, `Save`, `Persist`, `Flush` | `CMD MarkOrderPaid` `CMD SetUserStatus` `CMD UpdateInventoryCount` | 業務動作を表す動詞へ: `ConfirmOrder` / `ActivateUser` / `RestockInventory` 等 |
-| M3 | AGG の **status enum 値** と、その状態へ遷移させる **CMD の動詞語幹** が乖離している | (1) AGG の `status` enum 値リストを抽出<br>(2) 各 status へ遷移させる CMD を SCENARIO から特定<br>(3) status 値の名詞と CMD の動詞語幹が **対応関係にない** ものを検出 | `status: 'paid'` への遷移 CMD が `MarkOrderPaid`（status と動詞が不対応） | status を `'confirmed'` に統合し、CMD を `ConfirmOrder` にすると `confirm/confirmed` で対応 |
-| M4 | Saga チェーンの **完了 EVT が業務上の確定を表現できていない** | (1) POLICY チェーン（複数 BC 経由）の起点 EVT と終点 EVT を特定<br>(2) 終点 EVT が業務的に意味のある「完了状態」を表しているか<br>(3) もし起点と終点が同じ業務概念の異なる段階を表せていないなら警告 | 注文 Saga の最終 EVT が `OrderMarkedPaid` で、業務上の「注文確定」を表す明確な完了 EVT が存在しない | Saga 完了として `OrderConfirmed`（注文が確定された）を導入し、起点 `OrderPlaced`（注文された）と段階を区別 |
-| M5 | POLICY 名が **業務意義のない一般名** で、TRIGGER → CMD の意味が把握しづらい | POLICY 名が「○○ポリシー」だけで、TRIGGER EVT と発行 CMD の業務的橋渡しを説明していない場合に提案 | `POLICY 引当確定ポリシー` (TRIGGER: PaymentCompleted → CMD: CommitStockReservation + MarkOrderPaid) | 業務的意義を反映した命名へ: `POLICY 注文確定ポリシー` （「決済成功で注文を確定する」業務ルールを表す） |
-
----
-
-### M 系の修正方針: 「指摘のみ・自動修正しない」
-
-D / F / S 系のような **形式的な違反は自動修正** するが、M 系は **業務概念の判断を伴う** ため、エージェントは自動修正せず以下のように扱う:
-
-- 違反候補を検出したら **ホットスポット候補** として `[?] M_N: <該当箇所>` 形式で結果に列挙
-- 修正案（推奨 CMD/EVT 名、推奨 SCENARIO 分割）を提示
-- **人間が次ターンで判断・採用するための材料を提供** する
-
-これにより、技術的正しさ（D/F/S）と業務的正しさ（M）の **2 段階レビュー** が成立する。
+1. 構造チェックを先に走らせて違反 0 にする（意味チェックが誤判定するのを防ぐ）
+2. Agent tool で 1 観点ずつ起動。Agent への入力は **`dmlctl view` の出力 + 当該 .md の指示**
+3. Agent の返した所見を AI / 人間が確認し、修正が必要なら DML を編集（`dmlctl set/add/remove` 経由）
 
 ---
 
-## 検査・修正手順
+## チェック起動の標準フロー
 
-1. MDファイルを `Read` で読み込む
-2. **D・F・S1〜S7 系**を全項目検査 → 違反は `Edit` tool で自動修正
-3. **S8 / S9 / W1 / W2 / M 系**を全項目検査 → 違反候補は自動修正せず、レポートに `[?-WHY] S8/W_N` または `[?] S9/M_N` として列挙
-4. 結果を返す：
-   - 違反なし → `「品質チェック完了：問題なし」`
-   - D/F/S1〜S7 違反あり → 修正した項目リスト（`F1: $Policy後の!Command追加 ×3箇所` など）
-   - S8 違反あり → ホットスポット候補リスト（`[?-WHY] S8_Payment: AGG Payment の #### 目的 が未記入` など）
-   - S9 違反あり → ホットスポット候補リスト（`[?] S9_Notification: aggs[] に宣言されているが scs[].agg で未参照（孤立 AGG）` など）
-   - W1/W2 違反あり → ホットスポット候補リスト（`[?-WHY] W1: SCENARIO 主催者がコミュニティを作成する の RULE 1 に WHY 未記入` など）
-   - M 違反候補あり → ホットスポット候補リスト（`[?] M1: SCENARIO 顧客が注文を確定する — CMD/EVT で「確定」が重複、Saga 起動のため早すぎる命名の可能性` など）
+```bash
+# 1) 構造チェック（全観点）
+for c in $(python3 scripts/dmlctl.py checks); do
+    python3 scripts/dmlctl.py check <session>.dml.yaml --check=$c
+done
+
+# 2) 意味チェック（Agent 起動）— quality-check-agent.md / causal-check-agent.md 参照
+```
+
+意味チェック起動の詳細は `quality-check-agent.md` を参照。

@@ -23,17 +23,18 @@
       font-family: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', system-ui, sans-serif;
       margin: 0; padding: 24px;
       background: #fafafa; color: #263238;
-      line-height: 1.6; max-width: 1400px;
+      line-height: 1.7; max-width: 1400px;
+      font-size: 16px;
     }
-    h1 { font-size: 26px; margin: 0 0 4px 0; color: #263238; }
+    h1 { font-size: 30px; margin: 0 0 8px 0; color: #263238; }
     h2 {
-      font-size: 18px; margin: 32px 0 12px 0;
-      padding: 6px 12px; border-left: 5px solid #37474F;
+      font-size: 22px; margin: 36px 0 16px 0;
+      padding: 8px 14px; border-left: 5px solid #37474F;
       color: #37474F; background: #ECEFF1;
       border-radius: 0 4px 4px 0;
     }
-    h3 { font-size: 14px; margin: 16px 0 6px 0; color: #455A64; }
-    .meta { color: #607D8B; font-size: 15px; margin-bottom: 8px; }
+    h3 { font-size: 17px; margin: 18px 0 8px 0; color: #455A64; }
+    .meta { color: #607D8B; font-size: 15px; margin-bottom: 12px; }
     code { background: #ECEFF1; padding: 1px 5px; border-radius: 3px; font-size: 0.92em; }
 
     /* === 進捗バー === */
@@ -61,7 +62,7 @@
 
     .scenario-card {
       padding: 12px 16px; background: #FFFFFF;
-      border: 1px solid #FFD54F; border-radius: 4px;
+      border: 1px solid #FFAB40; border-radius: 4px;
       margin: 8px 0; font-size: 15px;
     }
     .scenario-card h3 { margin: 0 0 6px 0; color: #E65100; }
@@ -347,11 +348,11 @@
     /* === ホットスポット / 未確認 === */
     .hotspot {
       background: #FFEBEE; border-left: 4px solid #C62828;
-      padding: 10px 14px; margin: 8px 0; font-size: 15px; border-radius: 0 4px 4px 0;
+      padding: 12px 16px; margin: 10px 0; font-size: 16px; border-radius: 0 4px 4px 0;
     }
     .question {
       background: #E3F2FD; border-left: 4px solid #1565C0;
-      padding: 10px 14px; margin: 8px 0; font-size: 15px; border-radius: 0 4px 4px 0;
+      padding: 12px 16px; margin: 10px 0; font-size: 16px; border-radius: 0 4px 4px 0;
     }
     .hotspot strong, .question strong { display: inline-block; min-width: 38px; }
 
@@ -363,7 +364,7 @@
       text-align: center;
     }
 
-    /* === DML JSON Schema 検証バナー（§9） === */
+    /* === DML JSON Schema 検証バナー（§11） === */
     .dml-banner {
       padding: 8px 12px; border-radius: 6px; margin: 0 0 10px;
       font-size: 13px; font-weight: 600;
@@ -377,16 +378,16 @@
     .agg-subsection,
     .inv-section,
     .err-section {
-      padding: 8px 12px;
+      padding: 10px 14px;
       border-left: 3px solid transparent;
       border-radius: 0 4px 4px 0;
-      margin: 8px 0;
-      font-size: 14px;
+      margin: 10px 0;
+      font-size: 15px;
       color: #455A64;
     }
     .agg-subsection > ul,
     .inv-section > ul,
-    .err-section > ul { margin: 4px 0; padding-left: 22px; }
+    .err-section > ul { margin: 6px 0; padding-left: 24px; }
 
     .agg-subsection > strong { color: #37474F; }
     .inv-section { background: #E8F5E9; border-left-color: #2E7D32; }
@@ -398,20 +399,23 @@
     .purpose-section,
     .background-section,
     .constraints-section {
-      padding: 8px 12px;
+      padding: 10px 14px;
       border-left: 3px solid transparent;
       border-radius: 0 4px 4px 0;
-      margin: 8px 0;
-      font-size: 14px;
+      margin: 10px 0;
+      font-size: 15px;
       color: #455A64;
     }
     .constraints-section > ul { margin: 4px 0; padding-left: 22px; }
-    .purpose-section { background: #FFF3E0; border-left-color: #EF6C00; }
-    .purpose-section > strong { color: #EF6C00; }
+    /* purpose/background/constraints は AGG/BC の意図メタ情報。
+       それぞれ Event / Command / Policy と同じ border 色を使い、
+       「目的=橙系・背景=青系・制約=紫系」の意味付けを note 色と完全に揃える。 */
+    .purpose-section { background: #FFF3E0; border-left-color: #E65100; }
+    .purpose-section > strong { color: #E65100; }
     .background-section { background: #E3F2FD; border-left-color: #1565C0; }
     .background-section > strong { color: #1565C0; }
-    .constraints-section { background: #F3E5F5; border-left-color: #6A1B9A; }
-    .constraints-section > strong { color: #6A1B9A; }
+    .constraints-section { background: #F3E5F5; border-left-color: #7B1FA2; }
+    .constraints-section > strong { color: #7B1FA2; }
 
     .err-code {
       background: #FFCDD2;
@@ -423,7 +427,7 @@
       font-size: 0.92em;
     }
 
-    /* === コードブロック (DML / Zod) === */
+    /* === コードブロック (DML 生表示) === */
     pre.code {
       background: #263238; color: #ECEFF1;
       padding: 16px; border-radius: 6px;
@@ -434,35 +438,20 @@
     pre.code .kw { color: #80CBC4; font-weight: 700; }
     pre.code .id { color: #FFCC80; }
     pre.code .cm { color: #78909C; font-style: italic; }
-    /* === DML (YAML) 役割ベース意味色 === */
+    /* === DML (YAML) 役割ベース意味色 ===
+       付箋 (note) の BG 色とまったく同じ hex を使い、ライト面・ダーク面で
+       「Actor=黄、Command=青、Event=橙、Policy=紫、QRY=緑」の対応を完全一致させる。
+       いずれもダーク背景 #263238 上で十分なコントラスト（>4.5:1 相当）が取れる Material 200 系。 */
     pre.code .yk { color: #B0BEC5; }                 /* YAML キー: 淡い灰緑 */
     pre.code .v-str { color: #ECEFF1; }              /* 既定の値 */
-    pre.code .v-actor { color: #FFE082; }            /* 黄: actor / agg */
-    pre.code .v-cmd { color: #90CAF9; }              /* 青: command */
-    pre.code .v-evt { color: #FFAB91; }              /* 橙: event / trigger / emits */
-    pre.code .v-qry { color: #A5D6A7; }              /* 緑: read model */
-    pre.code .v-pol { color: #CE93D8; }              /* 紫: policy */
+    pre.code .v-actor { color: #FFF59D; }            /* 黄: actor / agg（note.actor BG と一致） */
+    pre.code .v-cmd { color: #90CAF9; }              /* 青: command（note.command BG と一致） */
+    pre.code .v-evt { color: #FFAB40; }              /* 橙: event / emits（発生したイベント。note.event BG と一致） */
+    pre.code .v-trg { color: #FFD740; }              /* Amber: trg / trgs.evts（POL が購読するトリガ参照。発生 evt と区別） */
+    pre.code .v-qry { color: #A5D6A7; }              /* 緑: read model（note.readmodel BG と一致） */
+    pre.code .v-pol { color: #CE93D8; }              /* 紫: policy（note.policy BG と一致） */
     pre.code .v-err { color: #EF9A9A; }              /* 赤: error type */
     pre.code .v-meta { color: #80CBC4; font-style: italic; }  /* 青緑: v2 メタ（type/vision/subdomain 等） */
-
-    /* === 用語集テーブル === */
-    table.glossary {
-      width: 100%; border-collapse: collapse; margin: 8px 0 16px 0;
-      font-size: 15px; background: #FFFFFF;
-      border: 1px solid #CFD8DC; border-radius: 4px; overflow: hidden;
-    }
-    table.glossary th {
-      background: #455A64; color: #FFF; padding: 8px 12px;
-      text-align: left; font-size: 14px;
-    }
-    table.glossary td {
-      padding: 6px 12px; border-top: 1px solid #ECEFF1;
-    }
-    table.glossary td.code-cell {
-      font-family: 'SF Mono', Menlo, monospace; color: #1565C0;
-    }
-    .glossary-section { margin: 12px 0; }
-    .glossary-section h3 { color: #455A64; }
 
     /* === 次のアクション === */
     .next-actions {
@@ -474,13 +463,285 @@
 
     /* === コンテキスト / 集約カード === */
     .bc-card {
-      padding: 12px 16px; background: #FFFFFF;
+      padding: 14px 18px; background: #FFFFFF;
       border: 1px solid #CFD8DC; border-radius: 4px;
-      margin: 8px 0; font-size: 14px;
+      margin: 10px 0; font-size: 16px;
     }
-    .bc-card h3 { margin: 0 0 6px 0; color: #1565C0; font-family: 'SF Mono', Menlo, monospace; }
-    .bc-card .dep { font-size: 13px; color: #607D8B; }
+    .bc-card h3 {
+      margin: 0 0 12px 0; color: #263238;
+      font-size: 22px; font-weight: 700; line-height: 1.3;
+      padding-bottom: 10px; border-bottom: 2px solid #ECEFF1;
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 12px;
+    }
+    .bc-card h3 .label-ja { color: #263238; }
+    .bc-card h3 .dash { display: none; }       /* flex 両端寄せに変更したため不要 */
+    .bc-card h3 .slug {
+      font-family: 'SF Mono', Menlo, monospace; color: #546E7A;
+      font-size: 16px; font-weight: 600;
+      background: #ECEFF1; padding: 3px 10px; border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .bc-card .dep { font-size: 14px; color: #607D8B; }
+
+    /* === 集約 属性 / イベントペイロード テーブル（v4 DML 駆動） === */
+    table.attr-table {
+      width: 100%; border-collapse: collapse; margin: 8px 0;
+      font-size: 15px; background: #FFFFFF;
+      border: 1px solid #CFD8DC; border-radius: 4px; overflow: hidden;
+    }
+    table.attr-table th {
+      background: #ECEFF1; color: #37474F; padding: 8px 12px;
+      text-align: left; font-size: 14px; font-weight: 700;
+    }
+    table.attr-table td { padding: 7px 12px; border-top: 1px solid #ECEFF1; }
+    table.attr-table td.code-cell {
+      font-family: 'SF Mono', Menlo, monospace; color: #37474F;
+    }
+    table.attr-table.payload-table th { background: #FFF3E0; color: #E65100; }
+    .agg-events { margin: 10px 0 4px 0; }
+    .agg-events > strong { color: #E65100; font-size: 15px; }
+    .agg-event { margin: 8px 0; padding: 8px 12px; background: #FFF8E1; border-left: 3px solid #FFAB40; border-radius: 0 4px 4px 0; }
+    .agg-event h4 {
+      margin: 0 0 6px 0; font-size: 15px; color: #E65100;
+      font-family: 'SF Mono', Menlo, monospace;
+    }
+    .inv-section .why, .err-section .why,
+    .agg-subsection .why { color: #607D8B; font-size: 13px; font-style: italic; }
+    /* 状態コード（日本語名の右に小さく添える英語識別子）。インラインタグ風。 */
+    .state-code {
+      background: #ECEFF1; color: #546E7A;
+      padding: 1px 6px; border-radius: 3px;
+      font-size: 0.85em; font-weight: 600;
+      margin-left: 4px;
+    }
+
+    /* === BC カードの LANGUAGE タイプ別表 === */
+    .lang-section {
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: #FAFAFA;
+      border: 1px solid #ECEFF1;
+      border-radius: 4px;
+    }
+    .lang-section-label { color: #455A64; font-size: 14px; margin-bottom: 8px; }
+    .lang-section-label strong { color: #37474F; letter-spacing: 0.5px; font-size: 15px; }
+    .lang-cat { margin: 10px 0 14px 0; }
+    .lang-cat h4 {
+      margin: 0 0 6px 0; font-size: 14px; color: #546E7A;
+      text-transform: none; font-weight: 700;
+    }
+    table.lang-table {
+      width: 100%; border-collapse: collapse;
+      font-size: 15px; background: #FFFFFF;
+      border: 1px solid #ECEFF1; border-radius: 3px;
+    }
+    table.lang-table th {
+      background: #ECEFF1; color: #37474F; padding: 6px 12px;
+      text-align: left; font-size: 13px; font-weight: 700;
+    }
+    table.lang-table td { padding: 6px 12px; border-top: 1px solid #ECEFF1; }
+    table.lang-table td.code-cell {
+      font-family: 'SF Mono', Menlo, monospace; color: #37474F;
+      width: 45%;
+    }
+
+    /* === 意思決定ログ === */
+    /* decision-card は Policy と同じ紫系（note.policy border #7B1FA2）に統一。
+       「決定 = 制約 = ポリシー」の意味的近さを視覚でも合わせる。 */
+    .decision-card {
+      padding: 14px 18px; background: #FFFFFF;
+      border: 1px solid #CFD8DC; border-left: 4px solid #7B1FA2;
+      border-radius: 0 4px 4px 0; margin: 10px 0; font-size: 16px;
+    }
+    .decision-card h3 { margin: 0 0 8px 0; color: #7B1FA2; font-size: 18px; }
+    .decision-card .dep { font-size: 14px; color: #607D8B; margin-bottom: 10px; }
+    .decision-options { display: flex; flex-direction: column; gap: 6px; }
+    .opt { padding: 8px 12px; border-radius: 0 4px 4px 0; border-left: 3px solid transparent; }
+    .opt.adopted { background: #E8F5E9; border-left-color: #2E7D32; }
+    .opt.adopted .opt-name { color: #2E7D32; font-weight: 700; }
+    .opt.rejected { background: #FAFAFA; border-left-color: #B0BEC5; }
+    .opt.rejected .opt-name {
+      color: #78909C; font-weight: 700; text-decoration: line-through;
+    }
+    .opt-name { display: block; font-size: 15px; }
+    /* 英語識別子（追跡用 ID）。日本語ラベルの右に小さく従属表示 */
+    .opt-id {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.85em; font-weight: 400; color: #90A4AE; margin-left: 4px;
+    }
+    .opt.adopted .opt-id { color: #66BB6A; }
+    .opt.rejected .opt-id { color: #B0BEC5; }
+    /* 採用行（dep 内）の英語識別子も同等に控えめに */
+    .dep .opt-id {
+      background: transparent; padding: 0; font-size: 0.85em; color: #90A4AE;
+    }
+    .opt-why, .opt-why-not {
+      display: block; color: #455A64; font-size: 14px; margin-top: 4px;
+    }
+    .opt-why-not { color: #78909C; }
+    .decision-note { margin-top: 8px; color: #607D8B; font-size: 13px; font-style: italic; }
+
+    /* === 状態遷移リスト（<details> 折り畳み） === */
+    .transitions-details summary {
+      cursor: pointer; padding: 6px 0; user-select: none;
+      list-style: none;
+    }
+    .transitions-details summary::-webkit-details-marker { display: none; }
+    .transitions-details summary::before {
+      content: "▶"; display: inline-block;
+      margin-right: 6px; color: #78909C;
+      transition: transform 0.15s;
+    }
+    .transitions-details[open] summary::before { transform: rotate(90deg); }
+    .transitions-details > ul { margin-top: 6px; }
+
+    /* === DML セクション（§9・<details> でデフォルト折り畳み） === */
+    .dml-details > summary {
+      cursor: pointer; user-select: none; list-style: none;
+      display: flex; flex-direction: column; align-items: flex-start;
+    }
+    .dml-details > summary::-webkit-details-marker { display: none; }
+    .dml-details > summary::after {
+      content: "▼"; display: inline-block;
+      margin-top: 2px; color: #78909C;
+      transition: transform 0.15s;
+    }
+    .dml-details[open] > summary::after { transform: rotate(180deg); }
+    .dml-details > summary > h2 { margin: 0; }
+
+    /* === 状態遷移図（Mermaid） === */
+    .state-diagram {
+      margin: 12px 0;
+      padding: 12px;
+      background: #FAFAFA;
+      border: 1px solid #ECEFF1;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    .state-diagram-label {
+      color: #455A64; font-size: 14px; font-weight: 700; margin-bottom: 8px;
+    }
+    .mermaid { text-align: center; }
+
+    /* === 目次モーダル（"t" キーで開閉） === */
+    .toc-overlay {
+      display: none; position: fixed; inset: 0; z-index: 1000;
+      background: rgba(38, 50, 56, 0.45);
+      align-items: flex-start; justify-content: center;
+      padding: 8vh 16px;
+    }
+    .toc-overlay.open { display: flex; }
+    .toc-modal {
+      background: #fff; border-radius: 10px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+      width: min(560px, 100%); max-height: 80vh; overflow-y: auto;
+      padding: 20px 24px;
+    }
+    .toc-modal h2 {
+      margin: 0 0 12px; font-size: 18px; color: #263238;
+      display: flex; align-items: baseline; gap: 10px;
+    }
+    .toc-modal h2 .toc-hint {
+      font-size: 12px; font-weight: 400; color: #90A4AE;
+    }
+    .toc-list { list-style: none; margin: 0; padding: 0; }
+    .toc-list li { margin: 0; }
+    .toc-list a {
+      display: block; padding: 6px 10px; border-radius: 6px;
+      color: #37474F; text-decoration: none; font-size: 15px;
+      transition: background 0.12s;
+    }
+    .toc-list a:hover, .toc-list a:focus { background: #ECEFF1; outline: none; }
+    .toc-list a.toc-h3 { padding-left: 28px; font-size: 14px; color: #546E7A; }
+    .toc-list a .toc-num { color: #90A4AE; margin-right: 6px; }
   </style>
+  <!-- Mermaid: 状態遷移図のレンダリング（CDN 経由でブラウザ側で描画） -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    if (window.mermaid) {
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: 'default',
+        themeVariables: { fontFamily: "'Hiragino Sans', 'Noto Sans JP', sans-serif" },
+      });
+    }
+  </script>
+  <!-- 目次モーダル: "t" キーで開閉。h2/h3（見出し3まで）を走査して動的生成 -->
+  <script>
+    (function () {
+      function buildToc() {
+        var headings = Array.prototype.slice.call(
+          document.querySelectorAll('body h2, body h3')
+        ).filter(function (h) {
+          // モーダル内の見出しは除外
+          return !h.closest('.toc-modal');
+        });
+        if (!headings.length) return;
+
+        var overlay = document.createElement('div');
+        overlay.className = 'toc-overlay';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+
+        var modal = document.createElement('div');
+        modal.className = 'toc-modal';
+        var title = document.createElement('h2');
+        title.innerHTML = '目次 <span class="toc-hint">t / Esc で閉じる</span>';
+        modal.appendChild(title);
+
+        var list = document.createElement('ul');
+        list.className = 'toc-list';
+
+        headings.forEach(function (h, i) {
+          if (!h.id) h.id = 'sec-' + (i + 1);
+          var li = document.createElement('li');
+          var a = document.createElement('a');
+          a.href = '#' + h.id;
+          a.textContent = h.textContent.trim();
+          if (h.tagName === 'H3') a.className = 'toc-h3';
+          a.addEventListener('click', function (e) {
+            e.preventDefault();
+            close();
+            // DML など <details> 内の見出しなら展開してからスクロール
+            var det = h.closest('details');
+            if (det) det.open = true;
+            h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
+          li.appendChild(a);
+          list.appendChild(li);
+        });
+
+        modal.appendChild(list);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        function open() { overlay.classList.add('open'); }
+        function close() { overlay.classList.remove('open'); }
+        function isOpen() { return overlay.classList.contains('open'); }
+
+        overlay.addEventListener('click', function (e) {
+          if (e.target === overlay) close();
+        });
+
+        document.addEventListener('keydown', function (e) {
+          var t = e.target;
+          var typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+          if (e.key === 'Escape' && isOpen()) { close(); return; }
+          if ((e.key === 't' || e.key === 'T') && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+            e.preventDefault();
+            isOpen() ? close() : open();
+          }
+        });
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', buildToc);
+      } else {
+        buildToc();
+      }
+    })();
+  </script>
 </head>
 <body>
 
@@ -501,8 +762,10 @@
     <div class="phase">3. イベント発見</div>
     <div class="phase">4. CMD-EVT-POLICY</div>
     <div class="phase">4.5. BC 境界</div>
-    <div class="phase">5. RULE-ERR</div>
-    <div class="phase">6. 整合性チェック</div>
+    <div class="phase">4.6. 目的・背景・制約</div>
+    <div class="phase">5. 不変条件・エラー＋属性</div>
+    <div class="phase">6. 意思決定ログ</div>
+    <div class="phase">7. 整合性チェック</div>
   </div>
 
   <!-- =====================
@@ -585,21 +848,31 @@
   <!-- ... -->
 
   <!-- =====================
-       5. 集約候補（Zod スキーマ必須）
+       5. 集約候補（DML aggs[] から自動生成）
        ===================== -->
   <h2>5. 集約候補</h2>
   <div class="bc-card">
     <h3>{{AggregateName}}</h3>
-    <div class="dep"><strong>コンテキスト:</strong> {{context-slug}} · <strong>関連シナリオ:</strong> {{シナリオ}}</div>
-    <p style="margin: 6px 0;">{{集約の役割説明}}</p>
-<pre class="code"><span class="kw">export const</span> {{AggregateName}}Schema = z.object({
-  id: {{AggregateName}}IdSchema,
-  status: z.enum([<span class="cm">'STATE_A'</span>, <span class="cm">'STATE_B'</span>]),
-  // ...
-});
-<span class="kw">export type</span> {{AggregateName}} = z.infer&lt;<span class="kw">typeof</span> {{AggregateName}}Schema&gt;;</pre>
-    <p style="font-size: 14px; color: #607D8B; margin: 4px 0;"><strong>不変条件 (案):</strong> {{...}}</p>
-    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>状態遷移:</strong> STATE_A → STATE_B</p>
+    <div class="dep"><strong>コンテキスト:</strong> <code>{{context-slug}}</code> · <strong>関連シナリオ:</strong> {{シナリオ列}}</div>
+    <div class="purpose-section"><strong>目的:</strong> {{aggs[].purpose}}</div>
+    <div class="background-section"><strong>背景:</strong> {{aggs[].background}}</div>
+    <div class="constraints-section"><strong>制約:</strong><ul><li>{{aggs[].constraints[i]}}</li></ul></div>
+    <table class="attr-table">
+      <thead><tr><th>属性</th><th>型</th><th>必須</th><th>備考</th></tr></thead>
+      <tbody><tr><td class="code-cell">{{name}}</td><td class="code-cell">{{type}}</td><td>✓</td><td>{{note}}</td></tr></tbody>
+    </table>
+    <div class="agg-subsection"><strong>状態:</strong> <code>STATE_A</code> → <code>STATE_B</code></div>
+    <div class="inv-section"><strong>✓ 不変条件:</strong><ul><li>{{scs[].rules[i].rule}}<span class="why">— {{rules[i].why}}</span></li></ul></div>
+    <div class="err-section"><strong>⚠ エラーケース:</strong><ul><li><code class="err-code">{{errs[i].err}}</code>: {{errs[i].cond}}</li></ul></div>
+    <div class="agg-events"><strong>イベントペイロード:</strong>
+      <div class="agg-event">
+        <h4>{{EventName}}</h4>
+        <table class="attr-table payload-table">
+          <thead><tr><th>属性</th><th>型</th><th>必須</th><th>備考</th></tr></thead>
+          <tbody><tr><td class="code-cell">{{params[i].name}}</td><td class="code-cell">{{params[i].type}}</td><td></td><td></td></tr></tbody>
+        </table>
+      </div>
+    </div>
   </div>
   <!-- ... -->
 
@@ -626,9 +899,23 @@
   <div class="hotspot"><strong>H1.</strong> {{設計判断の論点}}</div>
 
   <!-- =====================
-       8. 次のアクション
+       8. 意思決定ログ（DML decisions[] から自動生成）
+       空のときはビルダー側で見出しごと抑制される。
        ===================== -->
-  <h2>8. 次のアクション</h2>
+  <h2>8. 意思決定ログ</h2>
+  <div class="decision-card">
+    <h3>{{decisions[i].id}}. {{decisions[i].topic}}</h3>
+    <div class="dep"><strong>採用:</strong> <code>{{chosen}}</code> · <strong>影響:</strong> <code>{{affects[0]}}</code></div>
+    <div class="decision-options">
+      <div class="opt adopted"><span class="opt-name">✓ {{option name}}</span><span class="opt-why">{{why}}</span></div>
+      <div class="opt rejected"><span class="opt-name">{{rejected name}}</span><span class="opt-why-not">{{why_not}}</span></div>
+    </div>
+  </div>
+
+  <!-- =====================
+       9. 次のアクション
+       ===================== -->
+  <h2>9. 次のアクション</h2>
   <div class="next-actions">
     <ul>
       <li>{{次のフェーズへの導線}}</li>
@@ -636,19 +923,23 @@
   </div>
 
   <!-- =====================
-       9. DML
+       10. DML（生 YAML をハイライト表示。`.dml.yaml` のサイドカーから読む）
        ===================== -->
-  <h2>9. DML</h2>
-  <pre class="code"><span class="kw">CONTEXT</span> <span class="id">{{context-slug}}</span> {
-  <span class="cm"># {{description}}</span>
-  <span class="kw">UPSTREAM</span> (none)
-  <span class="kw">DOWNSTREAM</span> <span class="id">{{other-context}}</span>
-}</pre>
+  <h2>10. DML</h2>
+  <pre class="code"><span class="yk">ctxs</span>:
+  - <span class="yk">name</span>: <span class="v-str">{{context-slug}}</span>
+    <span class="yk">aggs</span>: [<span class="v-actor">{{AggregateName}}</span>]
+<span class="yk">aggs</span>:
+  - <span class="yk">name</span>: <span class="v-actor">{{AggregateName}}</span>
+<span class="yk">flows</span>:
+  - <span class="yk">id</span>: <span class="v-str">happy</span>
+<span class="yk">decisions</span>:
+  - <span class="yk">id</span>: <span class="v-str">D1</span></pre>
 
   <!-- =====================
-       10. 用語集
+       11. 用語集
        ===================== -->
-  <h2>10. 用語集</h2>
+  <h2>11. 用語集</h2>
 
   <div class="glossary-section">
     <h3>アクター</h3>

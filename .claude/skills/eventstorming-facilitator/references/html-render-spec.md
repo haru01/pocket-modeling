@@ -2,7 +2,7 @@
 
 EventStorming セッションの全情報を **CSS 付箋風 HTML** として書き出してブラウザでリッチに表示するための仕様。
 
-**重要：AI は HTML を直接編集しない。** Python ビルダー（`.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py`）が `.md` ＋ 兄弟 `.dml.yaml` を解析して HTML を自動生成する。AI が編集するソース・オブ・トゥルースは `.md`（ストーリー/フロー/用語集）と兄弟 `.dml.yaml`（モデル本体）の 2 ファイル。
+**重要：AI は HTML を直接編集しない。** Python ビルダー（`.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py`）が **`.dml.yaml` 1 ファイル** を解析して HTML を自動生成する（v5 で `.md` パース廃止、v8 で `story:` を `narratives[]` に統合）。AI が編集するソース・オブ・トゥルースは `.dml.yaml`（モデル本体＋散文系フィールド `narratives`/`actions`/`questions`/`queries`/`contexts[].description` の唯一の真実源）。
 
 Claude Code の CLI/PC/スマホアプリではチャット本文の生 `<svg>` も Mermaid フェンスも描画されないため、別ファイル（HTML）として書き出してブラウザに任せる方針。
 
@@ -12,10 +12,9 @@ Claude Code の CLI/PC/スマホアプリではチャット本文の生 `<svg>` 
 
 | ファイル | 役割 |
 |---|---|
-| `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md` | ストーリー / フロー DSL / 用語集の **Single Source of Truth**（§9 は `.dml.yaml` へのリンク参照のみ）。AI と人間がここを編集 |
-| `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.dml.yaml` | DML（モデル本体）の **Single Source of Truth**。純 YAML 直書き（フェンス不要）。AI と人間がここを編集 |
-| `dist/eventstorming/eventstorming-YYYYMMDD-HHMM.html` | Python ビルダーが `.md` ＋ 兄弟 `.dml.yaml` から自動生成する派生ファイル。AI も人間も直接編集しない |
-| `.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py` | MD → HTML 変換スクリプト（Python 3 標準ライブラリのみ） |
+| `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.dml.yaml` | **DML（モデル本体）の唯一の真実源**。純 YAML 直書き（フェンス不要）。散文系（`narratives` / `actions` / `questions` / `queries` / `contexts[].description`）も全てここに統合（v5 で `.md` 廃止）。AI と人間がここを編集 |
+| `dist/eventstorming/eventstorming-YYYYMMDD-HHMM.html` | Python ビルダーが `.dml.yaml` 単独から自動生成する派生ファイル。AI も人間も直接編集しない |
+| `.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py` | DML → HTML 変換スクリプト（Python 3 標準ライブラリ + PyYAML） |
 | `.claude/skills/eventstorming-facilitator/templates/event-flow.html` | テンプレート HTML（CSS とプレースホルダー入り） |
 
 ---
@@ -23,14 +22,14 @@ Claude Code の CLI/PC/スマホアプリではチャット本文の生 `<svg>` 
 ## 2. 自動再生成のフロー
 
 ```
-.md または兄弟 .dml.yaml を Write/Edit (AI または人間)
+.dml.yaml を Write/Edit (AI または人間)
   ↓
 PostToolUse hook 起動 (.claude/settings.json)
   ↓
 python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <path>
-  （.dml.yaml を渡された場合は兄弟 .md を解決。ビルダーは .md ＋ 兄弟 .dml.yaml を読む）
+  + python3 .claude/skills/eventstorming-facilitator/scripts/validate_dml.py <path>
   ↓
-dist/eventstorming/<session>.html 再生成
+dist/eventstorming/<session>.html 再生成 (+ JSON Schema 検証)
   ↓
 ブラウザの meta-refresh (3秒) で自動再表示
 ```
@@ -55,7 +54,7 @@ PostToolUse hook の設定: `.claude/settings.json`
 }
 ```
 
-hook 内で `tool_input.file_path` を判定し、`docs/eventstorming/*.{md,dml}` の場合のみビルドを実行する（正規表現 `docs/eventstorming/.+\.(md|dml)$`）。
+hook 内で `tool_input.file_path` を判定し、`docs/eventstorming/*.dml.yaml` の場合のみビルド＋検証を実行する。
 
 ---
 
@@ -63,96 +62,87 @@ hook 内で `tool_input.file_path` を判定し、`docs/eventstorming/*.{md,dml}
 
 ```bash
 # 個別ビルド
-python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py docs/eventstorming/eventstorming-20260514-2054.md
+python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py docs/eventstorming/eventstorming-20260529-1254.dml.yaml
 
-# 全件ビルド (docs/eventstorming/*.md すべて → dist/eventstorming/*.html)
+# 全件ビルド (docs/eventstorming/*.dml.yaml すべて → dist/eventstorming/*.html)
 python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py --all
 
 # 監視モード（ファイル変更を検知して自動再ビルド）
 python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py --watch
 
 # 出力ディレクトリ変更
-python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <md> --out custom/dir/
+python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <yaml> --out custom/dir/
+
+# Artifact 化（claude.ai に貼る用、macOS のみクリップボード）
+python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <yaml> --artifact --copy
 ```
 
 ---
 
-## 4. HTML が含むセクション（MD と 1 対 1）
+## 4. HTML が含むセクション
 
-| # | セクション | HTML 表現 |
-|---|---|---|
-| 0 | 進捗バー | MD ヘッダーの `Status: フェーズN完了` を自動パースして `done`/`current` クラスを設定 |
-| 1 | ハッピーパスストーリー | `.story` 黄背景の散文 |
-| 2 | 代替シナリオ | `.scenario-card` カード（複数） |
-| 3 | Event Walkthrough | `.flow > .grid` Big Picture 形式（§5 参照） |
-| 4 | コンテキスト候補 | `.bc-card` ＋ **コンテキストマップ SVG**（自動生成、UPSTREAM/DOWNSTREAM から） |
-| 5 | 集約候補 | `.bc-card` ＋ `pre.code` で **Zod スキーマシンタックスハイライト** ＋ **エラーケースは `.err-section` で赤背景**、バックティックで囲んだエラー識別子は `.err-code` でハイライト |
-| 6 | リードモデル候補 | `.bc-card`（緑左ボーダー） |
-| 7 | オープンクエスチョン / ホットスポット | `.question`（青）`.hotspot`（赤）、`[CLOSED]` は緑背景 |
-| 8 | 次のアクション | `.next-actions` 緑カード |
-| 9 | DML（YAML） | `pre.code` ダークテーマ + 役割ベース意味色ハイライト（キー `.yk`、値 `.v-actor`/`.v-cmd`/`.v-evt`/`.v-qry`/`.v-pol`/`.v-err`/`.v-str`、コメント `.cm`） |
-| 10 | 用語集 | `table.glossary` カテゴリ別テーブル |
+§0 進捗バー（ヘッダ）＋ §1〜§9 の **9 セクション** で構成される。v8 で旧 §1 ハッピーパスストーリーと §2 代替シナリオが §1 ストーリーに統合された。
 
-未完成セクションは MD で `<!-- TODO: フェーズN完了後に追記 -->` プレースホルダー → HTML 側で `.todo-placeholder` に変換。
+| # | セクション | 駆動データ | HTML 表現 |
+|---|---|---|---|
+| 0 | 進捗バー（ヘッダ） | DML `session.phase` / `session.status` | `フェーズN完了` を自動パースして `done`/`current` クラスを設定 |
+| 1 | ストーリー | DML `narratives[]`（v8 で `story:` 廃止して統合） | `kind:happy` を先頭に `.story` 黄背景、`kind:alt` を後続に `.scenario-card` カードで描画 |
+| 2 | Event Walkthrough | **DML** `narratives[].entry` + `scenarios[]`（next/brs.terminal） + `policies[]` | `.flow > .grid` Big Picture 形式（§5 参照） |
+| 3 | 次のアクション | DML `actions[]` | `.next-actions` 緑カード。**読者の次の動きを最上部近くに置く** |
+| 4 | オープンクエスチョン / ホットスポット | DML `questions[]` | `.question`（青）`.hotspot`（赤）、`[CLOSED]` は緑背景 |
+| 5 | 意思決定ログ | **DML** `decisions[]` | `.decision-card`：採用（緑 `.opt.adopted`）／不採用（灰・取り消し線 `.opt.rejected`）の比較カード。`decisions[]` が空なら **見出しごと非表示** |
+| 6 | コンテキスト候補 | **DML** `contexts[]`（description / LANGUAGE / 依存方向） | `.bc-card` ＋ **コンテキストマップ SVG**。LANGUAGE と UPSTREAM/DOWNSTREAM は DML `contexts[].lang` / `up` / `dn` から merge して描画 |
+| 7 | 集約候補 | **DML** `aggregates[]` + 該当 `scenarios[].rules/errs` | `.bc-card` ＋ **属性表 `.attr-table` / イベントペイロード表 `.payload-table` / 不変条件 `.inv-section`（緑）/ エラーケース `.err-section`（赤）/ 状態遷移** |
+| 8 | リードモデル候補 | DML `queries[]` | `.bc-card`（緑左ボーダー） |
+| 9 | DML（YAML） | `.dml.yaml` 生 | `pre.code` ダークテーマ + 役割ベース意味色ハイライト |
+
+未完成セクションは DML 側で対応するトップレベルフィールドを未記述にすると、HTML 側で `.todo-placeholder`（または見出しごと非表示、`decisions[]` 等）として縮退表示される。
 
 ---
 
 ## 5. Event Flow グリッド（Big Picture 形式）
 
-### 5-0. フロー DSL 文法（`event-flow-svg` フェンス）
+### 5-0. DML から HTML を組み立てるアルゴリズム（v6）
 
-MD §2・§3 の `` ```event-flow-svg `` フェンス内で使う **付箋フロー記述 DSL**。DML（YAML）とは別の文法で、HTML §3 の Big Picture グリッドにレンダリングされる Single Source of Truth。
+ビルダー `build_flows_from_dml(model, glossary_index)` が `.dml.yaml` の `narratives[].entry` を起点に `scenarios[].next` を辿り、`policies[]` を `scenarios[].evt → policies[].trg` のマッチで自動挿入して Lane / Note 構造を組み立てる。
 
-| 記号 | 意味 | 付箋色 |
-|------|------|--------|
-| `\|BC名\|:` | Bounded Context レーン（ヘッダー行。説明を続けて書く） | — |
-| `@アクター名` | アクター付箋 | 黄 |
-| `?クエリ名` | Read Model 付箋 | 緑 |
-| `[イベント名]` | イベント付箋（過去形） | 橙 |
-| `$ポリシー名` | ポリシー付箋 | 紫 |
-| `!コマンド名` | コマンド付箋（`!` 省略可） | 青 |
-| `>` | 同期フロー（直接連鎖。同レーン内） | — |
-| `>>` | 非同期遷移（レーン切り替え）。前レーン最後のフロー行の**末尾**に付ける | — |
-| `*>` | BULK Fork 矢印。直後の CMD/EVT が N 個の並列インスタンスのうちの 1 つを代表 | — |
-| `&>>` | Join + 非同期遷移。直前の N 個の EVT が 1 つの後続トリガーへ合流（`>>` の Join 版） | — |
-
-**順序ルール**: 1 行内は `@Actor > ?ReadModel > !Command > [Event]` の順。`?ReadModel` は**操作対象集約以外**からのデータ取得にのみ付ける（同一集約参照には付けない）。
-
-**BULK Fork / Join の使い所**: `*>` / `&>>` は **BULK POLICY**（`bulk: true` を持つ POLICY）から発火する fanout / join を表現する場合にのみ使う。詳細は `dml-spec.md` §3（POLICY の運用）。
-
-ラベル日本語化方針: コマンド=動詞句、イベント=過去形、ポリシー=目的名詞句、アクター=役割名、BC 名=英語（`lowercase-with-hyphen`）。DML ファイル（`.dml.yaml`）側の識別子は英語維持。HTML 表示時は DSL 記号（`@$![]`）をビルダーが自動削除する（§5-3）。
+1. `narratives[]` の各エントリで `entry` が指定されたものを 1 グリッド図として描画
+2. フロー連鎖の解釈：
+   - 開始: `narratives[].entry` の scenario.name から
+   - 継続: scenarios[].next（string → 全フロー共通／dict → `narratives[].id` キーで分岐）
+   - 終端: `next` 無し、または `brs[].terminal` が当該 `narratives[].id` と一致した時
+3. 各 scenario ステップの描画：
+   - actor / qry / cmd / evt から `Note` 群を生成（`ctx` は `scenarios[].ctx`）
+   - `brs[]` がある場合は **「このフローでアクティブな brs」を 1 つだけ選ぶ**：`terminal == flow_id` 一致 > `terminal` 無し > 先頭
+4. policy 自動挿入（scenarios[].evt → policies[].trg マッチ）：
+   - マッチした policy を新規 Lane として挿入。`policy.evt` が後続 policy.trg にマッチすれば再帰的に追加
+   - **policy ステップは常に EVENTUAL-TX 境界**として、前 Lane 末尾 Note を `is_async=True` にマーク
+5. レーン併合：
+   - 同一 `ctx` の連続 sync ステップ → 既存 Lane に Note を連結
+   - `ctx` が変化、または policy ステップ → **新規 Lane を作成**し、前 Lane 末尾の Note を `is_async=True` でマーク（非同期遷移矢印 `⚡` を描画）
+6. 特殊描画：
+   - POLICY が `trgs`（複数トリガー join）を持つ → 前 Lane の `joins_into_next=True` を立て、レーン遷移時に **BPMN シンクバー（`.sync-bar` + Σ N）** を描画
+   - POLICY の `bulk: true` → 該当 Note を `.note.fanout` クラスで描画し、右上 `× N` バッジ + 3 枚スタック
+7. 同じ BC が複数回出現しても **同じ grid-row に統合**
+8. 横幅が画面を超える場合は **`overflow-x: auto`** で横スクロール
 
 ### 5-1. レイアウト原則
 
 - **時系列 = 横軸（列）**、**BC = 縦軸（行）**
-- 同じ BC が複数回出現しても **同じ行に統合** する
 - 矢印は **CSS 描画**（`<div>` の塗り + 三角形）で付箋同士を視覚的に繋ぐ
-- 横幅が画面を超える場合は **`overflow-x: auto`** で横スクロール
+- ラベル日本語化方針: ビルダーは DML の英語識別子を glossary_index で日本語ラベルに変換して表示する。glossary_index は **DML `contexts[].lang` を全 BC 走査して機械的に生成**（HTML §4 用語集セクションは廃止済み・MD 側にも辞書テーブルは持たない）。識別子は英語のまま DML/HTML に保持される
 
-### 5-2. ビルダーの DSL → HTML 変換ロジック
+### 5-2. 付箋ラベル
 
-`.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py` の `render_flow()` 関数が以下を行う：
+種別は `<span class="kind">` のラベル（Actor / Command / Event / Policy / Read Model）と背景色で識別。テキストは **DML の英語識別子 → `contexts[].lang` 起源の glossary_index で日本語化**。
 
-1. フロー DSL（` ```event-flow-svg ` フェンス内）をライン単位でパース
-2. `|BC名|: 説明` を Lane オブジェクトに、`@! $? [...]` を Note オブジェクトに変換
-3. 同じ BC を 1 grid-row に統合
-4. 時系列順に grid-column を連番付与
-5. レーン間遷移（`>>` の検出）を `.arrow-v down/up` として 2 行を跨ぐ縦矢印で描画
-6. 同レーン内遷移を `.arrow-h` 横矢印で描画
-7. **BULK fanout (`*>`)**: 後続 Note に `is_fanout=True` を付与 → `.note.fanout` クラスで 3 枚スタック + `× N` バッジ描画。fanout 入口の同期矢印は `.arrow-h.fork`（1 → 3 分岐）で描画
-8. **Join 遷移 (`&>>`)**: 行末 Lane の `joins_into_next=True` を検出 → 次レーン遷移時に `.arrow-v` の代わりに `.sync-bar`（BPMN 風シンクバー）+ `Σ N` ラベルを描画
-
-### 5-3. 付箋ラベルのルール
-
-**DSL 記号（`@` `!` `$` `[` `]` `?`）は HTML 表示時にビルダーが自動削除する。** 種別は `<span class="kind">` のラベル（Actor/Command/Event/Policy/Read Model）と背景色で識別。
-
-| DSL | HTML 表示 |
-|---|---|
-| `@客` | 客 |
-| `!注文する` | 注文する |
-| `[注文が入った]` | 注文が入った |
-| `$調理開始` | 調理開始 |
-| `?残席数` | 残席数 |
+| DML フィールド | HTML 種別 | 種別ラベル |
+|---|---|---|
+| `scenarios[].actor` | `.note.actor` | Actor |
+| `scenarios[].cmd`, `policies[].cmd` | `.note.command` | Command |
+| `scenarios[].evt`, `policies[].evt`, `scenarios[].brs[].evt` | `.note.event` | Event |
+| `policies[].name` | `.note.policy` | Policy |
+| `scenarios[].qry`, `policies[].qry` | `.note.readmodel` | Read Model |
 
 ---
 
@@ -160,13 +150,13 @@ MD §2・§3 の `` ```event-flow-svg `` フェンス内で使う **付箋フロ
 
 ### 6-1. 付箋色
 
-| 種別 | DSL 記号 | クラス | fill | border | text |
-|---|---|---|---|---|---|
-| Actor | `@` | `.note.actor` | `#FFF59D` | `#F9A825` | `#4E342E` |
-| Command | `!` | `.note.command` | `#90CAF9` | `#1565C0` | `#0D47A1` |
-| Event | `[...]` | `.note.event` | `#FFAB40` | `#E65100` | `#7f2700` |
-| Policy | `$` | `.note.policy` | `#CE93D8` | `#7B1FA2` | `#4A148C` |
-| Read Model | `?` | `.note.readmodel` | `#A5D6A7` | `#2E7D32` | `#1B5E20` |
+| 種別 | クラス | fill | border | text |
+|---|---|---|---|---|
+| Actor | `.note.actor` | `#FFF59D` | `#F9A825` | `#4E342E` |
+| Command | `.note.command` | `#90CAF9` | `#1565C0` | `#0D47A1` |
+| Event | `.note.event` | `#FFAB40` | `#E65100` | `#7f2700` |
+| Policy | `.note.policy` | `#CE93D8` | `#7B1FA2` | `#4A148C` |
+| Read Model | `.note.readmodel` | `#A5D6A7` | `#2E7D32` | `#1B5E20` |
 
 ### 6-2. レーン色
 
@@ -186,12 +176,12 @@ BC ごとに異なるグレートーン。最大 5 BC まで標準パレット�
 |---|---|---|
 | 同期 `→`（同レーン） | `#546E7A` | 横線 + 右向き三角 |
 | 非同期 `⚡↓ / ⚡↑`（レーン跨ぎ） | `#7B1FA2` | 縦線 + 三角、`async-label` 表示 |
-| BULK Fork `*>` | `#7B1FA2` | 単線 → 3 本に分岐（`.arrow-h.fork`） |
-| Join シンクバー `&>>` | `#263238` | 黒太線 + Σ N ラベル（BPMN sync bar） |
+| BULK Fanout（`bulk: true`） | `#7B1FA2` | 単線 → 3 本に分岐（`.arrow-h.fork`） |
+| Join シンクバー（`trgs` join） | `#263238` | 黒太線 + Σ N ラベル（BPMN sync bar） |
 
 ### 6-3.2. Fanout (`.note.fanout`) 視覚仕様
 
-BULK POLICY 由来の `*>` 直後 Note に付くクラス。
+BULK POLICY 由来の Note に付くクラス。
 
 | 要素 | 表現 |
 |---|---|
@@ -202,7 +192,7 @@ BULK POLICY 由来の `*>` 直後 Note に付くクラス。
 
 ### 6-3.3. Sync Bar (`.sync-bar`) 視覚仕様
 
-`&>>` 後段に挿入される BPMN 風 Join バー。
+`trgs` join 後段に挿入される BPMN 風 Join バー。
 
 | 要素 | 表現 |
 |---|---|
@@ -211,35 +201,23 @@ BULK POLICY 由来の `*>` 直後 Note に付くクラス。
 | ラベル | バー中央に `Σ N` 文字（`#ECEFF1` 背景 / `#263238` 文字） |
 | 配置 | `align-self: stretch` で行をまたぎ、上下バー両端は `top/bottom: 8px` で内側に少し収める |
 
-### 6-3.1. 不変条件・エラーケース色（対比表示）
+### 6-3.1. 集約カードのサブセクション色（対比表示）
 
-集約 §5 のサブセクションは意味別に色分けする：
+集約 §7 のサブセクションは意味別に色分けする。**§6-1 の付箋色と同じ Material シェードを再利用** することで、目的=Event 橙系・背景=Command 青系・制約=Policy 紫系・不変条件=ReadModel 緑系・エラーケース=赤系という対応を視覚化する：
 
 | サブセクション | クラス | 背景 | 左ボーダー | ラベル色 | 絵文字 |
 |---|---|---|---|---|---|
-| **目的** | `.purpose-section` | `#FFF3E0` | `#EF6C00` | `#EF6C00` | — |
+| **目的** | `.purpose-section` | `#FFF3E0` | `#E65100` | `#E65100` | — |
 | **背景** | `.background-section` | `#E3F2FD` | `#1565C0` | `#1565C0` | — |
-| **制約** | `.constraints-section` | `#F3E5F5` | `#6A1B9A` | `#6A1B9A` | — |
+| **制約** | `.constraints-section` | `#F3E5F5` | `#7B1FA2` | `#7B1FA2` | — |
 | **不変条件** | `.inv-section` | `#E8F5E9` | `#2E7D32` | `#2E7D32` | `✓` |
 | **エラーケース** | `.err-section` | `#FFEBEE` | `#C62828` | `#C62828` | `⚠` |
 | その他（状態遷移・派生イベント・備考） | inline style | — | — | `#37474F` | なし |
 
-**読み順:** AGG / BC カード内では `目的 → 背景 → 制約 → Zod → 不変条件 → エラーケース → 状態遷移 → 派生イベント → 備考` の順に並ぶ。読み手はまず「なぜこの単位で切るか（目的・背景・制約）」を把握してから、形式仕様（Zod・不変条件・エラー）に進む。
+**読み順:** AGG カード内では `目的 → 背景 → 制約 → 属性 → イベントペイロード → 不変条件 → エラーケース → 状態遷移 → 備考` の順に並ぶ。
 
 エラーケース内のバックティック識別子は **`.err-code`** で更にハイライト：
 - background `#FFCDD2` / text `#B71C1C` / 等幅フォント
-
-MD 記法例（不変条件は箇条書きのみ、エラーケースは識別子をバックティックで囲む）：
-
-```markdown
-#### 不変条件
-- items は 1 品以上
-- status が `PAID` 以降は items / totalAmount を変更不可
-
-#### エラーケース
-- `AmountMismatch`: Payment.amount ≠ Order.totalAmount
-- `EmptyOrder`: items が空のまま PlaceOrder が呼ばれた
-```
 
 ### 6-4. フォントサイズ（基準）
 
@@ -255,7 +233,69 @@ MD 記法例（不変条件は箇条書きのみ、エラーケースは識別�
 | ストーリー / カード本文 | 14-15px |
 | ホットスポット / 質問カード | 15px |
 | DML コードブロック | 14px |
-| 用語集テーブル | 15px |
+
+---
+
+## 6-5. 集約 属性・イベントペイロード表
+
+`render_agg_cards_from_dml()` は `aggregates[].attrs[]` / `aggregates[].events[].params[]` を以下の構造で描画する。
+
+### 属性表 `table.attr-table`
+
+`aggregates[].attrs[]` を **属性名 / 型 / 必須 / 備考** の 4 列テーブルで描画：
+
+| クラス | 用途 |
+|---|---|
+| `table.attr-table` | 属性表本体（薄い影付き角丸） |
+| `table.attr-table th` | ヘッダ行（淡い背景、左寄せ） |
+| `table.attr-table td.code-cell` | 識別子セル（等幅フォント、薄い背景） |
+
+`attrs[].required: true` は **`必須`** 文字、`false` または省略は空セル。
+
+### イベントペイロード表 `table.attr-table.payload-table`
+
+`aggregates[].events[]` を集約 emit する EVT の宣言として描画。EVT ごとに名前見出し（橙系 `.agg-events > strong`）＋`params[]` を `table.attr-table.payload-table` クラスで属性表と同じ構造のテーブルとして描画する。
+
+| クラス | 違い |
+|---|---|
+| `.payload-table th` | ヘッダ背景が `#FFF3E0`（橙系）/ 文字 `#E65100` |
+| `.agg-events` | EVT 群の囲い |
+| `.agg-events > strong` | EVT 名見出し（`#E65100`） |
+
+`params[]` が無い EVT は名前のみ表示（パラメータなしの宣言として扱う）。
+
+---
+
+## 6-6. 意思決定ログ `.decision-card`
+
+`render_decisions(model, glossary_index)` が `.dml.yaml` の `decisions[]` を描画。`decisions[]` が空なら見出しごと出力されない。
+
+### カード構造
+
+```
+.decision-card
+  h3              ← "<id>. <topic>"
+  .dep            ← "採用: <chosen>"、任意で "影響: <affects[]>"（`contexts[].lang` 由来の glossary_index で日本語化）
+  .decision-options
+    .opt.adopted    ← 採用された option（緑系・✓ マーカー）
+    .opt.rejected   ← 不採用 option（灰背景・取り消し線）
+  .decision-note  ← decisions[].note（あれば、斜体）
+```
+
+### CSS 主要部
+
+| クラス | スタイル意味 |
+|---|---|
+| `.decision-card` | Policy と同じ紫系の縁取りカード（border-left / h3 とも `#7B1FA2`） |
+| `.decision-options` | flex column / gap 6px |
+| `.opt` | 共通：薄い背景 + 左ボーダー |
+| `.opt.adopted` | 背景 `#E8F5E9` / 左ボーダー `#2E7D32` / `.opt-name` 文字緑・太字 |
+| `.opt.rejected` | 背景 `#FAFAFA` / 左ボーダー `#B0BEC5` / `.opt-name` 取り消し線（採用者と視覚的に差別化） |
+| `.opt-why` | 採用理由（緑系本文） |
+| `.opt-why-not` | 不採用理由（灰系本文） |
+| `.decision-note` | カード末尾の補足（イタリック・グレー） |
+
+各 option の `adopted` 判定は `decisionOption.adopted` を優先し、未指定なら `name == chosen` を `true` 扱いにする。`why` / `why_not` は採用/不採用に応じて自動切替（採用は `why`、不採用は `why_not` をフォールバックに `why` を）。
 
 ---
 
@@ -263,14 +303,14 @@ MD 記法例（不変条件は箇条書きのみ、エラーケースは識別�
 
 ### 7-1. フェーズ2完了時のみ初回オープン
 
-MD を Write した直後、PostToolUse hook が HTML を生成するので、AI は続けて `Bash open dist/eventstorming/<session>.html` を実行して外部ブラウザを起動する。
+DML（`.dml.yaml`）を Write した直後、PostToolUse hook が HTML を生成するので、AI は続けて `Bash open dist/eventstorming/<session>.html` を実行して外部ブラウザを起動する。
 
 ### 7-2. 自動リロード（2 系統）
 
 | 機構 | 対象 | 動作 |
 |---|---|---|
 | **`<meta http-equiv="refresh" content="3">`** | 外部ブラウザ | 3 秒ごとに自身を再読み込み |
-| **`reload_browser_tab()` (osascript)** | macOS Chrome / Safari | ビルダーが HTML 生成後に該当タブを即座に reload。MD 編集とほぼ同時にブラウザ反映 |
+| **`reload_browser_tab()` (osascript)** | macOS Chrome / Safari | ビルダーが HTML 生成後に該当タブを即座に reload |
 
 両方が併用されることで、外部ブラウザは常に最新版を表示する。
 
@@ -288,52 +328,58 @@ Claude Code（CLI/PC/スマホアプリ）の preview panel は **JavaScript / `
 
 ## 8. ビルダーの内部構造
 
-`.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py` は単一ファイル、Python 3 標準ライブラリのみで実装。主要関数：
+`.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py` は単一ファイル、Python 3 標準ライブラリ + PyYAML で実装。主要関数：
 
 ```
-parse_md(md_text) → MDSections     # MD を §1〜§10 に分割
-parse_flow_dsl(dsl) → Flow         # event-flow-svg フェンス → Flow AST
-render_flow(flow) → HTML 文字列    # Flow → Big Picture グリッド HTML
-render_progress(status) → HTML     # Status 行から進捗バー
-render_context_map(bc_cards) → SVG # UPSTREAM/DOWNSTREAM から関係図 SVG
-highlight_dml(dml) → HTML          # DML（YAML）役割ベース意味色ハイライト
-highlight_zod(zod) → HTML          # Zod スキーマシンタックスハイライト
-render_html(sections) → HTML 全文  # テンプレに埋め込んで完成版を返す
-build(md_path, out_dir) → Path     # 1 ファイルビルド → reload_browser_tab() 呼び出し込み
-reload_browser_tab(html_path)      # macOS Chrome/Safari の該当タブを osascript で reload
-build_all(in_dir, out_dir)         # 全件ビルド
-watch(in_dir, out_dir)             # 監視モード
+_load_dml_model(dml_text) → dict|None  # .dml.yaml を yaml.safe_load
+_validate_dml_warn(dml, path) → list   # JSON Schema 検証で警告一覧（HTML §9 バナーに反映）
+build_flows_from_dml(model, gloss)     # narratives[].entry + scenarios[].next/brs.terminal + policies の自動連鎖 → Flow / Lane / Note
+render_flows(flows) → HTML             # Flow 群 → Big Picture グリッド HTML
+render_flow(flow) → HTML               # 単一 Flow の描画
+aggregates_from_dml(model) → list      # 集約 1 件あたり attrs/events/inv/err 等を集計
+render_agg_cards_from_dml(model, gl)   # AGG カード（属性表 / payload 表 / inv / err）
+render_decisions(model, gloss) → HTML  # decisions[] → .decision-card 群
+render_progress(status) → HTML         # session.phase / status から進捗バー
+render_context_map(bc_cards) → SVG     # UPSTREAM/DOWNSTREAM から関係図 SVG
+highlight_dml(dml) → HTML              # DML（YAML）役割ベース意味色ハイライト
+render_html(sections) → HTML 全文      # テンプレに埋め込んで完成版を返す
+build(yaml_path, out_dir) → Path       # 1 ファイルビルド → reload_browser_tab() 込み
+reload_browser_tab(html_path)          # macOS Chrome/Safari の該当タブを osascript で reload
+build_all(in_dir, out_dir)             # 全件ビルド
+watch(in_dir, out_dir)                 # 監視モード
 ```
 
-依存: `re`, `pathlib`, `argparse`, `dataclasses`, `time`, `sys`, `subprocess`（hook 内のみ）。外部パッケージなし。
+依存: `re`, `pathlib`, `argparse`, `dataclasses`, `time`, `sys`, `subprocess`（hook 内のみ）、`yaml`（PyYAML）。
 
 ---
 
 ## 9. フォールバック
 
-書き込み権限がない、Python 3 が無い等の環境では、ビルダーが動かない。その場合：
+書き込み権限がない、Python 3 や PyYAML が無い等の環境では、ビルダーが動かない（または DML 解析が失敗する）。
 
-1. ビルダーの実行ログ（stderr）を確認
-2. 手動で `python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <md>` を実行
-3. 解決不可ならチャット本文に **構造化テーブル** で代替表示（`chat-output-format.md` §9 参照）
+- PyYAML 不在 / DML 解析失敗時は、§2・§5・§7 は `.todo-placeholder` で縮退表示し、**例外で停止せず HTML 生成は最後まで継続**
+- 手動再実行: `python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <yaml>`
+- 解決不可ならチャット本文に **構造化テーブル** で代替表示（`chat-output-format.md` §9 参照）
 
 ---
 
-## 10. DSL → HTML 変換ルール（要約）
+## 10. DML → HTML 主要マッピング（要約）
 
-```
-event-flow-svg DSL              →   HTML
-─────────────────────────────────────────────────────────
-title: <タイトル>                →   <div class="flow-title">{タイトル}</div>
-|BC名|: <説明>                   →   <div class="lane-name bc-default-N">{BC名}</div>
-@アクター                        →   <div class="note actor"><span class="kind">Actor</span>{ラベル}</div>
-!コマンド                        →   <div class="note command"><span class="kind">Command</span>{ラベル}</div>
-[イベント]                       →   <div class="note event"><span class="kind">Event</span>{ラベル}</div>  ※[]削除
-$ポリシー                        →   <div class="note policy"><span class="kind">Policy</span>{ラベル}</div>
-?リードモデル                    →   <div class="note readmodel"><span class="kind">Read Model</span>{ラベル}</div>
->                                →   <div class="arrow-h"></div>
->> (同BC内)                      →   <div class="arrow-h"></div> + 列インクリメント
->> (BC跨ぎ)                      →   <div class="arrow-v down/up" style="grid-row: A / B;">⚡ async</div>
-```
+| DML 要素 | HTML 出力 |
+|---|---|
+| `narratives[].title` | `<div class="flow-title">{title}</div>`（`entry` 指定時のみフロー図描画） |
+| scenarios[]（next 連鎖で訪問されたもの） | `scenarios[].actor` / `qry` / `cmd` / `evt`（または brs[active].evt）を順に Note 描画。Lane は `scenarios[].ctx` |
+| policies[]（scenarios[].evt → policies[].trg マッチで自動挿入） | `policies[].trg` → `cmd` → `evt` を Note 描画。Lane は `policies[].ctx`。前 Lane 末尾 Note に `is_async=True` |
+| `scenarios[].brs[].terminal` | 当該 `narratives[].id` と一致するフローはこの brs 発火後に終端 |
+| `policies[].trgs.evts` | 前 Lane の `joins_into_next=True`。`.sync-bar` + Σ N 描画 |
+| `policies[].bulk: true` | 該当 Note に `.note.fanout` + 右上 `× N` バッジ |
+| `contexts[].name` | `<div class="lane-name bc-default-N">{name}</div>` |
+| `aggregates[].purpose` / `background` / `constraints` | `.purpose-section` / `.background-section` / `.constraints-section` |
+| `aggregates[].attrs[]` | `table.attr-table` |
+| `aggregates[].events[].params[]` | `table.attr-table.payload-table` (EVT 名見出し付き) |
+| `scenarios[].rules[]`（同一 agg） | `.inv-section`（緑・✓） |
+| `scenarios[].errs[]`（同一 agg） | `.err-section`（赤・⚠）、識別子はバックティックで `.err-code` |
+| `aggregates[].transitions[]` | 状態遷移リスト |
+| `decisions[]` | `.decision-card` 群（`.opt.adopted` 緑 / `.opt.rejected` 灰） |
 
 時系列ステップ（grid-column）は付箋・矢印のたびに +1。同じ BC が複数回登場する場合も同じ grid-row に配置する。

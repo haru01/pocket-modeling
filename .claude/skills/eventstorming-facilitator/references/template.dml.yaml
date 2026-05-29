@@ -1,0 +1,201 @@
+# =============================================================================
+# DML テンプレート — 新規 EventStorming セッション
+# =============================================================================
+# このファイルを `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.dml.yaml` に
+# コピーし、必要なセクションのコメントを外しながら埋めていく。
+#
+# .md は廃止。HTML（dist/eventstorming/*.html）は本 YAML のみから自動生成される。
+# AI は `scripts/dmlctl.py view/set/add` を介して必要な観点だけを読み書きする。
+#
+# 構文検証: `python3 scripts/validate_dml.py <this>.dml.yaml`
+# 詳細仕様: `references/dml-spec.md` / `references/dml.schema.yaml`
+#
+# 全フィールドは optional。空 YAML（{} のみ）でも valid（進行中セッション許容）。
+# =============================================================================
+
+# ---------- (A) セッションメタ（旧 .md ヘッダー） ----------
+# session:
+#   id: eventstorming-YYYYMMDD-HHMM
+#   domain: <ドメイン名>                    # 例: trade-in-exchange
+#   phase: "1"                               # v7・直近完了フェーズ（構造化）。
+#                                            # enum: "1" "2" "3" "4" "4.5" "4.6" "5" "6" "7"
+#                                            # HTML タブハイライトはこれを最優先で参照する。
+#                                            # 未設定の場合は status 文字列を regex 解釈するレガシー挙動。
+#   status: Phase 1 (スコープ確認中)          # 補足説明（自由文字列）。タブには使われない
+#   goal: <このセッションのゴール>
+#   started_at: YYYY-MM-DDTHH:MM:00+09:00
+#   html_link: ../../dist/eventstorming/eventstorming-YYYYMMDD-HHMM.html
+
+# ---------- (B) Narratives（ハッピーパス + 代替シナリオの単一情報源） ----------
+# narratives は HTML §1「ストーリー」と §2 フロー図駆動の単一情報源（v8）。
+# 旧トップレベル `story:` キーは廃止。ハッピーパスは kind: happy のエントリとしてここに書く。
+# `entry` を指定したエントリだけが §2 フロー図に 1 行描画される。
+# kind は必須・enum: [happy, alt]、kind:happy は 0 or 1 件（narrative_happy_unique で検出）。
+# narratives:
+#   - id: happy                              # フロー識別子（lowercase-with-hyphen）
+#     title: ハッピーパス
+#     kind: happy                            # 必須・happy / alt
+#     entry: <フロー開始 scenario.name>
+#     prose: |
+#       <ハッピーパス散文（400〜600 字）。{{主人公}}は {{課題}} を抱えていた…で始める。
+#        実装詳細（CMD/AGG/POLICY 名）は描かない。>
+#   - id: alt-1
+#     title: <代替シナリオの短い題>
+#     kind: alt
+#     entry: <フロー開始 scenario.name>      # 任意。指定なし → §2 フロー図は省略・散文のみ
+#     prose: |
+#       <代替シナリオの散文（100〜200字）>
+
+# ---------- (D) ドメイン分類（任意） ----------
+# subdomain.type は CORE_SUBDOMAIN / SUPPORTING_SUBDOMAIN / GENERIC_SUBDOMAIN を推奨。
+# 旧表記 CORE_DOMAIN / SUPPORTING_DOMAIN も後方互換で許容。
+# domains:
+#   - name: <domain-slug>
+#     vision: <ドメインビジョン>
+#     subs:
+#       - { name: <subdomain-slug>, type: CORE_SUBDOMAIN, vision: ... }
+
+# ---------- (E) Bounded Context ----------
+# name / lang（語彙の英→日辞書）/ up / dn / description（旧 .md §7 散文）
+# contexts:
+#   - name: <bc-slug>                       # lowercase-with-hyphen
+#     type: FEATURE                         # FEATURE / APPLICATION / SYSTEM / MICROSERVICE
+#     description: |                         # 旧 .md §7：境界の理由 / 含むシナリオ / 目的 / 背景 / 制約
+#       <BC 散文>
+#     lang:
+#       aggs:   { AggName: "集約日本語名" }
+#       actors: { ActorName: "アクター日本語名" }
+#       cmds:   { CommandName: "コマンド日本語名" }
+#       evts:   { EventName: "イベント日本語名" }
+#       pols:   { PolicyName: "ポリシー日本語名" }
+#       qrys:   { QryName: "クエリ日本語名" }
+#       vos:    { ValueObjName: "値オブジェクト日本語名" }
+#     up: []                                # upstream BC
+#     dn: []                                # downstream BC（{ ctx, rel: Customer-Supplier, ... }）
+#     aggs: []                              # 所属 AGG 名の軽量名簿（PascalCase 文字列）
+
+# ---------- (F) Aggregate（トップレベル詳細定義） ----------
+# transitions[].from は実在状態のみ（schema が `^[A-Z][A-Z0-9_]*$` を強制）。
+# AGG の生成（creation）は transitions に書かず、states[] 先頭の入口状態として
+# 表現する（scenarios[].agg + lang.cmds で creation CMD は紐づけ済）。
+# 入口で分岐する場合は「入口受付ステート」（例: APPLIED）を導入し
+# `{ from: APPLIED, to: [ACCEPTED, WAITLISTED], via: <CreationCmd> }` のように
+# to をリストにする。詳細は dml-spec.md「transitions[] の初期化規約」を参照。
+# state_reachability チェックは states[0] を入口とみなし、それ以外はいずれかの
+# to で到達可能でなければ違反として報告する。
+#
+# aggregates:
+#   - name: <AggName>
+#     ctx: <bc-slug>
+#     purpose: <30 字以上で「この AGG が単一に責任を持つこと」を一文に>
+#     background: <なぜ今この AGG を切り出すか>
+#     constraints:
+#       - <業務 / 法令 / プラットフォーム制約>
+#     states: [DRAFT, FINAL]                  # DRAFT が入口（transitions に書かない）
+#     transitions:
+#       - { from: DRAFT, to: FINAL, via: <CommandName> }
+#       # 単一状態のみで終わる AGG は `transitions: []`（空配列）を明示
+#     attrs:
+#       - { name: <fieldName>, type: <type>, required: true }
+#     events:
+#       - name: <EventName>
+#         params:
+#           - { name: <fieldName>, type: <type> }
+#         # 終端 EVT（後段で参照されない結果イベント）には terminal: true を付け、
+#         # orphan_event 検出から除外する。
+
+# ---------- (G) Scenario（CMD 実行ユースケース） ----------
+# 新規 scenarios を追加するときは、同 BC の `contexts[].lang.cmds` と `contexts[].lang.evts`
+# にも英→日辞書エントリを同時追加する（dmlctl check --check=language_coverage で検出可能）。
+# scenarios:
+#   - name: <アクター + 行為（日本語）>
+#     ctx: <bc-slug>
+#     actor: <ActorName>
+#     cmd: <CommandName>
+#     evt: <EventName>
+#     agg: <AggName>
+#     next: <次の scenarios[].name>          # フロー連鎖：全フロー共通の次（任意）
+#     # next:                                # 分岐点では dict 形式：narratives[].id ごとの次
+#     #   happy: <次 scenario.name>
+#     #   alt-1: <別 scenario.name>
+#     rules:
+#       - { rule: <英語の不変条件>, why: <なぜそれを守るか> }
+#     errs:
+#       - { cond: <エラー条件>, err: <ErrorName>, when: <発生時の補足> }
+#     # 分岐 brs[] 使用時:
+#     # brMode: exclusive
+#     # brs:
+#     #   - { cond: "...", evt: <HappyEvt> }                            # 通常分岐
+#     #   - { cond: "...", evt: <AltEvt>, terminal: alt-X }             # この分岐が alt-X を終端
+#     #   - { cond: "...", evt: <DivergeEvt>, next: <分岐先 scenario.name> }  # alt 経路の起点
+
+# ---------- (H) Policy（EVENTUAL-TX） ----------
+# policies:
+#   - name: <PolicyName>
+#     ctx: <bc-slug>
+#     trg: <EventName>                     # 単一トリガー（複数の場合 trgs を使う）
+#     cmd: <CommandName>                   # 副作用専用 POLICY なら省略可
+#     evt: <EventName>                     # 完了イベント名（任意）
+#
+# bulk: true の例（ファンアウト = 1 イベント受信時に N エンティティへ展開）：
+#   - name: NotifyOnCancellation
+#     ctx: notification
+#     trg: MeetupCancelled
+#     bulk: true                          # bulk: true のとき qry が必須（schema 検証）
+#     qry: ActiveRsvpsForMeetup           # 送信対象リストを返すクエリ名
+#
+# 複数トリガーの join（`trgs`）例：
+#   - name: GoodsReceivedJoin
+#     ctx: warehouse
+#     trgs:
+#       evts: [ParcelArrived, InspectionScheduled]
+#       mode: all                         # all（AND join） / any（OR）
+#     cmd: ConfirmReadyForInspection
+
+# ---------- (I) Flow（v6: 廃止） ----------
+# トップレベル flows[] は廃止。フロー情報は次の 3 か所に分散して保持される：
+#   - フロー識別子 / 見出し / 種別 / 散文 → narratives[]（上記 (B)）
+#   - フロー連鎖（順序） → scenarios[].next（上記 (G)）
+#   - 分岐終端          → scenarios[].brs[].terminal（上記 (G)）
+# §2 フロー図は narratives[].entry を起点に builder が自動構成する。
+
+# ---------- (J) 意思決定ログ（旧 .md §6） ----------
+# decisions:
+#   - id: D1
+#     topic: <意思決定のテーマ>
+#     chosen: <採用オプション名（options[].name のいずれかと一致）>
+#     options:
+#       # name: 追跡用 ID（英語 slug 推奨）。label: HTML 表示用の日本語ラベル（任意）
+#       - { name: <opt-1>, label: <日本語ラベル>, adopted: true,  why: <採用理由> }
+#       - { name: <opt-2>, label: <日本語ラベル>, adopted: false, why_not: <不採用理由> }
+#     affects: [<関連 AGG/BC 名>]
+
+# ---------- (K) オープンクエスチョン（旧 .md §5） ----------
+# questions:
+#   - id: Q1
+#     topic: <確認したい事項>
+#     why: <決まると何が変わるか>
+#     status: open                          # open | closed
+#     # decision_id: D1                      # closed の場合
+
+# ---------- (L) 次のアクション（旧 .md §4） ----------
+# actions:
+#   - id: A1
+#     text: <ステークホルダー向けに何をすればよいか>
+#     owner: <担当者（任意）>
+
+# ---------- (M) リードモデル候補（旧 .md §9） ----------
+# queries:
+#   - name: <QryName>
+#     ctx: <bc-slug>
+#     purpose: <何を確認して何を決めるか>
+#     users: <利用者（アクター / ポリシー）>
+#     sources:
+#       - <ソース AGG / EVT 等>
+#     formula: <算出条件・絞り込み式>
+
+# =============================================================================
+# 上記をすべてコメントアウトしているので、本ファイルそのものは valid な空 DML。
+# 必要なセクションからコメントを外して埋めていく。
+# =============================================================================
+{}
