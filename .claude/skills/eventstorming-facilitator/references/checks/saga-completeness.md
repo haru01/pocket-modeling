@@ -49,5 +49,35 @@ policies を読み、各フローの **Saga が完結しているか** を評価
 
 ## 連携する構造チェック
 
-- `flow_step_resolution` — 解決できない step を排除してから本観点を実行
+- `flow_chain_resolution` — 解決できない next / terminal を排除してから本観点を実行
 - `unknown_evt_in_policy` — 未宣言トリガーが残っているとここで誤判定するので先に修正
+
+## POLICY のガード条件はどこに書くか
+
+policy schema には `rules[]` が無い（v8 時点）。「この POLICY を skip するべき業務条件」は、
+**policy の `note` に簡潔に書きつつ、policy が起動する CMD を実行する SCENARIO の `rules[]` /
+`errs[]` にガードを書く**。
+
+典型的な暴発リスク:
+- `bulk:true` の POLICY が cascade 発火するとき、後続 POLICY を意図せず起動する
+  - 例: `NotifyParticipantsOnEventCancelled` (bulk Cancel) → `ParticipationCancelled` evt 連発
+    → `PromoteOnCancelled` が「次の WAITLISTED を繰上」しようとする
+    → しかし Event 自体が CANCELLED なので業務矛盾
+
+書き方:
+```yaml
+policies:
+  - name: NotifyParticipantsOnEventCancelled
+    note: bulk Cancel が PromoteOnCancelled を連鎖発火しないよう、繰上 scenario 側に EventAlreadyCancelled ガード
+
+scenarios:
+  - name: システムが繰上を実行する
+    cmd: PromoteFromWaitlist
+    rules:
+      - { rule: Skip promotion when Event itself is CANCELLED, why: alt-cancel フロー連鎖中の暴発防止 }
+    errs:
+      - { cond: 対応する Event が CANCELLED, err: EventAlreadyCancelled, when: alt-cancel 連鎖中の繰上試行 }
+```
+
+LLM レビューでは「`bulk:true` policy が連鎖させる evt が、他 policy の trg と一致する」ケースで
+ガード rule/errs の有無を必ず確認する。

@@ -12,10 +12,9 @@ Claude Code の CLI/PC/スマホアプリではチャット本文の生 `<svg>` 
 
 | ファイル | 役割 |
 |---|---|
-| `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.dml.yaml` | **DML（モデル本体）の唯一の真実源**。純 YAML 直書き（フェンス不要）。フロー図・集約カード・意思決定ログは全てここから生成 |
-| `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.md` | 物語（§1〜§2）・次のアクション（§4）・質問（§5）・コンテキスト散文（§7、LANGUAGE/依存方向は DML 駆動）・リードモデル（§9）。AI と人間がここを編集 |
-| `dist/eventstorming/eventstorming-YYYYMMDD-HHMM.html` | Python ビルダーが `.md` ＋ 兄弟 `.dml.yaml` から自動生成する派生ファイル。AI も人間も直接編集しない |
-| `.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py` | MD/DML → HTML 変換スクリプト（Python 3 標準ライブラリ + PyYAML） |
+| `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.dml.yaml` | **DML（モデル本体）の唯一の真実源**。純 YAML 直書き（フェンス不要）。散文系（`narratives` / `actions` / `questions` / `queries` / `contexts[].description`）も全てここに統合（v5 で `.md` 廃止）。AI と人間がここを編集 |
+| `dist/eventstorming/eventstorming-YYYYMMDD-HHMM.html` | Python ビルダーが `.dml.yaml` 単独から自動生成する派生ファイル。AI も人間も直接編集しない |
+| `.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py` | DML → HTML 変換スクリプト（Python 3 標準ライブラリ + PyYAML） |
 | `.claude/skills/eventstorming-facilitator/templates/event-flow.html` | テンプレート HTML（CSS とプレースホルダー入り） |
 
 ---
@@ -23,14 +22,14 @@ Claude Code の CLI/PC/スマホアプリではチャット本文の生 `<svg>` 
 ## 2. 自動再生成のフロー
 
 ```
-.md または兄弟 .dml.yaml を Write/Edit (AI または人間)
+.dml.yaml を Write/Edit (AI または人間)
   ↓
 PostToolUse hook 起動 (.claude/settings.json)
   ↓
 python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <path>
-  （.dml.yaml を渡された場合は兄弟 .md を解決。ビルダーは .md ＋ 兄弟 .dml.yaml を読む）
+  + python3 .claude/skills/eventstorming-facilitator/scripts/validate_dml.py <path>
   ↓
-dist/eventstorming/<session>.html 再生成
+dist/eventstorming/<session>.html 再生成 (+ JSON Schema 検証)
   ↓
 ブラウザの meta-refresh (3秒) で自動再表示
 ```
@@ -55,7 +54,7 @@ PostToolUse hook の設定: `.claude/settings.json`
 }
 ```
 
-hook 内で `tool_input.file_path` を判定し、`docs/eventstorming/*.{md,dml.yaml}` の場合のみビルドを実行する。
+hook 内で `tool_input.file_path` を判定し、`docs/eventstorming/*.dml.yaml` の場合のみビルド＋検証を実行する。
 
 ---
 
@@ -63,25 +62,30 @@ hook 内で `tool_input.file_path` を判定し、`docs/eventstorming/*.{md,dml.
 
 ```bash
 # 個別ビルド
-python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py docs/eventstorming/eventstorming-20260514-2054.md
+python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py docs/eventstorming/eventstorming-20260529-1254.dml.yaml
 
-# 全件ビルド (docs/eventstorming/*.md すべて → dist/eventstorming/*.html)
+# 全件ビルド (docs/eventstorming/*.dml.yaml すべて → dist/eventstorming/*.html)
 python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py --all
 
 # 監視モード（ファイル変更を検知して自動再ビルド）
 python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py --watch
 
 # 出力ディレクトリ変更
-python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <md> --out custom/dir/
+python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <yaml> --out custom/dir/
+
+# Artifact 化（claude.ai に貼る用、macOS のみクリップボード）
+python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <yaml> --artifact --copy
 ```
 
 ---
 
 ## 4. HTML が含むセクション
 
+§0 進捗バー（ヘッダ）＋ §1〜§9 の **9 セクション** で構成される。v8 で旧 §1 ハッピーパスストーリーと §2 代替シナリオが §1 ストーリーに統合された。
+
 | # | セクション | 駆動データ | HTML 表現 |
 |---|---|---|---|
-| 0 | 進捗バー | DML `session.phase` / `session.status` | `フェーズN完了` を自動パースして `done`/`current` クラスを設定 |
+| 0 | 進捗バー（ヘッダ） | DML `session.phase` / `session.status` | `フェーズN完了` を自動パースして `done`/`current` クラスを設定 |
 | 1 | ストーリー | DML `narratives[]`（v8 で `story:` 廃止して統合） | `kind:happy` を先頭に `.story` 黄背景、`kind:alt` を後続に `.scenario-card` カードで描画 |
 | 2 | Event Walkthrough | **DML** `narratives[].entry` + `scenarios[]`（next/brs.terminal） + `policies[]` | `.flow > .grid` Big Picture 形式（§5 参照） |
 | 3 | 次のアクション | DML `actions[]` | `.next-actions` 緑カード。**読者の次の動きを最上部近くに置く** |
@@ -92,7 +96,7 @@ python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py 
 | 8 | リードモデル候補 | DML `queries[]` | `.bc-card`（緑左ボーダー） |
 | 9 | DML（YAML） | `.dml.yaml` 生 | `pre.code` ダークテーマ + 役割ベース意味色ハイライト |
 
-未完成セクションは MD で `<!-- TODO: フェーズN完了後に追記 -->` プレースホルダー → HTML 側で `.todo-placeholder` に変換。
+未完成セクションは DML 側で対応するトップレベルフィールドを未記述にすると、HTML 側で `.todo-placeholder`（または見出しごと非表示、`decisions[]` 等）として縮退表示される。
 
 ---
 
@@ -299,7 +303,7 @@ BULK POLICY 由来の Note に付くクラス。
 
 ### 7-1. フェーズ2完了時のみ初回オープン
 
-MD を Write した直後、PostToolUse hook が HTML を生成するので、AI は続けて `Bash open dist/eventstorming/<session>.html` を実行して外部ブラウザを起動する。
+DML（`.dml.yaml`）を Write した直後、PostToolUse hook が HTML を生成するので、AI は続けて `Bash open dist/eventstorming/<session>.html` を実行して外部ブラウザを起動する。
 
 ### 7-2. 自動リロード（2 系統）
 
@@ -327,20 +331,19 @@ Claude Code（CLI/PC/スマホアプリ）の preview panel は **JavaScript / `
 `.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py` は単一ファイル、Python 3 標準ライブラリ + PyYAML で実装。主要関数：
 
 ```
-parse_md(md_text) → MDSections         # MD を §1〜§10 に分割（DML は別ファイル）
-_load_dml_model(dml_text) → dict|None  # 兄弟 .dml.yaml を yaml.safe_load
-_validate_dml_warn(dml, path) → list   # JSON Schema 検証で警告一覧
+_load_dml_model(dml_text) → dict|None  # .dml.yaml を yaml.safe_load
+_validate_dml_warn(dml, path) → list   # JSON Schema 検証で警告一覧（HTML §9 バナーに反映）
 build_flows_from_dml(model, gloss)     # narratives[].entry + scenarios[].next/brs.terminal + policies の自動連鎖 → Flow / Lane / Note
 render_flows(flows) → HTML             # Flow 群 → Big Picture グリッド HTML
 render_flow(flow) → HTML               # 単一 Flow の描画
 aggregates_from_dml(model) → list      # 集約 1 件あたり attrs/events/inv/err 等を集計
 render_agg_cards_from_dml(model, gl)   # AGG カード（属性表 / payload 表 / inv / err）
 render_decisions(model, gloss) → HTML  # decisions[] → .decision-card 群
-render_progress(status) → HTML         # Status 行から進捗バー
+render_progress(status) → HTML         # session.phase / status から進捗バー
 render_context_map(bc_cards) → SVG     # UPSTREAM/DOWNSTREAM から関係図 SVG
 highlight_dml(dml) → HTML              # DML（YAML）役割ベース意味色ハイライト
 render_html(sections) → HTML 全文      # テンプレに埋め込んで完成版を返す
-build(md_path, out_dir) → Path         # 1 ファイルビルド → reload_browser_tab() 込み
+build(yaml_path, out_dir) → Path       # 1 ファイルビルド → reload_browser_tab() 込み
 reload_browser_tab(html_path)          # macOS Chrome/Safari の該当タブを osascript で reload
 build_all(in_dir, out_dir)             # 全件ビルド
 watch(in_dir, out_dir)                 # 監視モード
@@ -355,7 +358,7 @@ watch(in_dir, out_dir)                 # 監視モード
 書き込み権限がない、Python 3 や PyYAML が無い等の環境では、ビルダーが動かない（または DML 解析が失敗する）。
 
 - PyYAML 不在 / DML 解析失敗時は、§2・§5・§7 は `.todo-placeholder` で縮退表示し、**例外で停止せず HTML 生成は最後まで継続**
-- 手動再実行: `python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <md>`
+- 手動再実行: `python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <yaml>`
 - 解決不可ならチャット本文に **構造化テーブル** で代替表示（`chat-output-format.md` §9 参照）
 
 ---

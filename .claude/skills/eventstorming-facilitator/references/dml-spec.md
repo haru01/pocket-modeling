@@ -29,7 +29,7 @@ DDD モデリングのための情報圧縮言語。**構文 validity（形が�
 ## 0. 記法の原則
 
 - **YAML 直書き・`.md` と兄弟ファイル**: `docs/eventstorming/<session>.dml.yaml` に純 YAML（フェンス不要）。`.md` の §10 はこの `.dml.yaml` へのリンク参照のみ。ビルダーは `.md` + 兄弟 `.dml.yaml` から HTML を生成する
-- **トップレベルは 4 リスト + 任意 3 リスト**: `contexts` / `aggregates` / `scenarios` / `policies` 必須、`domains` / `flows` / `decisions` 任意。コメントによるセクション区切りは使わない（リスト構造で自然に分離される）
+- **トップレベルは 4 モデル本体 + 任意散文系**: モデル本体 `contexts` / `aggregates` / `scenarios` / `policies` ＋意思決定ログ `decisions`、加えて散文系 `session` / `narratives` / `actions` / `questions` / `queries` / `domains`。全フィールドが optional（空 `{}` も valid）。**v6 で旧トップレベル `flows[]` は廃止**（連鎖は `narratives[].entry` ＋ `scenarios[].next` / `brs[].terminal` で表現）。コメントによるセクション区切りは使わない（リスト構造で自然に分離される）
 - **識別子は英語 PascalCase**（`cmd` / `evt` / `agg` / `trg` / `qry` の値、`aggregates[].name` 等）。`()` や `<<>>` は付けない
 - **`scenarios[].name` のみ日本語**で「アクター＋行為」を書く（例: `主催者がコミュニティを作成する`）
 - **`rules[].rule` の不変条件は英語**。日本語の補足は `why` / `when` / `note` の**構造化フィールド**へ書く（`#` 行コメントによる補足慣習は廃止）
@@ -106,6 +106,15 @@ contexts:
 
 AI 実装エージェントが Issue から実装するときに意図を読み解きやすくするため、`rules[].why` / `errs[].when` は強く推奨（schema 上は optional）。
 
+### `errs[]` には `why` フィールドが無い（v8 時点）
+
+`rules[]` には `why` があるが `errs[]` には無く、フィールド名が非対称。`errs[]` の業務的理由（なぜそのエラーが起こり得るか／なぜ業務的に問題か）は **`when` フィールドに自然文で書く**。
+
+- OK: `{ cond: applyDeadline >= scheduledAt, err: ApplyDeadlineInvalid, when: 申込締切が開催以降では業務的に成立しない }`
+- NG: `{ cond: ..., err: ..., why: ... }`（schema が `why` を未知フィールドとして弾く）
+
+加えて **業務エラーと実装エラーを区別する**。`errs[]` には業務的に発生し得る違反のみ書き、スケジューラ誤発火・null pointer・タイムアウト等のインフラ／実装エラーは含めない。判別基準は `references/checks/scenario-rules-quality.md` も参照。
+
 ### `qry` は判断材料のみ
 
 アクター（「このコマンドを発行するか」）またはポリシー（「どのコマンドを発行するか・誰に対して」）が**判断するために必要なデータ**のみ書く。コマンド実装内部で必要なデータ（BULK の実行対象リストなど）は `qry` に書かない。
@@ -165,6 +174,23 @@ HTML §2 のフロー図では、`bulk: true` の POLICY は **fanout（× N バ
 ### 複数トリガーの join（`trgs`）
 
 複数のイベントが揃って初めて起動する POLICY は、`trg`（単一）の代わりに `trgs`（`evts` 配列 + `mode`）を使う。HTML §2 では **BPMN シンクバー（Σ N）** で描画される。
+
+### POLICY のガード条件は呼び出される SCENARIO の `rules[]` に書く
+
+policy schema には `rules[]` が無い（v8 時点）。「この POLICY を skip するべき業務条件」は、policy の `note` に簡潔に書きつつ、**policy が起動する CMD を実行する SCENARIO の `rules[]` / `errs[]` にガードを書く**。これにより scenario 側の構造化チェック（dangling_cmd・state_reachability 等）でガード抜けが検出されやすくなる。
+
+例: `NotifyParticipantsOnEventCancelled` が `bulk: CancelParticipation` を発行すると `ParticipationCancelled` evt が連鎖し、`PromoteOnCancelled` policy が暴発するリスクがある。これを防ぐには `システムが繰上を実行する` scenario の `rules[]` に次を入れる：
+
+```yaml
+- { rule: Skip promotion when Event itself is CANCELLED, why: alt-cancel フローで bulk Cancel 後の暴発防止 (PromoteOnCancelled ガード) }
+- { cond: 対応する Event が CANCELLED, err: EventAlreadyCancelled, when: alt-cancel 連鎖中の繰上試行 }
+```
+
+合わせて `policies[NotifyParticipantsOnEventCancelled].note` に「PromoteOnCancelled の連鎖発火を `EventAlreadyCancelled` ガードで防いでいる」と明記すると、後でレビューする人が relation を辿りやすい。
+
+### v7 追加: `policies[].agg`
+
+POL の `cmd` が AGG を変更するなら `agg` を併記する（scenarios と対称化）。`dangling_cmd` 構造チェックは v7 以降、`scenarios[].cmd` と `policies[].cmd` の両方を declared として扱う。
 
 ---
 
@@ -268,7 +294,7 @@ scenarios:
 
 | レイヤ | 担保するもの | 例 |
 |------|------|------|
-| **JSON Schema**（機械・決定論的） | 構文 validity。トップレベル 4 リスト＋任意 `domains`/`flows`/`decisions`、各要素の必須フィールド、型、enum、識別子の PascalCase・lowercase-with-hyphen・UPPER_SNAKE（状態名）・camelCase（属性名）、`evt`↔`brs` 排他、`trg`↔`trgs` 排他、`bulk:true`→`qry` 必須、未知フィールド禁止 | `cmd` が PascalCase か、`sub.type` が enum 値か、`aggregates[].states` が UPPER_SNAKE か |
+| **JSON Schema**（機械・決定論的） | 構文 validity。モデル本体 `contexts`/`aggregates`/`scenarios`/`policies`＋`decisions`＋散文系 `session`/`narratives`/`actions`/`questions`/`queries`/`domains`（全て optional）、各要素の必須フィールド、型、enum、識別子の PascalCase・lowercase-with-hyphen・UPPER_SNAKE（状態名）・camelCase（属性名）、`evt`↔`brs` 排他、`trg`↔`trgs` 排他、`bulk:true`→`qry` 必須、`branch.next`↔`branch.terminal` 排他、未知フィールド禁止 | `cmd` が PascalCase か、`sub.type` が enum 値か、`aggregates[].states` が UPPER_SNAKE か |
 | **causal-check / quality-check**（LLM・文脈依存） | 意味 validity。参照の実在・因果整合・モデル品質 | `trg` が実在 EVT を指すか、`pol` が実在 POLICY か、up↔dn の双方向一致、`scenarios[].cmd` ↔ `aggregates[].transitions[].via` 整合、`scenarios[].evt` ↔ `aggregates[].events[].name` 整合、`narratives[].entry` / `scenarios[].next` / `brs[].terminal` の解決（→ `flow_chain_resolution` チェック）、`decisions[].affects[]` が実在要素を指すか、分岐の MECE 性、`evt` の過去形・`cmd` の命令形 |
 
 **スキーマ通過は必要条件であって十分条件ではない。** ビルダー（`eventstorming_build.py`）は `.dml.yaml` 読込時に schema 検証し、HTML §9 にバナー（✅ / ⚠ 違反一覧）を描画する。**検証は非ブロッキング**で、違反があっても HTML は生成される。全行コメントのみ（YAML→`None`）や空ファイルは「未記述」として検証対象外（進行中セッション許容）。
@@ -340,17 +366,19 @@ policies:
     evt: CancellationNotificationSent
     note: "副作用専用 POLICY（メール送信のみ・cmd 省略）"
 
-flows:
+narratives:
   - id: happy
     title: ハッピーパス — イベントを公開する
     kind: happy
-    steps:
-      - 主催者がイベントを公開する
+    entry: 主催者がイベントを公開する        # フロー開始 scenarios[].name
+    prose: |
+      主催者は DRAFT で必要事項を埋めた後、公開操作を行う。コミュニティに通知され、申込が始まる。
   - id: alt-cancel
     title: 代替シナリオ — イベントをキャンセルする
     kind: alt
-    steps:
-      - NotifyEventCancelled
+    prose: |
+      会場・登壇者都合で開催不可となった場合、主催者はキャンセル操作を行う。
+      NotifyEventCancelled policy が確定参加者へ一括通知する。
 
 decisions:
   - id: D1
