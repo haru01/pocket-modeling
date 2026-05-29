@@ -509,6 +509,146 @@ def narrative_happy_unique(model: dict) -> list[Finding]:
     return findings
 
 
+def dangling_lang_entry(model: dict) -> list[Finding]:
+    """contexts[].lang.{pols,cmds,evts,aggs,qrys} に登録された名前が
+    モデル本体（policies/scenarios/aggregates/queries）に存在しない場合に警告する。
+
+    `language_coverage` は逆方向（モデル要素が lang に未登録）を見るが、本チェックは
+    「lang に書いたけれど実体が無い」ケースを検出する。typo / リネーム漏れ / lang だけ
+    先行追加した実装忘れを早期発見するのが目的。
+    """
+    declared = {
+        "pols": {p.get("name") for p in (model.get("policies") or []) if isinstance(p, dict)},
+        "cmds": set(),
+        "evts": set(),
+        "aggs": {a.get("name") for a in (model.get("aggregates") or []) if isinstance(a, dict)},
+        "qrys": {q.get("name") for q in (model.get("queries") or []) if isinstance(q, dict)},
+        "actors": set(),
+        "vos": set(),  # vos は scenarios/policies/aggregates では参照されないので空のまま（cross-ref しない）
+    }
+    for s in model.get("scenarios") or []:
+        if isinstance(s, dict):
+            if s.get("cmd"):
+                declared["cmds"].add(s["cmd"])
+            if s.get("evt"):
+                declared["evts"].add(s["evt"])
+            if s.get("actor"):
+                declared["actors"].add(s["actor"])
+            for q in s.get("qry") or []:
+                if q:
+                    declared["qrys"].add(q)
+            for br in s.get("brs") or []:
+                if isinstance(br, dict) and br.get("evt"):
+                    declared["evts"].add(br["evt"])
+    for p in model.get("policies") or []:
+        if isinstance(p, dict):
+            if p.get("cmd"):
+                declared["cmds"].add(p["cmd"])
+            if p.get("evt"):
+                declared["evts"].add(p["evt"])
+            if p.get("trg"):
+                declared["evts"].add(p["trg"])
+            if p.get("qry"):
+                declared["qrys"].add(p["qry"])
+            trgs = p.get("trgs") or {}
+            if isinstance(trgs, dict):
+                for ev in trgs.get("evts") or []:
+                    declared["evts"].add(ev)
+    for a in model.get("aggregates") or []:
+        if isinstance(a, dict):
+            for ev in a.get("events") or []:
+                if isinstance(ev, dict) and ev.get("name"):
+                    declared["evts"].add(ev["name"])
+
+    findings: list[Finding] = []
+    for i, ctx in enumerate(model.get("contexts") or []):
+        if not isinstance(ctx, dict):
+            continue
+        lang = ctx.get("lang") or {}
+        if not isinstance(lang, dict):
+            continue
+        ctx_name = ctx.get("name") or f"#{i}"
+        for cat, real_set in declared.items():
+            if cat == "vos":
+                # VOs は scenarios/policies/aggregates 本体には現れない（attrs.type で参照される程度）。
+                # 厳密な cross-ref は attrs.type の自由文字列まで追わないと判定できないので、本チェックでは
+                # vos の dangling は対象外（誤検知を避ける）。
+                continue
+            cat_dict = lang.get(cat) or {}
+            if not isinstance(cat_dict, dict):
+                continue
+            for name in cat_dict.keys():
+                if name not in real_set:
+                    findings.append(
+                        Finding(
+                            kind="dangling_lang_entry",
+                            path=f"contexts[{i}].lang.{cat}.{name}",
+                            message=(
+                                f"BC '{ctx_name}' の lang.{cat} に '{name}' が登録されていますが、"
+                                f"対応する実体が見つかりません（typo / 未実装 / リネーム漏れの可能性）"
+                            ),
+                            slice={"ctx": ctx_name, "category": cat, "identifier": name},
+                        )
+                    )
+    return findings
+
+
+def cross_bc_state_name_collision(model: dict) -> list[Finding]:
+    """異なる AGG / BC で同じ state 名（UPPER_SNAKE）が使われている場合、
+    lang.states の日本語ラベルが一致しなければ「同名異義」として警告する。
+
+    例: event-planning.Event.CANCELLED と participation.Participation.CANCELLED は
+    英語 ID 完全一致だが意味が異なる（前者=イベント中止、後者=参加辞退）。HTML フロー図
+    のラベル日本語化で混乱を招くため、lang.states のラベルで差別化されているかを確認する。
+    """
+    # state -> [(ctx_name, agg_name, label_or_None), ...]
+    by_state: dict[str, list[tuple[str, str, str | None]]] = {}
+    ctx_lang_states: dict[str, dict] = {}
+    for ctx in model.get("contexts") or []:
+        if not isinstance(ctx, dict):
+            continue
+        cname = ctx.get("name") or ""
+        lang = ctx.get("lang") or {}
+        if isinstance(lang, dict):
+            states = lang.get("states") or {}
+            if isinstance(states, dict):
+                ctx_lang_states[cname] = states
+
+    for agg in model.get("aggregates") or []:
+        if not isinstance(agg, dict):
+            continue
+        ctx = agg.get("ctx") or ""
+        agg_name = agg.get("name") or ""
+        label_map = ctx_lang_states.get(ctx, {})
+        for state in agg.get("states") or []:
+            by_state.setdefault(state, []).append((ctx, agg_name, label_map.get(state)))
+
+    findings: list[Finding] = []
+    for state, occurrences in by_state.items():
+        if len(occurrences) < 2:
+            continue
+        # 異なる AGG / ctx で同じ state が使われている
+        labels = {label for _, _, label in occurrences if label}
+        if len(labels) <= 1:
+            # ラベル無し or 全て同一ラベル → 同義かもしれないが同名なので警告のみ
+            # 但しラベル無しなら lang.states に未登録の警告は language_coverage 系の責務外。
+            # ここでは「ラベルで差別化されていない同名 state」のみ警告。
+            owners = [f"{c}.{a}" for c, a, _ in occurrences]
+            findings.append(
+                Finding(
+                    kind="cross_bc_state_name_collision",
+                    path="aggregates[].states",
+                    message=(
+                        f"state '{state}' が複数 AGG '{owners}' で使われていますが、"
+                        f"lang.states での日本語ラベル差別化が確認できません。"
+                        f"BC 間で意味が異なる場合は lang.states のラベルを各 BC で書き分けてください"
+                    ),
+                    slice={"state": state, "owners": owners, "labels": list(labels)},
+                )
+            )
+    return findings
+
+
 def question_decision_link(model: dict) -> list[Finding]:
     """questions[].status==closed の decision_id が decisions[].id と整合するか確認。"""
     decision_ids = {
@@ -559,5 +699,7 @@ CHECKS: dict[str, Callable[[dict], list[Finding]]] = {
     "flow_chain_resolution": flow_chain_resolution,
     "narrative_entry_consistency": narrative_entry_consistency,
     "narrative_happy_unique": narrative_happy_unique,
+    "dangling_lang_entry": dangling_lang_entry,
+    "cross_bc_state_name_collision": cross_bc_state_name_collision,
     "question_decision_link": question_decision_link,
 }
