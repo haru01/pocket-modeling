@@ -46,6 +46,7 @@ PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/even
 - **`[?]` を残す** — 迷い・矛盾・未確認はすべてマーク。推測で埋めない。選択肢が見えてきたら `decisions[]` に昇格
 - **`？` シグナル** — ユーザーが `？` を送ったら判断の軸を2〜3点提示（押しつけない）
 - **「おまかせ」シグナル** — 合理的なデフォルトを判断理由1行付きで選んで進める
+- **ポイント解説原則** — DDD／EventStorming の専門用語（EVT / CMD / POLICY / AGG / BC / SAME-TX / EVENTUAL-TX / ACL / Conformist など）が**初出のとき**は、`references/term-glossary.md` を引いて **「💡 用語名 ＝ 1 文の平易な解説 ＋ 今回のドメインからの具体例」** の形で 1 行添える。既出は繰り返さない。意思決定の議論では `why`/`why_not` を**業務文脈の言葉**で引き出し、抽象用語（「責務違反」「DDD 的に正しい」等）だけで終わらせない（良し悪し例: `references/term-glossary.md`）
 - **毎ターン末尾** に `> 迷ったら \`？\` を送ってください`
 
 ### ② チャット出力フォーマット
@@ -292,6 +293,7 @@ Markdown 風の散文として書く。bullet (`- foo`) と `**強調**` は HTM
 | `references/session-guide.md` | ファシリテーション質問パターン（フェーズ別） |
 | `references/domain-starters.md` | よくあるドメインの候補イベントリスト |
 | `references/template.dml.yaml` | 新規セッション用 DML スケルトン（旧 template.md を置き換え） |
+| `references/term-glossary.md` | DDD／EventStorming 用語の 1 行ポイント解説辞書。専門用語初出時に AI が引いてチャットに添える |
 | `references/quality-check.md` | 品質チェック方針（構造→意味の 2 段階） |
 | `references/causal-check.md` | DML 因果連鎖チェック方針 |
 | `references/quality-check-agent.md` | 品質チェック起動プロンプト |
