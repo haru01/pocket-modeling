@@ -61,6 +61,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -130,29 +131,64 @@ def _require_ruamel():
     return yml
 
 
+class _Selector:
+    """リスト要素をキー値で選択するパスセグメント（`contexts[name=billing]`）。"""
+
+    __slots__ = ("key", "val")
+
+    def __init__(self, key: str, val):
+        self.key = key
+        self.val = val
+
+    def __repr__(self):
+        return f"[{self.key}={self.val!r}]"
+
+
+# `base[selKey=selVal]` 形式（base はネスト不可・selVal に `]` を含まない）
+_SELECTOR_RE = re.compile(r"^([^\[\].]+)\[([^=\[\]]+)=([^\[\]]+)\]$")
+
+
 def _parse_path(path: str) -> list:
     """ドット区切りパスをセグメント列に変換する。
 
-    数値インデックスは `users.0.name` のように記述する。引用付き
-    （`contexts[name="store-front"].lang.cmds.PlaceOrder`）には未対応で、
-    まずは単純な `key.0.key` 形式のみサポート。
+    - 数値インデックス: `users.0.name`
+    - リスト要素のキー選択: `contexts[name=billing].lang.states`
+      （`contexts` リストから `name == billing` の要素を選び、その配下へ降りる）
     """
     segments = []
     for seg in path.split("."):
-        if seg.isdigit():
+        m = _SELECTOR_RE.match(seg)
+        if m:
+            base, sel_key, sel_val = m.group(1), m.group(2), m.group(3)
+            segments.append(base)
+            segments.append(_Selector(sel_key, _parse_value(sel_val)))
+        elif seg.isdigit():
             segments.append(int(seg))
         else:
             segments.append(seg)
     return segments
 
 
+def _step(cursor, seg):
+    """1 セグメント分だけ降りる。str/int はそのまま添字、_Selector は
+    リストから該当要素を線形検索して返す。"""
+    if isinstance(seg, _Selector):
+        if not isinstance(cursor, list):
+            raise ValueError(f"{seg} はリストにのみ適用できます")
+        for elem in cursor:
+            if isinstance(elem, dict) and elem.get(seg.key) == seg.val:
+                return elem
+        raise KeyError(f"{seg.key}={seg.val!r} の要素が見つかりません")
+    return cursor[seg]
+
+
 def _resolve_parent(data, segments: list):
-    """セグメント列の親要素と最終キーを返す。"""
+    """セグメント列の親要素と最終セグメントを返す。"""
     if not segments:
         raise ValueError("path は空にできません")
     cursor = data
     for seg in segments[:-1]:
-        cursor = cursor[seg]
+        cursor = _step(cursor, seg)
     return cursor, segments[-1]
 
 
@@ -161,7 +197,7 @@ def _resolve_list(data, path: str) -> list:
     segments = _parse_path(path)
     target = data
     for seg in segments:
-        target = target[seg]
+        target = _step(target, seg)
     if not isinstance(target, list):
         raise ValueError(f"{path} はリストではありません")
     return target
@@ -221,13 +257,57 @@ def _parse_where(where: str) -> tuple[str, object]:
     return key, _parse_value(raw.strip())
 
 
-def _save_and_postprocess(path: Path, yml, data, *, no_postprocess: bool = False) -> None:
-    """ruamel YAML を保存し、必要なら build + validate を実行する。"""
+def _save_and_postprocess(
+    path: Path, yml, data, *, no_postprocess: bool = False, dry_run: bool = False
+) -> int:
+    """ruamel YAML を保存し、必要なら build + validate を実行する。
+
+    dry_run=True のときは **本体ファイルへ書かず**、編集後の内容を一時ファイルへ
+    dump して schema 検証だけ行い、その exit code を返す（書き込み前に違反を検出）。
+    通常時は 0 を返す。"""
+    if dry_run:
+        return _dry_run_validate(yml, data, path)
     with path.open("w", encoding="utf-8") as f:
         yml.dump(data, f)
     if no_postprocess:
-        return
+        return 0
     _run_postprocess(path)
+    return 0
+
+
+def _dry_run_validate(yml, data, path: Path) -> int:
+    """編集後の data を一時ファイルへ dump し、schema 検証だけ実行する。"""
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".dml.yaml", delete=False, encoding="utf-8"
+    ) as tf:
+        yml.dump(data, tf)
+        tmp = Path(tf.name)
+    try:
+        result = subprocess.run(
+            ["python3", str(VALIDATE_SCRIPT), str(tmp)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.stdout:
+            sys.stderr.write(result.stdout)
+        if result.stderr:
+            sys.stderr.write(result.stderr)
+        if result.returncode == 0:
+            print(
+                f"✅ [dry-run] {path.name}: 編集後も schema OK（ファイルは未変更）",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"⚠ [dry-run] {path.name}: 上記の schema 違反あり（ファイルは未変更）",
+                file=sys.stderr,
+            )
+        return result.returncode
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _run_postprocess(path: Path) -> None:
@@ -365,9 +445,17 @@ def cmd_set(args) -> int:
     segments = _parse_path(args.path)
     value = _read_value_or_file(args, "value", "value_file")
     parent, last = _resolve_parent(data, segments)
+    if isinstance(last, _Selector):
+        print(
+            "❌ set の最終セグメントはキー名にしてください"
+            "（リスト要素の置換は update --where か末尾にキーを足す）",
+            file=sys.stderr,
+        )
+        return 2
     parent[last] = value
-    _save_and_postprocess(path, yml, data, no_postprocess=args.no_postprocess)
-    return 0
+    return _save_and_postprocess(
+        path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
+    )
 
 
 def cmd_add(args) -> int:
@@ -380,7 +468,7 @@ def cmd_add(args) -> int:
     segments = _parse_path(args.to)
     target = data
     for seg in segments:
-        target = target[seg]
+        target = _step(target, seg)
     if not isinstance(target, list):
         print(f"❌ {args.to} はリストではありません", file=sys.stderr)
         return 1
@@ -397,8 +485,9 @@ def cmd_add(args) -> int:
     else:
         item = _parse_value(args.item)
     target.append(item)
-    _save_and_postprocess(path, yml, data, no_postprocess=args.no_postprocess)
-    return 0
+    return _save_and_postprocess(
+        path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
+    )
 
 
 def cmd_remove(args) -> int:
@@ -430,9 +519,24 @@ def cmd_remove(args) -> int:
     else:
         segments = _parse_path(args.path)
         parent, last = _resolve_parent(data, segments)
-        del parent[last]
-    _save_and_postprocess(path, yml, data, no_postprocess=args.no_postprocess)
-    return 0
+        if isinstance(last, _Selector):
+            if not isinstance(parent, list):
+                print(f"❌ {last} はリストにのみ適用できます", file=sys.stderr)
+                return 2
+            before = len(parent)
+            parent[:] = [
+                e
+                for e in parent
+                if not (isinstance(e, dict) and e.get(last.key) == last.val)
+            ]
+            if len(parent) == before:
+                print(f"❌ {last.key}={last.val!r} の要素が見つかりません", file=sys.stderr)
+                return 2
+        else:
+            del parent[last]
+    return _save_and_postprocess(
+        path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
+    )
 
 
 def cmd_update(args) -> int:
@@ -481,8 +585,9 @@ def cmd_update(args) -> int:
         f"✅ {args.path}[{key}={expected!r}] を {len(matched_indices)} 件更新しました",
         file=sys.stderr,
     )
-    _save_and_postprocess(path, yml, data, no_postprocess=args.no_postprocess)
-    return 0
+    return _save_and_postprocess(
+        path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
+    )
 
 
 # ============================================================
@@ -581,6 +686,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_set.add_argument("--value", help="YAML リテラル")
     p_set.add_argument("--value-file", help="長文値を含むファイル（生テキストとして埋め込む）")
     p_set.add_argument("--no-postprocess", action="store_true")
+    p_set.add_argument("--dry-run", action="store_true", help="書かずに編集後 schema を検証")
     p_set.set_defaults(func=cmd_set)
 
     p_add = sub.add_parser("add", help="リストに要素を追加する（ruamel.yaml）")
@@ -589,6 +695,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--item", help="YAML リテラル")
     p_add.add_argument("--item-file", help="大型 YAML 要素を含むファイル")
     p_add.add_argument("--no-postprocess", action="store_true")
+    p_add.add_argument("--dry-run", action="store_true", help="書かずに編集後 schema を検証")
     p_add.set_defaults(func=cmd_add)
 
     p_update = sub.add_parser("update", help="リスト内の特定要素を find & update する（ruamel.yaml）")
@@ -601,6 +708,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument("--merge-yaml", help="dict を YAML リテラルで指定し対象要素に再帰マージする（nested dict は保持、リーフは置換）")
     p_update.add_argument("--allow-multiple", action="store_true", help="複数マッチを許容して全件更新")
     p_update.add_argument("--no-postprocess", action="store_true")
+    p_update.add_argument("--dry-run", action="store_true", help="書かずに編集後 schema を検証")
     p_update.set_defaults(func=cmd_update)
 
     p_remove = sub.add_parser("remove", help="フィールド/要素を削除する（ruamel.yaml）")
@@ -608,6 +716,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_remove.add_argument("--path", required=True)
     p_remove.add_argument("--where", help="リスト内検索 key=value")
     p_remove.add_argument("--no-postprocess", action="store_true")
+    p_remove.add_argument("--dry-run", action="store_true", help="書かずに編集後 schema を検証")
     p_remove.set_defaults(func=cmd_remove)
 
     p_check = sub.add_parser("check", help="構造チェック観点を実行する")
@@ -641,4 +750,14 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except BrokenPipeError:
+        # 下流（`| head` / `| grep -q` 等）が早期に閉じた場合。SIGPIPE を
+        # トレースバックにせず正常終了する。stdout を devnull に差し替えて
+        # インタープリタ終了時の flush で再発するのを防ぐ。
+        import os
+
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        sys.exit(0)

@@ -20,6 +20,23 @@ AI は **`scripts/dmlctl.py` 経由でしか** DML を読み書きできない�
 - **配列・構造値を書くときに `set --value-file` を使ってはいけない**（YAML ソース全体が 1 個の文字列として格納され schema 違反になる）。配列なら `set --value='[...]'` か `add --item=` を 1 件ずつ。
 - **`--value`/`--item` のインラインで足りるなら、一時ファイルを作らない**。`Write` ツールで `/tmp/*.yaml` 等を作ってから渡すのはアンチパターン。長文 prose 1 個を `--value-file` で渡す場合に限り一時ファイルが正当化される。
 
+**ネスト・部分更新を効率よく書く（トークン節約）**:
+
+- **リスト要素のネストへ直接 set** — `set --path='contexts[name=billing].lang.states' --value='{...}'`。`key[selKey=selVal]` でリスト要素をキー選択して配下に降りられる（`remove --path='contexts[name=x]'` も可）。`lang` 全体を再投入せず狙った枝だけ書ける。
+- **`update --merge-yaml` は再帰マージ**（nested dict は保持・リーフは置換）。`--merge-yaml='{lang: {states: {...}}}'` で `lang.actors` 等を壊さず `states` だけ追加できる。dict 全体を置換したいときだけ `update --set-key`。
+- **書く前に `--dry-run`** — `set/add/update/remove` に `--dry-run` を付けると、本体を書かずに編集後の schema 検証だけ実行して違反を返す。型・必須キーの違反でファイルを汚して書き直す往復を防ぐ。
+
+**スキーマ落とし穴チートシート**（過去に往復リトライを生んだ実例）:
+
+| 項目 | 正 | 誤りがち |
+|---|---|---|
+| `session.phase` | 文字列 `'"3"'`（enum `'1'..'7'`） | 数値 `3` → type 違反 |
+| `queries[].users` | 文字列 `'受付・医師'` | リスト `[A, B]` → type 違反 |
+| `aggregates[].transitions[]` | `via` 必須（命令が無い遷移は書けない） | `when` だけ → required 違反 |
+| `policies[].name` / AGG・EVENT 名 | PascalCase `^[A-Z][A-Za-z0-9]*$` | 日本語名 → pattern 違反 |
+| state 名の重複 | BC ごとに `lang.states` でラベル差別化 or 改名 | 同名放置 → cross_bc 衝突 |
+| `merge-yaml` で `lang` 部分更新 | nested で渡す（再帰マージ） | 旧仕様は浅置換だった（現在は再帰）|
+
 PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/eventstorming/<session>.html` を再生成する（**AI は HTML を直接編集しない**）。チャットには DML 全文を流さず、構造化テーブル＋HTML パス案内に留める（Claude Code のチャット本文では SVG/Mermaid が描画されないため）。
 
 > **ヒント（ユーザーへ）**: 質問に迷ったら **`？`** と送ってください（半角 `?` でも可）。判断の軸を提示して一緒に考えます。
