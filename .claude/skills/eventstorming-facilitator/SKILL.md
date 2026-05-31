@@ -7,7 +7,18 @@ description: Facilitate DDD domain modeling sessions via EventStorming conversat
 
 会話でドメインイベントを発見し DML（Domain Modeling Language）に情報圧縮する。**`docs/eventstorming/<session>.dml.yaml` 1 ファイルがモデル唯一の真実源**（v5 以降）。散文（`narratives` — v8 で旧 `story:` を統合、`kind: happy`/`alt` で区別）・次のアクション（`actions`）・オープンクエスチョン（`questions`）・BC 散文（`contexts[].description`）・リードモデル（`queries`）・意思決定ログ（`decisions`）・集約カード（`aggregates`）・コンテキスト言語（`contexts[].lang`）・依存方向（`contexts[].up/dn`）はすべて DML 内のトップレベル項目として保持される。`.md` は廃止された。
 
-AI は **`scripts/dmlctl.py` 経由でしか** DML を読み書きできない（PreToolUse フック `hooks/block_direct_dml.py` が `Read`/`Edit`/`Write` を技術的にブロック）。新規作成は `dmlctl init`、参照は `dmlctl view --view=<name>`（観点別スライス）、編集は `dmlctl set/add/remove/update`。長文は `--value-file` / `--item-file`、リスト要素の更新は `dmlctl update --where=<key=value>` を使う。dmlctl 経由の書き込みは内部で build + validate を自動実行する（`--no-postprocess` で抑止可能）。
+AI は **`scripts/dmlctl.py` 経由でしか** DML を読み書きできない（PreToolUse フック `hooks/block_direct_dml.py` が `Read`/`Edit`/`Write` を技術的にブロック）。新規作成は `dmlctl init`、参照は `dmlctl view --view=<name>`（観点別スライス）、編集は `dmlctl set/add/remove/update`。リスト要素の更新は `dmlctl update --where=<key=value>` を使う。dmlctl 経由の書き込みは内部で build + validate を自動実行する（`--no-postprocess` で抑止可能）。
+
+**値の渡し方（落とし穴注意）**:
+
+| 渡し方 | 評価 | 用途 |
+|---|---|---|
+| `--value=<lit>` / `--item=<lit>` | **YAML としてパース** | スカラー・配列・dict すべて。インラインで完結するならこれが第一選択 |
+| `add --item-file=<path>` | **YAML としてパース** | 大型の構造化要素（dict/配列）をファイルから |
+| `set --value-file=<path>` | **生テキスト（1 個の文字列）として埋め込む。YAML 評価しない** | **長文 prose の文字列値専用**。配列・dict には使わない |
+
+- **配列・構造値を書くときに `set --value-file` を使ってはいけない**（YAML ソース全体が 1 個の文字列として格納され schema 違反になる）。配列なら `set --value='[...]'` か `add --item=` を 1 件ずつ。
+- **`--value`/`--item` のインラインで足りるなら、一時ファイルを作らない**。`Write` ツールで `/tmp/*.yaml` 等を作ってから渡すのはアンチパターン。長文 prose 1 個を `--value-file` で渡す場合に限り一時ファイルが正当化される。
 
 PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/eventstorming/<session>.html` を再生成する（**AI は HTML を直接編集しない**）。チャットには DML 全文を流さず、構造化テーブル＋HTML パス案内に留める（Claude Code のチャット本文では SVG/Mermaid が描画されないため）。
 
@@ -137,9 +148,9 @@ HTML 更新・DML 抜粋は出さない。本文末尾は問い 1 つで終わ�
 - アクティブ: `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.dml.yaml` 1 ファイル
 - **基本操作は `dmlctl` 経由**：
   - 読み取り：`python3 scripts/dmlctl.py view <file> --view=<name>`（全文 Read を回避）
-  - 書き込み：`python3 scripts/dmlctl.py set/add/remove <file> --path=... --value=...`
+  - 書き込み：`python3 scripts/dmlctl.py set/add/remove <file> --path=... --value=...`（配列・dict は `--value='[...]'` か `add --item=` を使う。`set --value-file` は長文 prose 文字列専用で配列に使わない — 冒頭の「値の渡し方」表を参照）
   - 観点一覧：`dmlctl views` / `dmlctl checks`
-- 直接 `Read`/`Edit`/`Write` は PreToolUse フック（`scripts/hooks/block_direct_dml.py`）で自動ブロック。`Bash python3 dmlctl.py ...` のみが I/O 経路
+- 直接 `Read`/`Edit`/`Write` は PreToolUse フック（`scripts/hooks/block_direct_dml.py`）で自動ブロック。`Bash python3 dmlctl.py ...` のみが I/O 経路。**一時ファイルの作成も `--value`/`--item` のインラインで代替できるなら避ける**（`Write` で `/tmp/*.yaml` を作るのはアンチパターン）
 - フェーズ 2 で `dmlctl init <path> --session-id=... --domain=... [--goal=...]` で新規 DML を生成（テンプレートから session 入り空 DML を作成）
 - 書き出し後は **必ず** Agent tool で品質チェックを起動（`references/quality-check-agent.md`）。HTML は派生物なのでチェック不要
 - **ユーザーが DML を直接編集した場合**: 次ターン応答前に `dmlctl view` で観点別に再読み込みし変更を把握、必要なら品質チェックを起動
