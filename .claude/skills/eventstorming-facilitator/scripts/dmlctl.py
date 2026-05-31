@@ -172,6 +172,24 @@ def _parse_value(text: str):
     return yaml.safe_load(text)
 
 
+def _deep_merge(dst, patch: dict) -> None:
+    """patch（素の dict）を dst（ruamel map）へ **再帰的に** マージする。
+
+    - `patch[k]` が dict かつ `dst[k]` も dict → 中へ降りて再帰マージ
+      （例: `{lang: {states: {...}}}` を渡すと `lang.actors` 等を壊さず
+       `lang.states` だけ追加・更新できる）
+    - それ以外（スカラー・リスト・新規キー）→ `dst[k] = patch[k]` で置換
+
+    ネストした dict は残し、リーフ（スカラー/リスト）は丸ごと差し替える
+    という直感的な merge セマンティクス。dict 全体を置き換えたい場合は
+    merge ではなく `update --set-key` を使う。"""
+    for k, v in patch.items():
+        if isinstance(v, dict) and isinstance(dst.get(k), dict):
+            _deep_merge(dst[k], v)
+        else:
+            dst[k] = v
+
+
 def _read_value_or_file(args, value_attr: str, file_attr: str):
     """`--value` と `--value-file` の排他処理。値を Python 値で返す。
 
@@ -458,8 +476,7 @@ def cmd_update(args) -> int:
 
     for idx in matched_indices:
         elem = target_list[idx]
-        for k, v in patch.items():
-            elem[k] = v
+        _deep_merge(elem, patch)
     print(
         f"✅ {args.path}[{key}={expected!r}] を {len(matched_indices)} 件更新しました",
         file=sys.stderr,
@@ -581,7 +598,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument("--set-key", help="単一キー更新時のキー名")
     p_update.add_argument("--value", help="--set-key と組で使う YAML リテラル")
     p_update.add_argument("--value-file", help="--set-key と組で使う長文ファイル")
-    p_update.add_argument("--merge-yaml", help="dict を YAML リテラルで指定し対象要素にマージする")
+    p_update.add_argument("--merge-yaml", help="dict を YAML リテラルで指定し対象要素に再帰マージする（nested dict は保持、リーフは置換）")
     p_update.add_argument("--allow-multiple", action="store_true", help="複数マッチを許容して全件更新")
     p_update.add_argument("--no-postprocess", action="store_true")
     p_update.set_defaults(func=cmd_update)
