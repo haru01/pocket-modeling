@@ -228,6 +228,24 @@ def policies(model: dict, *, ctx: str | None = None, **_) -> Any:
     return {"policies": pols}
 
 
+def top_level_keys(model: dict, **_) -> Any:
+    """トップレベルキーと各要素数だけを返す（最小スライス・「何が入ってるか」確認用）。"""
+    summary: dict[str, Any] = {}
+    for key, value in model.items():
+        if isinstance(value, list):
+            summary[key] = f"list[{len(value)}]"
+        elif isinstance(value, dict):
+            summary[key] = f"dict[{len(value)} keys]"
+        else:
+            summary[key] = type(value).__name__
+    return {"top_level_keys": summary}
+
+
+def full(model: dict, **_) -> Any:
+    """全文をそのまま返す（安全弁・サイズ警告は呼び出し側で）。"""
+    return model
+
+
 # ============================================================
 # レジストリ（dmlctl view --view=<name> で参照される）
 # ============================================================
@@ -247,4 +265,6 @@ VIEWS: dict[str, Callable[..., Any]] = {
     "queries": queries,
     "scenarios": scenarios,
     "policies": policies,
+    "top-level-keys": top_level_keys,
+    "full": full,
 }

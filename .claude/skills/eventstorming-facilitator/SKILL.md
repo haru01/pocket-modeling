@@ -7,7 +7,7 @@ description: Facilitate DDD domain modeling sessions via EventStorming conversat
 
 会話でドメインイベントを発見し DML（Domain Modeling Language）に情報圧縮する。**`docs/eventstorming/<session>.dml.yaml` 1 ファイルがモデル唯一の真実源**（v5 以降）。散文（`narratives` — v8 で旧 `story:` を統合、`kind: happy`/`alt` で区別）・次のアクション（`actions`）・オープンクエスチョン（`questions`）・BC 散文（`contexts[].description`）・リードモデル（`queries`）・意思決定ログ（`decisions`）・集約カード（`aggregates`）・コンテキスト言語（`contexts[].lang`）・依存方向（`contexts[].up/dn`）はすべて DML 内のトップレベル項目として保持される。`.md` は廃止された。
 
-AI は **`scripts/dmlctl.py` 経由で観点別スライスだけ読み書き** する（全文 `Read`/`Edit` は避ける）。`dmlctl view --view=<name>` で必要な観点だけを取得、`dmlctl set/add/remove` で構造化された編集を行う。直接 `Edit` で書き換えるのも可能だが、テキストサイズが大きいと context を圧迫するため小さな変更でも dmlctl を優先する。
+AI は **`scripts/dmlctl.py` 経由でしか** DML を読み書きできない（PreToolUse フック `hooks/block_direct_dml.py` が `Read`/`Edit`/`Write` を技術的にブロック）。新規作成は `dmlctl init`、参照は `dmlctl view --view=<name>`（観点別スライス）、編集は `dmlctl set/add/remove/update`。長文は `--value-file` / `--item-file`、リスト要素の更新は `dmlctl update --where=<key=value>` を使う。dmlctl 経由の書き込みは内部で build + validate を自動実行する（`--no-postprocess` で抑止可能）。
 
 PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/eventstorming/<session>.html` を再生成する（**AI は HTML を直接編集しない**）。チャットには DML 全文を流さず、構造化テーブル＋HTML パス案内に留める（Claude Code のチャット本文では SVG/Mermaid が描画されないため）。
 
@@ -18,7 +18,7 @@ PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/even
 ## ワークフロー（9フェーズ）
 
 各フェーズの「書き出し対象」は **`.dml.yaml` のトップレベルフィールド**。AI は dmlctl 経由
-（`set` / `add` / `remove`）で更新する。直接 Edit も可だが context 節約のため dmlctl 優先。
+（`init` / `set` / `add` / `remove` / `update`）で更新する。直接 `Read`/`Edit`/`Write` は PreToolUse フックで自動ブロックされるため不可。
 
 | フェーズ | 書き出し対象（`.dml.yaml` フィールド） |
 |---------|--------------------------------------|
@@ -46,7 +46,14 @@ PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/even
 - **`[?]` を残す** — 迷い・矛盾・未確認はすべてマーク。推測で埋めない。選択肢が見えてきたら `decisions[]` に昇格
 - **`？` シグナル** — ユーザーが `？` を送ったら判断の軸を2〜3点提示（押しつけない）
 - **「おまかせ」シグナル** — 合理的なデフォルトを判断理由1行付きで選んで進める
-- **ポイント解説原則** — DDD／EventStorming の専門用語（EVT / CMD / POLICY / AGG / BC / SAME-TX / EVENTUAL-TX / ACL / Conformist など）が**初出のとき**は、`references/term-glossary.md` を引いて **「💡 用語名 ＝ 1 文の平易な解説 ＋ 今回のドメインからの具体例」** の形で 1 行添える。既出は繰り返さない。意思決定の議論では `why`/`why_not` を**業務文脈の言葉**で引き出し、抽象用語（「責務違反」「DDD 的に正しい」等）だけで終わらせない（良し悪し例: `references/term-glossary.md`）
+- **ポイント解説原則** — DDD／EventStorming の専門用語（EVT / CMD / POLICY / AGG / BC / SAME-TX / EVENTUAL-TX / ACL / Conformist など）が**初出のとき**は、`references/term-glossary.md` を引いて **2 行構成** で簡潔に添える。
+  - **1 行目**: 「💡 **用語名** ＝ <日常の業務の言葉で 1 文。他の DDD／専門用語に依存しない>」
+  - **2 行目**: 「例: <今回のドメインから「⚪️が起きたら△△する」形の具体例>」
+  - **NG（専門用語で専門用語を説明）**: 「POLICY ＝ EVENTUAL-TX を表す反応」「BC ＝ Ubiquitous Language の境界」
+  - **OK（業務語で言い切る）**: 「POLICY ＝ ある出来事が起きたら自動で次の処理が走るという約束事。例: 注文が確定したら在庫を引き当てる」
+  - **1 ターンに 1〜2 用語まで**。3 つ以上重なる場合は、今のその問いに直結する 1 つだけに絞る（用語が多いと問いがぼやける）
+  - **ユーザーが「もっとわかりやすく／噛み砕いて／？」と求めたら**、抽象定義をやめて **比喩・対比・小さな表** で再説明する（パターン: `references/term-glossary.md` §「噛み砕きパターン」）
+  - 既出は繰り返さない。意思決定の議論では `why`/`why_not` を**業務文脈の言葉**で引き出し、抽象用語（「責務違反」「DDD 的に正しい」等）だけで終わらせない（良し悪し例: `references/term-glossary.md`）
 - **毎ターン末尾** に `> 迷ったら \`？\` を送ってください`
 
 ### ② チャット出力フォーマット
@@ -116,7 +123,7 @@ HTML 更新・DML 抜粋は出さない。本文末尾は問い 1 つで終わ�
 
 ### ③ HTML 出力（AI は触らない）
 
-- **トリガー**: `.dml.yaml` を Write/Edit（dmlctl 経由 or 直接）→ PostToolUse hook → `dist/eventstorming/<session>.html` 再生成
+- **トリガー**: dmlctl 経由の書き込み（`init` / `set` / `add` / `remove` / `update`）→ dmlctl 自身が build + validate を自動実行 → `dist/eventstorming/<session>.html` 再生成。直接 `Edit`/`Write` は PreToolUse フックで自動ブロック
 - **出力先**: `dist/eventstorming/`（`.dml.yaml` は `docs/`、HTML は `dist/`）
 - **手動ビルド/全件/監視**: `python3 scripts/eventstorming_build.py <session>.dml.yaml` ／ `--all` ／ `--watch`
 - **フェーズ2完了時のみ** `Bash open dist/eventstorming/<session>.html`。自動リロードはしない
@@ -131,8 +138,8 @@ HTML 更新・DML 抜粋は出さない。本文末尾は問い 1 つで終わ�
   - 読み取り：`python3 scripts/dmlctl.py view <file> --view=<name>`（全文 Read を回避）
   - 書き込み：`python3 scripts/dmlctl.py set/add/remove <file> --path=... --value=...`
   - 観点一覧：`dmlctl views` / `dmlctl checks`
-- 直接 `Edit` も可だがテキストサイズが大きいときは dmlctl 優先（context 節約のため）
-- フェーズ 2 で `.dml.yaml` を `Write` 新規作成（テンプレ: `references/template.dml.yaml`）
+- 直接 `Read`/`Edit`/`Write` は PreToolUse フック（`scripts/hooks/block_direct_dml.py`）で自動ブロック。`Bash python3 dmlctl.py ...` のみが I/O 経路
+- フェーズ 2 で `dmlctl init <path> --session-id=... --domain=... [--goal=...]` で新規 DML を生成（テンプレートから session 入り空 DML を作成）
 - 書き出し後は **必ず** Agent tool で品質チェックを起動（`references/quality-check-agent.md`）。HTML は派生物なのでチェック不要
 - **ユーザーが DML を直接編集した場合**: 次ターン応答前に `dmlctl view` で観点別に再読み込みし変更を把握、必要なら品質チェックを起動
 
@@ -209,11 +216,11 @@ DML は **`docs/eventstorming/<session>.dml.yaml`** 1 ファイルに **YAML 直
 ## DML 出力タイミング（YAML-only）
 
 すべての更新は **`.dml.yaml` 1 ファイル** に対して行う。書き込み手段は `dmlctl set/add/remove`
-（推奨）または直接 `Edit`。
+（必須・直接 `Edit`/`Write` はフックで遮断）。
 
 | タイミング | 更新するフィールド |
 |-----------|--------------------|
-| フェーズ 2 完了 | `session` / `narratives[]`（`id`/`title`/`kind`/`entry`/`prose` — `kind: happy` 1 本 + `kind: alt` 2〜3 本、prose は粗で可）（初回 `Write`、テンプレ: `references/template.dml.yaml`） → `Bash open <session>.html` 初回起動 |
+| フェーズ 2 完了 | `session` / `narratives[]`（`id`/`title`/`kind`/`entry`/`prose` — `kind: happy` 1 本 + `kind: alt` 2〜3 本、prose は粗で可）（初回 `dmlctl init` → 続けて `dmlctl set narratives` 等で narratives を追加） → `Bash open <session>.html` 初回起動 |
 | フェーズ 3 完了 | `scenarios[]` 仮 entries ＋ `contexts[].lang` の新規識別子 |
 | フェーズ 4 完了 | `scenarios[]`（`next` / `brs[].terminal` を含む）／ `policies[]` ／ `narratives[].entry`（happy + 代替 1〜2）／ `contexts[].lang` ／ `contexts[].up`/`dn` ／ `contexts[].description`（BC 散文） |
 | フェーズ 4.5 完了 | `contexts[].lang` を充実 |
