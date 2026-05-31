@@ -14,10 +14,9 @@ EventStorming／DDD ドメインモデリングのファシリテータースキ
 ## 最重要の運用原則
 
 - **DML が唯一の真実源**。HTML は派生物なので絶対に手で編集しない。`.md` 入力サポートは v5 で廃止済み（YAML-only）
-- **大きい DML を全文 Read/Edit しない**。`scripts/dmlctl.py` 経由で観点別スライスだけ読み書きしてコンテキスト消費を抑える。直接 `Edit` も可だが小さな変更でも dmlctl を優先
-- **PostToolUse hook が自動で再生成・検証**する（`.claude/settings.json` 参照）。`docs/eventstorming/*.dml.yaml` を Write/Edit すると以下が走る：
-  1. `eventstorming_build.py <path>` で `dist/eventstorming/*.html` を再生成
-  2. `validate_dml.py <path>` で JSON Schema 検証（違反は stderr に出力し exit 2）
+- **DML への I/O は `scripts/dmlctl.py` 経由のみ**。`docs/eventstorming/*.dml.yaml` への `Read`/`Edit`/`Write` は **PreToolUse フック（`scripts/hooks/block_direct_dml.py`）が技術的にブロック**する（exit 2、stderr で dmlctl 代替コマンドを案内）。新規作成は `dmlctl init`、参照は `dmlctl view`、編集は `dmlctl set/add/remove/update`。手動編集が必要な場合は Claude Code の外のエディタを使う
+- **dmlctl 経由の書き込みは build + validate を自動実行**（PreToolUse で Write/Edit がブロックされるため PostToolUse hook が走らない代わり、dmlctl 自身が後処理を回す）。テストで抑止するときは `--no-postprocess`
+- **PostToolUse hook** は安全網として残置（直接 Write/Edit が万一すり抜けた場合の build + validate）。通常は dmlctl 経由なので発火しない
 - AI は HTML を直接編集しない。チャットに DML 全文を流さない（フェーズ完了テンプレで抜粋のみ）
 
 ## YAML キーの命名規約
@@ -37,20 +36,23 @@ EventStorming／DDD ドメインモデリングのファシリテータースキ
 python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py views          # view 名一覧
 python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py view <file> --view=<name> [--name=... --id=... --ctx=...]
 
-# DML 構造化編集（コメント・引用形式を維持）
-python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py set    <file> --path=<a.b.c>   --value=<yaml-literal>
-python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py add    <file> --to=<list-path> --item=<yaml-literal>
-python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py remove <file> --path=<a.b.c>
+# DML 新規作成（テンプレートから session 入り空 DML を生成）
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py init <file> --session-id=<id> --domain=<name> [--goal=...] [--started-at=...]
+
+# DML 構造化編集（コメント・引用形式を維持、書き込み後 build+validate 自動実行）
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py set    <file> --path=<a.b.c>   (--value=<yaml-lit> | --value-file=<path>)
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py add    <file> --to=<list-path> (--item=<yaml-lit>  | --item-file=<path>)
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py update <file> --path=<list-path> --where=<key=value> (--set-key=... --value=... | --merge-yaml=...)
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py remove <file> --path=<a.b.c> [--where=<key=value>]
 
 # 構造チェック（LLM 不要・全観点は `dmlctl checks` で一覧）
 python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py check <file> --check=<name>
 
-# 単体検証 / HTML ビルド（hook が自動で呼ぶので手動実行は補助用途）
-python3 .claude/skills/eventstorming-facilitator/scripts/validate_dml.py <file>.dml.yaml
-python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <file>.dml.yaml
-python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py --all       # 全件
-python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py --watch     # 監視モード
-python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <file> --artifact --copy  # claude.ai Artifact 用、macOS
+# 単体検証 / HTML ビルド（dmlctl 経由なら自動で走るので手動は補助）
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py validate <file>
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py build <file>
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py build --all          # 全件
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py build <file> --watch  # 監視モード
 ```
 
 意味チェック（観点別 LLM 起動）は Agent tool で `.claude/skills/eventstorming-facilitator/references/checks/*.md` の 6 観点を 1 つずつ呼ぶ。詳細は `references/quality-check.md`。
