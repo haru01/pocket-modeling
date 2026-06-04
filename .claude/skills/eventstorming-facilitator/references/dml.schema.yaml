@@ -35,6 +35,11 @@
 #   - ネストの短いキー（name/type/vision/note/lang/mod/qry/cmd/evt/agg/pol 等）は維持
 #   - 主なネスト略語: ctx / aggs / sub(s) / up / dn / rel / prRoles / brMode / brs /
 #     cond / err / errs / resp / tech / trg / trgs / evts / cmds / lang / mod / via
+# 型の方針:
+#   - 「単数を表すキー＝文字列／複数を表すキー＝配列」が基本（例: queries[].users=文字列、
+#     queries[].sources / scenarios[].pol / attrs / params=配列）。
+#   - 例外（単数/複数どちらも許す oneOf）: brs[].pol と transition.to。
+#     scenarios[].pol は配列のみなので、brs[].pol との非対称に注意。
 
 $schema: "https://json-schema.org/draft/2020-12/schema"
 $id: "https://pocket-modeling/schemas/dml.schema.yaml"
@@ -362,7 +367,7 @@ $defs:
       errs:
         type: array
         items: { $ref: "#/$defs/error" }
-      pol:
+      pol:                                      # ⚠ scenario 直下は配列のみ（brs[].pol は文字列/配列の oneOf。非対称に注意）
         type: array
         items: { $ref: "#/$defs/pascalCase" }
       note: { type: string }
@@ -520,8 +525,8 @@ $defs:
       name: { $ref: "#/$defs/pascalCase" }      # QRY 名（PascalCase）
       ctx: { $ref: "#/$defs/contextName" }      # 所属 BC
       purpose: { type: string }                 # 何のために存在する読み取りビューか
-      users: { type: string }                   # 利用者（業務ロール）
-      sources:                                  # ソース AGG / EVT 等
+      users: { type: string }                   # ⚠ 文字列（複数ロールは「受付・医師」と 1 文字列に列挙。配列にしない）
+      sources:                                  # ⚠ 配列（複数 AGG/EVT）。users（文字列）と非対称な点に注意
         type: array
         items: { type: string }
       formula: { type: string }                 # 算出式・絞り込み条件（自然文）

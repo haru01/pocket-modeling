@@ -46,9 +46,19 @@ def load_schema(schema_path: Path = SCHEMA_PATH) -> dict | None:
 
 
 def _format_error(err) -> str:
-    """jsonschema のエラーを `scenarios/3/cmd: <message>` 形式に整形する。"""
+    """jsonschema のエラーを `scenarios/3/cmd: <message>` 形式に整形する。
+
+    type 違反のときは「期待: array / 実際: str」のヒントを添える。
+    配列の場所に文字列を渡した等（scenarios[].pol / queries[].sources など、キー名から
+    型を推測しづらい非対称）を自己説明的にして書き直しの往復を減らす。
+    """
     loc = "/".join(str(p) for p in err.absolute_path) or "(root)"
-    return f"{loc}: {err.message}"
+    hint = ""
+    if err.validator == "type":
+        exp = err.validator_value
+        exp = ", ".join(exp) if isinstance(exp, list) else exp
+        hint = f"（期待: {exp} / 実際: {type(err.instance).__name__}）"
+    return f"{loc}: {err.message}{hint}"
 
 
 def validate_dml_text(dml_text: str, schema: dict | None = None) -> list[str]:

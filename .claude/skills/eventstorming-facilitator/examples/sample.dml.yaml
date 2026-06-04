@@ -238,6 +238,9 @@ aggregates:
         terminal: true
 
 scenarios:
+  # pol の書き方（型が非対称な点に注意）:
+  #   scenario 直下は配列のみ      → pol: [RequestPayment, NotifyParticipant]
+  #   brs[].pol は文字列でも配列でも可 → pol: RequestPayment / pol: [A, B]
   - name: 主催者がイベントを作成する
     ctx: event-planning
     actor: Organizer
@@ -393,3 +396,14 @@ decisions:
         why_not: "申込ライフサイクル管理は participation BC の責務内で十分。複雑性に見合う独立性が無い"
     affects: [Participation, NotifyParticipant]
     note: "繰上の通知タイミングや優先順序ルールは別途検討（H7 にて）"
+
+# リードモデル候補カード。粒度ルール: (a) 計算値を含む / (b) 複数集約・複数 BC 横断 /
+# (c) BULK（一覧）のいずれか。単一集約への単純ルックアップは載せない。
+# 型の非対称に注意: users は文字列（複数ロールは 1 文字列に列挙）／ sources は配列。
+queries:
+  - name: RemainingCapacityView
+    ctx: participation
+    purpose: "イベントごとの残席数（定員 − 確定申込数）を申込導線に表示する計算値ビュー"
+    users: 参加者・主催者              # ← 文字列（複数ロールは 1 文字列に列挙）
+    sources: [Event, Participation]    # ← 配列（複数 AGG 横断）
+    formula: "Event.capacity − count(Participation where status = APPROVED)"
