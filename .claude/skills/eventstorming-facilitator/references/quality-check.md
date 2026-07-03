@@ -2,8 +2,8 @@
 
 DML 品質チェックは **2 段階**で行う：
 
-1. **構造チェック（Python のみ）** — `dmlctl check <file> --check=<name>` で参照整合性・
-   命名・到達可能性を機械的に判定する。LLM は使わない。
+1. **構造チェック（Python のみ）** — `dmlctl check <file> --all` で全観点を一括判定（参照整合性・
+   命名・到達可能性）。個別に見るときは `--check=<name>`。LLM は使わない。
 2. **意味チェック（観点別フィルタ + LLM）** — `dmlctl view <file> --view=<name>` で必要な
    スライスだけを切り出し、それを `references/checks/<name>.md` のプロンプトで LLM に渡す。
 
@@ -27,12 +27,15 @@ DML 品質チェックは **2 段階**で行う：
 実行例：
 
 ```bash
-python3 scripts/dmlctl.py check docs/eventstorming/<session>.dml.yaml --check=orphan_agg
+python3 scripts/dmlctl.py check docs/eventstorming/<session>.dml.yaml --all         # 全観点を一括
+python3 scripts/dmlctl.py check docs/eventstorming/<session>.dml.yaml --check=orphan_agg  # 個別観点
 python3 scripts/dmlctl.py checks  # 観点名の一覧
 ```
 
-各チェックは JSON で `{ "check": ..., "count": N, "findings": [...] }` を stdout に出す。
-exit code は違反 0 件＝0、それ以外＝1。
+個別チェックは JSON で `{ "check": ..., "count": N, "findings": [...] }` を stdout に出す。
+`--all` は `{ "mode": "all", "checks_run", "checks_with_findings", "total_findings", "clean": [...], "results": [...] }`
+（違反ゼロの観点は `clean` に名前だけ、違反ありは `results` に詳細）。
+exit code はいずれも違反 0 件＝0、それ以外＝1。
 
 ---
 
@@ -66,10 +69,8 @@ exit code は違反 0 件＝0、それ以外＝1。
 ## チェック起動の標準フロー
 
 ```bash
-# 1) 構造チェック（全観点）
-for c in $(python3 scripts/dmlctl.py checks); do
-    python3 scripts/dmlctl.py check <session>.dml.yaml --check=$c
-done
+# 1) 構造チェック（全観点を一括実行。違反があれば exit 1 + results に詳細）
+python3 scripts/dmlctl.py check <session>.dml.yaml --all
 
 # 2) 意味チェック（Agent 起動）— quality-check-agent.md / causal-check-agent.md 参照
 ```

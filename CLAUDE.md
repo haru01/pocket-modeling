@@ -46,7 +46,8 @@ python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py update <file>
 python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py remove <file> --path=<a.b.c> [--where=<key=value>]
 
 # 構造チェック（LLM 不要・全観点は `dmlctl checks` で一覧）
-python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py check <file> --check=<name>
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py check <file> --all           # 全観点を一括（clean/results サマリ, 違反で exit 1）
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py check <file> --check=<name>  # 個別観点
 
 # 単体検証 / HTML ビルド（dmlctl 経由なら自動で走るので手動は補助）
 python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py validate <file>

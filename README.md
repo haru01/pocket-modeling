@@ -85,7 +85,8 @@ python3 $SKILL/dmlctl.py remove <file> --path=<a.b.c>
 
 # 構造チェック（LLM 不要）
 python3 $SKILL/dmlctl.py checks                                  # check 名一覧
-python3 $SKILL/dmlctl.py check <file> --check=<name>
+python3 $SKILL/dmlctl.py check <file> --all                      # 全観点を一括実行（clean/results サマリ）
+python3 $SKILL/dmlctl.py check <file> --check=<name>             # 個別観点
 
 # 検証 / ビルド（通常は hook が自動実行。手動は補助用途）
 python3 $SKILL/validate_dml.py <file>.dml.yaml

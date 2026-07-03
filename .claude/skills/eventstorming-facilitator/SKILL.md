@@ -65,7 +65,7 @@ PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/even
 | **4.6. 目的・背景・制約** | **`aggregates[]` の `name`/`ctx`/`purpose`/`background`/`constraints[]`/`states` ＋ `contexts[].description`（BC 散文）** |
 | **5. 不変条件・エラー＋属性・イベントペイロード** | **`scenarios[].rules[]`（rule/why）／`scenarios[].errs[]`（cond/err/when）／`aggregates[].transitions[]`／`aggregates[].attrs[]`／`aggregates[].events[].params[]` ＋ `queries[]`（リードモデル候補）** |
 | **6. 意思決定ログ** | **`decisions[]`**（id/topic/chosen/options/affects・options ごとに why/why_not） |
-| 7. 整合性チェック → 出力 | `dmlctl check` を全観点実行 → 観点別 LLM 評価 → 確定版 `.dml.yaml` |
+| 7. 整合性チェック → 出力 | `dmlctl check --all` で全構造観点を一括実行 → 観点別 LLM 評価 → 確定版 `.dml.yaml` |
 
 `.dml.yaml` の編集ごとに HTML は自動再生成されるが、**ブラウザの自動リロードはしない**（必要に応じて手動）。
 
@@ -263,12 +263,12 @@ DML は **`docs/eventstorming/<session>.dml.yaml`** 1 ファイルに **YAML 直
 | **フェーズ 4.6 完了** | **`aggregates[]` の `name`/`ctx`/`purpose`/`background`/`constraints[]`/`states`、`contexts[].aggs` に AGG 名** |
 | **フェーズ 5 完了** | **`scenarios[].rules[]`（rule/why）／`scenarios[].errs[]`（cond/err/when）／`aggregates[].transitions[]`／`aggregates[].attrs[]`／`aggregates[].events[].params[]` ＋ `queries[]`** |
 | **フェーズ 6 完了** | **`decisions[]`**（id/topic/chosen/options/affects・options ごとに why/why_not）。`questions[].status` を closed にして `decision_id` を紐付け |
-| フェーズ 7（最終） | `dmlctl check` 全観点クリア → 観点別 LLM 評価 → `actions[].done` 更新 |
+| フェーズ 7（最終） | `dmlctl check --all` で全構造観点クリア → 観点別 LLM 評価 → `actions[].done` 更新 |
 | ユーザーが「保存して」 | 即座に該当フィールドに反映 |
 
 **書き出し後の品質チェック（必須）**: 詳細は `references/quality-check.md`。
 
-1. **構造チェック**（LLM 不要）— `dmlctl check <file> --check=<name>` を全観点で
+1. **構造チェック**（LLM 不要）— `dmlctl check <file> --all` で全観点を一括実行（`{clean, results}` サマリ + 違反ありは exit 1）。個別に見たいときは `--check=<name>`
 2. **意味チェック**（観点別 Agent 起動）— `references/checks/*.md` を 1 観点ずつ
 
 **途中保存と再開**: `session.status` フィールドにフェーズ進捗を書く（例: `"Phase 4.6 完了"`）。

@@ -596,10 +596,44 @@ def cmd_update(args) -> int:
 
 
 def cmd_check(args) -> int:
+    if args.all and args.check:
+        print("❌ --all と --check は同時指定できません（片方だけ指定）", file=sys.stderr)
+        return 2
+    if not args.all and not args.check:
+        print("❌ check には --check=<name> または --all が必要", file=sys.stderr)
+        return 2
+    model = load_model(Path(args.file))
+
+    if args.all:
+        clean: list[str] = []
+        results = []
+        total = 0
+        for name, fn in CHECKS.items():
+            findings = fn(model)
+            if findings:
+                total += len(findings)
+                results.append({
+                    "check": name,
+                    "count": len(findings),
+                    "findings": [finding_to_dict(f) for f in findings],
+                })
+            else:
+                clean.append(name)
+        payload = {
+            "mode": "all",
+            "checks_run": len(CHECKS),
+            "checks_with_findings": len(results),
+            "total_findings": total,
+            "clean": clean,
+            "results": results,
+        }
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2))
+        sys.stdout.write("\n")
+        return 0 if total == 0 else 1
+
     if args.check not in CHECKS:
         print(f"❌ 未知の check: {args.check}\n   利用可能: {', '.join(CHECKS)}", file=sys.stderr)
         return 1
-    model = load_model(Path(args.file))
     findings = CHECKS[args.check](model)
     payload = {
         "check": args.check,
@@ -721,7 +755,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_check = sub.add_parser("check", help="構造チェック観点を実行する")
     p_check.add_argument("file")
-    p_check.add_argument("--check", required=True, help="check 名（dmlctl checks で一覧）")
+    p_check.add_argument("--check", help="check 名（dmlctl checks で一覧）")
+    p_check.add_argument("--all", action="store_true", help="全構造 check を一括実行しサマリを返す")
     p_check.set_defaults(func=cmd_check)
 
     p_validate = sub.add_parser("validate", help="JSON Schema 検証を実行する（validate_dml.py のラッパー）")
