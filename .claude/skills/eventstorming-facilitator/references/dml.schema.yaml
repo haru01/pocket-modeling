@@ -361,6 +361,9 @@ $defs:
             additionalProperties: { type: string }                # narratives[].id → 次 scenario.name
             minProperties: 1
       agg: { $ref: "#/$defs/pascalCase" }
+      pivotal: { type: boolean }                # v9・節目イベント宣言。この scenario の evt がタイムラインを
+                                                # 大きく区切る Pivotal Event であることを示す（BC 境界候補の手がかり。
+                                                # 1 モデルに 2〜4 個が目安。HTML §3 で強調描画）
       rules:
         type: array
         items: { $ref: "#/$defs/rule" }

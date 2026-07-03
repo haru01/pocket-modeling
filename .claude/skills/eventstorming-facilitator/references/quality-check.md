@@ -33,6 +33,7 @@ DML 品質チェックは **2 段階**で行う：
 | `err_name_quality` | errs[].err が数字入りコード風 or 1 語のみの汎用語 | 業務語彙の複合語エラー名に |
 | `bc_vocabulary_collision` | lang 辞書の同名異義（同 EN 別ラベル）/ 異名同義（同ラベル別 EN） | 識別子統一 or note で Conformist/ACL 明示 |
 | `crud_cmd_naming` | CMD が CRUD 風接頭辞（Create/Add/Update/Delete/Get/Set 等） | 業務行為の動詞に言い換え |
+| `subdomain_classification` | コアドメイン蒸留の未実施（domains[].subs 未定義・contexts[].sub 未設定/参照切れ・CORE 0 件・全件 CORE） | domains[].subs に CORE/SUPPORTING/GENERIC を定義し contexts[].sub で割り当て |
 
 実行例：
 

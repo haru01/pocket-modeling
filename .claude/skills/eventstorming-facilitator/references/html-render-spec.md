@@ -123,6 +123,7 @@ python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py 
 6. 特殊描画：
    - POLICY が `trgs`（複数トリガー join）を持つ → 前 Lane の `joins_into_next=True` を立て、レーン遷移時に **BPMN シンクバー（`.sync-bar` + Σ N）** を描画
    - POLICY の `bulk: true` → 該当 Note を `.note.fanout` クラスで描画し、右上 `× N` バッジ + 3 枚スタック
+   - `scenarios[].pivotal: true` の EVT（evt / brs[].evt。policy.evt が同名の場合も含む） → 該当 Note を **`.note.pivotal`** クラスで描画し、左上 `⭐ 節目` バッジ + 強調枠（節目イベント）
 7. 同じ BC が複数回出現しても **同じ grid-row に統合**
 8. 横幅が画面を超える場合は **`overflow-x: auto`** で横スクロール
 
@@ -373,6 +374,7 @@ watch(in_dir, out_dir)                 # 監視モード
 | `scenarios[].brs[].terminal` | 当該 `narratives[].id` と一致するフローはこの brs 発火後に終端 |
 | `policies[].trgs.evts` | 前 Lane の `joins_into_next=True`。`.sync-bar` + Σ N 描画 |
 | `policies[].bulk: true` | 該当 Note に `.note.fanout` + 右上 `× N` バッジ |
+| `scenarios[].pivotal: true` | 発火 EVT の Note に `.note.pivotal` + 左上 `⭐ 節目` バッジ（同名 EVT を policy が emit する場合も強調） |
 | `contexts[].name` | `<div class="lane-name bc-default-N">{name}</div>` |
 | `aggregates[].purpose` / `background` / `constraints` | `.purpose-section` / `.background-section` / `.constraints-section` |
 | `aggregates[].attrs[]` | `table.attr-table` |

@@ -974,6 +974,110 @@ def crud_cmd_naming(model: dict) -> list[Finding]:
     return findings
 
 
+def subdomain_classification(model: dict) -> list[Finding]:
+    """コアドメイン蒸留（Core/Supporting/Generic 分類）の実施状況を検査する。
+
+    戦略 DDD の「どこに投資するか」を決める分類が DML に残っているかの構造チェック：
+      1. contexts[] があるのに domains[].subs[] / contexts[].sub が全く無い → 分類未実施
+      2. contexts[].sub が未設定の BC がある → 所属サブドメイン未割当
+      3. contexts[].sub が domains[].subs[].name に存在しない → 参照切れ
+      4. CORE_SUBDOMAIN が 1 件も無い → コアが特定されていない
+      5. サブドメインが複数あるのに全件 CORE → 蒸留されていない（優先順位がつかない）
+
+    type の値は CORE_SUBDOMAIN / CORE_DOMAIN（後方互換）等の両表記を許容し、
+    接頭辞（CORE / SUPPORTING / GENERIC）で正規化して判定する。
+    """
+    contexts = [c for c in model.get("contexts") or [] if isinstance(c, dict)]
+    if not contexts:
+        return []
+
+    # domains[].subs[] を name → type(正規化済み) に展開
+    sub_types: dict[str, str] = {}
+    for d in model.get("domains") or []:
+        if not isinstance(d, dict):
+            continue
+        for s in d.get("subs") or []:
+            if isinstance(s, dict) and s.get("name"):
+                raw = s.get("type") or ""
+                sub_types[s["name"]] = raw.split("_")[0] if raw else ""
+
+    ctx_subs = [c.get("sub") for c in contexts]
+
+    findings: list[Finding] = []
+
+    # 1. 分類が丸ごと未実施
+    if not sub_types and not any(ctx_subs):
+        findings.append(
+            Finding(
+                kind="subdomain_classification",
+                path="domains",
+                message=(
+                    "サブドメイン分類（コアドメイン蒸留）が未実施です。"
+                    "domains[].subs[] に CORE/SUPPORTING/GENERIC を定義し、"
+                    "各 contexts[].sub で所属を割り当ててください"
+                ),
+                slice={"contexts": [c.get("name") for c in contexts]},
+            )
+        )
+        return findings
+
+    # 2. / 3. contexts[].sub の未設定・参照切れ
+    for i, ctx in enumerate(contexts):
+        name = ctx.get("name") or ""
+        sub = ctx.get("sub")
+        if not sub:
+            findings.append(
+                Finding(
+                    kind="subdomain_classification",
+                    path=f"contexts[{i}]",
+                    message=f"BC '{name}' に所属サブドメイン（sub）が未設定です",
+                    slice={"ctx": name, "known_subs": sorted(sub_types)},
+                )
+            )
+        elif sub not in sub_types:
+            findings.append(
+                Finding(
+                    kind="subdomain_classification",
+                    path=f"contexts[{i}].sub",
+                    message=(
+                        f"BC '{name}' の sub '{sub}' が domains[].subs[].name に存在しません"
+                        "（typo か domains 側の定義漏れ）"
+                    ),
+                    slice={"ctx": name, "sub": sub, "known_subs": sorted(sub_types)},
+                )
+            )
+
+    # 4. / 5. CORE の特定状況（subs が定義済みの場合のみ判定）
+    if sub_types:
+        core_count = sum(1 for t in sub_types.values() if t == "CORE")
+        if core_count == 0:
+            findings.append(
+                Finding(
+                    kind="subdomain_classification",
+                    path="domains",
+                    message=(
+                        "CORE サブドメインが 1 件もありません。"
+                        "「間違えると事業が成り立たない領域」を 1 つ特定してください"
+                    ),
+                    slice={"subs": sub_types},
+                )
+            )
+        elif len(sub_types) > 1 and core_count == len(sub_types):
+            findings.append(
+                Finding(
+                    kind="subdomain_classification",
+                    path="domains",
+                    message=(
+                        "全サブドメインが CORE です。蒸留されていない可能性があります"
+                        "（買ってくれば済む・真似すれば済む領域を SUPPORTING/GENERIC に降格）"
+                    ),
+                    slice={"subs": sub_types},
+                )
+            )
+
+    return findings
+
+
 # ============================================================
 # レジストリ
 # ============================================================
@@ -998,4 +1102,5 @@ CHECKS: dict[str, Callable[[dict], list[Finding]]] = {
     "err_name_quality": err_name_quality,
     "bc_vocabulary_collision": bc_vocabulary_collision,
     "crud_cmd_naming": crud_cmd_naming,
+    "subdomain_classification": subdomain_classification,
 }

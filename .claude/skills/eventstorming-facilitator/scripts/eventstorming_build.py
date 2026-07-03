@@ -73,6 +73,7 @@ class Note:
     label: str
     is_async: bool = False
     is_fanout: bool = False  # *> 後段。スタック描画 + ×N バッジ
+    is_pivotal: bool = False  # scenarios[].pivotal 由来。節目イベントの強調描画
 
 
 @dataclass
@@ -257,8 +258,30 @@ def _pick_active_branch(sc: dict, flow_id: str) -> dict | None:
     return brs[0]
 
 
+def _collect_pivotal_evts(model: dict) -> set[str]:
+    """scenarios[].pivotal: true の scenario が発火する EVT 名（evt / brs[].evt）を集める。
+
+    policy 経由で同名 EVT が描画されるケース（pol.evt が pivotal scenario の evt と一致）
+    でも強調が落ちないよう、Note 生成は「pivotal scenario への所属」ではなく
+    「EVT 名がこの集合に含まれるか」で判定する。
+    """
+    evts: set[str] = set()
+    for sc in model.get("scenarios") or []:
+        if not isinstance(sc, dict) or not sc.get("pivotal"):
+            continue
+        if sc.get("evt"):
+            evts.add(sc["evt"])
+        for br in sc.get("brs") or []:
+            if isinstance(br, dict) and br.get("evt"):
+                evts.add(br["evt"])
+    return evts
+
+
 def _scenario_steps_to_notes(
-    sc: dict, gloss: dict[str, str], active_br: dict | None = None
+    sc: dict,
+    gloss: dict[str, str],
+    active_br: dict | None = None,
+    pivotal_evts: set[str] | None = None,
 ) -> list[Note]:
     """1 つの SCENARIO ステップを Note リストに展開する。
 
@@ -268,7 +291,9 @@ def _scenario_steps_to_notes(
     `active_br` が指定された時はその evt のみを採用（フロー別描画）。
     指定なし時は従来動作: scenario.evt があればそれを採用、無ければ brs[] 全列挙
     （brMode=concurrent では 2 件目以降を fanout 化）。
+    `pivotal_evts` に含まれる EVT の付箋は is_pivotal=True で強調描画される。
     """
+    pivotal_evts = pivotal_evts or set()
     notes: list[Note] = []
     actor = sc.get("actor") or ""
     if actor and not (SKIP_SYSTEM_ACTOR and actor == "System"):
@@ -282,16 +307,17 @@ def _scenario_steps_to_notes(
         # フロー別描画: アクティブな brs.evt のみ
         ev = active_br.get("evt")
         if ev:
-            notes.append(Note(kind="event", label=localize(ev, gloss)))
+            notes.append(Note(kind="event", label=localize(ev, gloss), is_pivotal=ev in pivotal_evts))
     elif sc.get("evt"):
-        notes.append(Note(kind="event", label=localize(sc["evt"], gloss)))
+        ev = sc["evt"]
+        notes.append(Note(kind="event", label=localize(ev, gloss), is_pivotal=ev in pivotal_evts))
     elif sc.get("brs"):
         mode = sc.get("brMode", "exclusive")
         for i, br in enumerate(sc["brs"]):
             ev = br.get("evt")
             if not ev:
                 continue
-            n = Note(kind="event", label=localize(ev, gloss))
+            n = Note(kind="event", label=localize(ev, gloss), is_pivotal=ev in pivotal_evts)
             if mode == "concurrent" and i > 0:
                 n.is_fanout = True
             notes.append(n)
@@ -299,7 +325,7 @@ def _scenario_steps_to_notes(
 
 
 def _policy_steps_to_notes(
-    pol: dict, gloss: dict[str, str]
+    pol: dict, gloss: dict[str, str], pivotal_evts: set[str] | None = None
 ) -> list[Note]:
     """1 つの POLICY ステップを Note リストに展開する。
 
@@ -311,6 +337,7 @@ def _policy_steps_to_notes(
     bulk: true の場合 evt 付箋を fanout 化（×N スタック）。
     trgs（join）の表示は呼び出し側で前レーン `joins_into_next=True` として処理する。
     """
+    pivotal_evts = pivotal_evts or set()
     notes: list[Note] = []
     bulk = bool(pol.get("bulk"))
     notes.append(Note(kind="policy", label=localize(pol.get("name", ""), gloss)))
@@ -318,7 +345,8 @@ def _policy_steps_to_notes(
     if qry:
         notes.append(Note(kind="readmodel", label=localize(qry, gloss)))
     if pol.get("evt"):
-        n = Note(kind="event", label=localize(pol["evt"], gloss))
+        ev = pol["evt"]
+        n = Note(kind="event", label=localize(ev, gloss), is_pivotal=ev in pivotal_evts)
         if bulk:
             n.is_fanout = True
         notes.append(n)
@@ -347,6 +375,7 @@ def build_flows_from_dml(model: dict, glossary_index: dict[str, str]) -> list[Fl
     scenarios = model.get("scenarios") or []
     policies = model.get("policies") or []
     narratives = model.get("narratives") or []
+    pivotal_evts = _collect_pivotal_evts(model)
 
     scenarios_by_name: dict[str, dict] = {}
     for s in scenarios:
@@ -381,7 +410,7 @@ def build_flows_from_dml(model: dict, glossary_index: dict[str, str]) -> list[Fl
             if not pol_name or pol_name in visited:
                 continue
             visited.add(pol_name)
-            pol_notes = _policy_steps_to_notes(pol, glossary_index)
+            pol_notes = _policy_steps_to_notes(pol, glossary_index, pivotal_evts=pivotal_evts)
             if not pol_notes:
                 continue
             pol_ctx = pol.get("ctx", "")
@@ -422,7 +451,9 @@ def build_flows_from_dml(model: dict, glossary_index: dict[str, str]) -> list[Fl
                 break
 
             active_br = _pick_active_branch(sc, flow_id)
-            notes = _scenario_steps_to_notes(sc, glossary_index, active_br=active_br)
+            notes = _scenario_steps_to_notes(
+                sc, glossary_index, active_br=active_br, pivotal_evts=pivotal_evts
+            )
             if notes:
                 ctx = sc.get("ctx", "")
                 if flow.lanes and ctx == ctx_box[0]:
@@ -657,6 +688,7 @@ def render_flows(flows: list[Flow]) -> str:
         '    <span class="legend-divider"></span>\n'
         '    <span class="note-mini event fanout-mini">×N (BULK)</span>\n'
         '    <span class="legend-sync">Σ N (Join)</span>\n'
+        '    <span class="note-mini event pivotal-mini">⭐ Pivotal (節目)</span>\n'
         "  </div>"
     )
 
@@ -733,6 +765,8 @@ def render_flow(flow: Flow) -> str:
             note_cls = f"note {note.kind}"
             if note.is_fanout:
                 note_cls += " fanout"
+            if note.is_pivotal:
+                note_cls += " pivotal"
             note_elements.append(
                 f'<div class="{note_cls}" style="grid-row: {row}; grid-column: {col};">'
                 f'<span class="kind">{kind_label}</span>{label_html}</div>'

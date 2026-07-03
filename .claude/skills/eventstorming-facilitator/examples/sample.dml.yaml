@@ -65,7 +65,7 @@ contexts:
         COMPLETED: 開催完了
     up: []
     dn:
-      - { ctx: participation, rel: Customer-Supplier, roles: [U, OHS], prRoles: [D, CF] }
+      - {ctx: participation, rel: Customer-Supplier, roles: [U, OHS], prRoles: [D, CF]}
 
   - name: participation
     type: FEATURE
@@ -104,9 +104,9 @@ contexts:
         APPROVED: 承認済
         CANCELLED: 参加キャンセル済
     up:
-      - { ctx: event-planning, rel: Customer-Supplier, roles: [D, CF], prRoles: [U, OHS] }
+      - {ctx: event-planning, rel: Customer-Supplier, roles: [D, CF], prRoles: [U, OHS]}
     dn:
-      - { ctx: payment, rel: Customer-Supplier, roles: [OHS, PL], prRoles: [ACL] }
+      - {ctx: payment, rel: Customer-Supplier, roles: [OHS, PL], prRoles: [ACL]}
 
   - name: payment
     type: SYSTEM
@@ -138,7 +138,7 @@ contexts:
         COMPLETED: 決済完了
         REFUNDED: 返金済
     up:
-      - { ctx: participation, rel: Customer-Supplier, roles: [D, ACL], prRoles: [U, OHS, PL] }
+      - {ctx: participation, rel: Customer-Supplier, roles: [D, ACL], prRoles: [U, OHS, PL]}
     dn: []
 
 aggregates:
@@ -151,27 +151,27 @@ aggregates:
       - "COMPLETED 状態への遷移は開催日時通過後のみ許可"
     states: [DRAFT, PUBLISHED, CANCELLED, COMPLETED]
     transitions:
-      - { from: DRAFT,     to: PUBLISHED, via: PublishEvent, when: "必須項目が揃いキャパシティ > 0" }
-      - { from: PUBLISHED, to: CANCELLED, via: CancelEvent }
-      - { from: PUBLISHED, to: COMPLETED, via: CompleteEvent, when: "開催日時通過後の主催者確定" }
+      - {from: DRAFT, to: PUBLISHED, via: PublishEvent, when: "必須項目が揃いキャパシティ > 0"}
+      - {from: PUBLISHED, to: CANCELLED, via: CancelEvent}
+      - {from: PUBLISHED, to: COMPLETED, via: CompleteEvent, when: "開催日時通過後の主催者確定"}
     attrs:
-      - { name: eventId,  type: EventId, required: true }
-      - { name: title,    type: string,  required: true }
-      - { name: capacity, type: int,     required: true, note: "1 以上" }
-      - { name: startsAt, type: date,    required: true }
+      - {name: eventId, type: EventId, required: true}
+      - {name: title, type: string, required: true}
+      - {name: capacity, type: int, required: true, note: "1 以上"}
+      - {name: startsAt, type: date, required: true}
     events:
       - name: EventDrafted
         params:
-          - { name: eventId,  type: EventId }
-          - { name: title,    type: string }
-          - { name: capacity, type: int }
+          - {name: eventId, type: EventId}
+          - {name: title, type: string}
+          - {name: capacity, type: int}
       - name: EventPublished
         params:
-          - { name: eventId, type: EventId }
+          - {name: eventId, type: EventId}
       - name: EventCancelled
-        params: [{ name: eventId, type: EventId }, { name: reason, type: string }]
+        params: [{name: eventId, type: EventId}, {name: reason, type: string}]
       - name: EventCompleted
-        params: [{ name: eventId, type: EventId }]
+        params: [{name: eventId, type: EventId}]
         terminal: true
 
   - name: Participation
@@ -182,32 +182,32 @@ aggregates:
       - "1 ユーザー 1 イベントにつき 1 申込（重複不可）"
     states: [APPLIED, WAITLISTED, APPROVED, CANCELLED]
     transitions:
-      - { from: APPLIED,    to: [APPROVED, WAITLISTED], via: ApplyForEvent, when: "残席判定で確定 or 繰上待ち" }
-      - { from: WAITLISTED, to: APPROVED, via: ConfirmParticipation, when: "繰上時" }
-      - { from: APPROVED,   to: CANCELLED, via: CancelParticipation }
+      - {from: APPLIED, to: [APPROVED, WAITLISTED], via: ApplyForEvent, when: "残席判定で確定 or 繰上待ち"}
+      - {from: WAITLISTED, to: APPROVED, via: ConfirmParticipation, when: "繰上時"}
+      - {from: APPROVED, to: CANCELLED, via: CancelParticipation}
     attrs:
-      - { name: participationId, type: ParticipationId, required: true }
-      - { name: eventId,         type: EventId,         required: true }
-      - { name: memberId,        type: MemberId,        required: true }
-      - { name: appliedAt,       type: date,            required: true }
+      - {name: participationId, type: ParticipationId, required: true}
+      - {name: eventId, type: EventId, required: true}
+      - {name: memberId, type: MemberId, required: true}
+      - {name: appliedAt, type: date, required: true}
     events:
       - name: ParticipationApplied
         params:
-          - { name: participationId, type: ParticipationId }
-          - { name: eventId,         type: EventId }
-          - { name: memberId,        type: MemberId }
+          - {name: participationId, type: ParticipationId}
+          - {name: eventId, type: EventId}
+          - {name: memberId, type: MemberId}
       - name: ParticipationWaitlisted
-        params: [{ name: participationId, type: ParticipationId }]
+        params: [{name: participationId, type: ParticipationId}]
         terminal: true
       - name: ParticipationConfirmed
-        params: [{ name: participationId, type: ParticipationId }]
+        params: [{name: participationId, type: ParticipationId}]
       - name: ParticipationApproved
-        params: [{ name: participationId, type: ParticipationId }]
+        params: [{name: participationId, type: ParticipationId}]
       - name: AuditLogRecorded
-        params: [{ name: participationId, type: ParticipationId }]
+        params: [{name: participationId, type: ParticipationId}]
         terminal: true
       - name: ParticipantNotified
-        params: [{ name: participationId, type: ParticipationId }]
+        params: [{name: participationId, type: ParticipationId}]
         terminal: true
 
   - name: Payment
@@ -218,23 +218,23 @@ aggregates:
       - "PSP からの決済結果通知（webhook）と内部状態の整合性を保証"
     states: [PENDING, COMPLETED, REFUNDED]
     transitions:
-      - { from: PENDING,   to: COMPLETED, via: ExecutePayment }
-      - { from: COMPLETED, to: REFUNDED,  via: RefundPayment }
+      - {from: PENDING, to: COMPLETED, via: ExecutePayment}
+      - {from: COMPLETED, to: REFUNDED, via: RefundPayment}
     attrs:
-      - { name: paymentId,       type: PaymentId,       required: true }
-      - { name: participationId, type: ParticipationId, required: true }
-      - { name: amount,          type: int,             required: true }
+      - {name: paymentId, type: PaymentId, required: true}
+      - {name: participationId, type: ParticipationId, required: true}
+      - {name: amount, type: int, required: true}
     events:
       - name: PaymentCompleted
         params:
-          - { name: paymentId,       type: PaymentId }
-          - { name: participationId, type: ParticipationId }
-          - { name: amount,          type: int }
+          - {name: paymentId, type: PaymentId}
+          - {name: participationId, type: ParticipationId}
+          - {name: amount, type: int}
       - name: PaymentRefunded
-        params: [{ name: paymentId, type: PaymentId }]
+        params: [{name: paymentId, type: PaymentId}]
         terminal: true
       - name: EnrollmentFinalized
-        params: [{ name: participationId, type: ParticipationId }]
+        params: [{name: participationId, type: ParticipationId}]
         terminal: true
 
 scenarios:
@@ -264,6 +264,7 @@ scenarios:
     agg: Event
     next: 参加者がイベントに参加申込する
 
+    pivotal: true
   - name: 主催者がイベントをキャンセルする
     ctx: event-planning
     actor: Organizer
@@ -319,6 +320,7 @@ scenarios:
     evt: PaymentCompleted
     agg: Payment
 
+    pivotal: true
   - name: システムが決済を返金する
     ctx: payment
     actor: System

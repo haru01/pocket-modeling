@@ -249,6 +249,24 @@
       z-index: 2;
     }
 
+    /* === Pivotal Event（節目イベント）: タイムラインを大きく区切る EVT の強調 ===
+       fanout の ×N バッジ（::after・右上）と共存できるよう ⭐ バッジは ::before・左上。 */
+    .note.pivotal {
+      position: relative;
+      border-width: 3px;
+      box-shadow: 0 0 0 3px rgba(230, 81, 0, 0.22), 1px 1px 2px rgba(0,0,0,0.08);
+    }
+    .note.pivotal::before {
+      content: "⭐ 節目";
+      position: absolute;
+      top: -10px; left: -8px;
+      background: #E65100; color: #FFF;
+      font-size: 10px; font-weight: 700;
+      padding: 2px 6px; border-radius: 10px;
+      white-space: nowrap;
+      z-index: 2;
+    }
+
     /* === Fork 矢印: 1本 → 3本に分岐（BULK fanout 入口） === */
     .arrow-h.fork {
       width: 26px; height: 22px;
@@ -343,6 +361,10 @@
       font-size: 12px;
       font-weight: 700;
       border: 2px solid #263238;
+    }
+    .legend .note-mini.pivotal-mini {
+      border-width: 2px;
+      box-shadow: 0 0 0 2px rgba(230, 81, 0, 0.22);
     }
 
     /* === ホットスポット / 未確認 === */

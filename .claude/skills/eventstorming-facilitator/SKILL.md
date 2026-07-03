@@ -60,9 +60,9 @@ PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/even
 |---------|--------------------------------------|
 | 1. スコープ確認 | `session`（id/domain/goal/status） |
 | **2. ストーリー確認** | **`narratives[]`（`kind: happy` のハッピーパス散文 1 本 + `kind: alt` の代替シナリオ 2〜3 本）** → `Bash open <session>.html` |
-| 3. イベント発見 | `scenarios[]` 仮 entries ＋ `contexts[].lang` 新規識別子 |
+| 3. イベント発見 | `scenarios[]` 仮 entries ＋ `contexts[].lang` 新規識別子 ＋ **節目イベント選定（`scenarios[].pivotal: true` 2〜4 個）** |
 | 4. CMD→EVT→POLICY チェーン | `scenarios[]`（`next`/`brs[].terminal` 付き）／ `policies[]` / `narratives[]`（happy + 代替 1〜2 を `entry` 付きで）／ `contexts[]` の `up`/`dn` |
-| 4.5. BC 境界 | `contexts[].lang` 充実（文脈で意味が変わる言葉を記録） |
+| 4.5. BC 境界 | `contexts[].lang` 充実（文脈で意味が変わる言葉を記録）＋ **サブドメイン分類（`domains[].subs[]` の CORE/SUPPORTING/GENERIC ＋ `contexts[].sub` 割り当て）** |
 | **4.6. 目的・背景・制約** | **`aggregates[]` の `name`/`ctx`/`purpose`/`background`/`constraints[]`/`states` ＋ `contexts[].description`（BC 散文）** |
 | **5. 不変条件・エラー＋属性・イベントペイロード** | **`scenarios[].rules[]`（rule/why）／`scenarios[].errs[]`（cond/err/when）／`aggregates[].transitions[]`／`aggregates[].attrs[]`／`aggregates[].events[].params[]` ＋ `queries[]`（リードモデル候補）** |
 | **6. 意思決定ログ** | **`decisions[]`**（id/topic/chosen/options/affects・options ごとに why/why_not） |
@@ -242,6 +242,8 @@ DML は **`docs/eventstorming/<session>.dml.yaml`** 1 ファイルに **YAML 直
 - **`cmd/evt/agg/trg/emits/qry` の値は英語識別子**。日本語補足は `rules[].why` / `errs[].when` / `note` へ
 - **`errs` は `cond` + `err`（ErrorType）+ 任意 `when`**、**`rules` は `rule`（英語の不変条件）+ 任意の `why`**
 - **`contexts[]` の `up`/`dn` は推奨**（schema 上は optional だが、依存方向を明示すると BC マップが立体化する）。**依存なしは空リスト `[]`** を書いて「考慮済み」と示す。`rel` を併記すれば CML リレーション語彙が HTML §6 に描画される。BC 名は `lowercase-with-hyphen`
+- **節目イベントは `scenarios[].pivotal: true`** で宣言（1 モデルに 2〜4 個が目安）。タイムラインを大きく区切り BC 境界候補の手がかりになる EVT の発火元 scenario に付ける。HTML §3 で ⭐ バッジ＋強調枠で描画
+- **サブドメイン分類は `domains[].subs[]` ＋ `contexts[].sub`**。`type` は `CORE_SUBDOMAIN` / `SUPPORTING_SUBDOMAIN` / `GENERIC_SUBDOMAIN`。未分類・CORE 不在・全件 CORE は `subdomain_classification` チェックが検出
 - **`policies` は EVENTUAL-TX 専用**。SAME-TX 分岐は発行元 scenario の `brs` で書く
 - **副作用専用 POLICY**（通知・メール送信など）は `cmd` 省略可（`trg`/`qry`/`bulk`/`evt` のみ）
 - **POLICY の `cmd` が AGG を変更するなら `agg` を併記する**（v7 追加。scenarios と対称化）。dangling_cmd チェックは `policies[].cmd` も declared として扱う
@@ -259,9 +261,9 @@ DML は **`docs/eventstorming/<session>.dml.yaml`** 1 ファイルに **YAML 直
 | タイミング | 更新するフィールド |
 |-----------|--------------------|
 | フェーズ 2 完了 | `session` / `narratives[]`（`id`/`title`/`kind`/`entry`/`prose` — `kind: happy` 1 本 + `kind: alt` 2〜3 本、prose は粗で可）（初回 `dmlctl init` → 続けて `dmlctl set narratives` 等で narratives を追加） → `Bash open <session>.html` 初回起動 |
-| フェーズ 3 完了 | `scenarios[]` 仮 entries ＋ `contexts[].lang` の新規識別子 |
+| フェーズ 3 完了 | `scenarios[]` 仮 entries ＋ `contexts[].lang` の新規識別子 ＋ 節目イベントの `scenarios[].pivotal: true`（2〜4 個。HTML §3 で ⭐ 強調） |
 | フェーズ 4 完了 | `scenarios[]`（`next` / `brs[].terminal` を含む）／ `policies[]` ／ `narratives[].entry`（happy + 代替 1〜2）／ `contexts[].lang` ／ `contexts[].up`/`dn` ／ `contexts[].description`（BC 散文） |
-| フェーズ 4.5 完了 | `contexts[].lang` を充実 |
+| フェーズ 4.5 完了 | `contexts[].lang` を充実 ＋ `domains[].subs[]`（CORE/SUPPORTING/GENERIC_SUBDOMAIN）と `contexts[].sub` の割り当て（コアドメイン蒸留） |
 | **フェーズ 4.6 完了** | **`aggregates[]` の `name`/`ctx`/`purpose`/`background`/`constraints[]`/`states`、`contexts[].aggs` に AGG 名** |
 | **フェーズ 5 完了** | **`scenarios[].rules[]`（rule/why）／`scenarios[].errs[]`（cond/err/when）／`aggregates[].transitions[]`／`aggregates[].attrs[]`／`aggregates[].events[].params[]` ＋ `queries[]`** |
 | **フェーズ 6 完了** | **`decisions[]`**（id/topic/chosen/options/affects・options ごとに why/why_not）。`questions[].status` を closed にして `decision_id` を紐付け |

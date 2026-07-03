@@ -84,7 +84,7 @@ docs/eventstorming/*.dml.yaml  ──┐
 
 - `eventstorming_build.py` — DML から HTML 全 9 セクション（ストーリー／フロー図／次のアクション／オープンクエスチョン／意思決定ログ／コンテキスト候補／集約候補／リードモデル候補／DML 全文ハイライト）を組み立てる 1,900 行超のレンダラ。Mermaid・自前 SVG・YAML シンタックスハイライトを内蔵。v8 で旧 §1 ハッピーパス＋§2 代替シナリオを §1 ストーリーに統合
 - `validate_dml.py` — `references/dml.schema.yaml`（JSON Schema Draft 2020-12）で **構文** validity を機械検証。空 YAML や非 dict は「未記述」として違反扱いしない（進行中セッション許容）
-- `dmlctl.py` + `dml_filters/views.py` + `dml_filters/checks.py` — AI コンテキスト圧迫を避けるため、観点別スライスの I/O と純構造チェック（LLM 不要）を提供。16 view・18 check が登録済み
+- `dmlctl.py` + `dml_filters/views.py` + `dml_filters/checks.py` — AI コンテキスト圧迫を避けるため、観点別スライスの I/O と純構造チェック（LLM 不要）を提供。16 view・19 check が登録済み
 - 意味 validity（参照の実在・因果整合・モデル品質）は LLM ベースの `references/checks/*.md` が担う。**スキーマ通過は必要条件であって十分条件ではない**
 
 ## DML の構造（要点）
