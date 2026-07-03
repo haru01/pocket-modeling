@@ -45,6 +45,13 @@ DML ファイルへの **唯一の I/O 経路** になる。
         set/add/update の **書き込み前** に型非対称（users=文字列 / sources=配列 /
         brs[].pol=両可 など）を確認する用途。ファイル引数は不要（schema のみ参照）。
 
+    dmlctl advance <file> [--phase=<v>] [--status=<text>]
+        session.phase を次のフェーズへ進める（--phase で任意指定・enum 検証つき）。
+        `set --path=session.phase --value='"3"'` のクォート落とし穴を回避する糖衣。
+
+    dmlctl action <file> --id=<id> [--not-done]
+        actions[].done を id 指定でトグルする糖衣（既定は done: true）。
+
     dmlctl check <file> (--check=<name> | --all)
         構造チェック観点を実行し、違反を JSON で stdout に出力する。
 
@@ -685,6 +692,93 @@ def cmd_rename(args) -> int:
 
 SCHEMA_PATH = SCRIPT_DIR.parent / "references" / "dml.schema.yaml"
 
+# schema が読めない場合のフォールバック（真実源は dml.schema.yaml の session.phase enum）
+_PHASE_ENUM_FALLBACK = ["1", "2", "3", "4", "4.5", "4.6", "5", "6", "7"]
+
+
+def _phase_enum() -> list[str]:
+    try:
+        with SCHEMA_PATH.open(encoding="utf-8") as f:
+            schema = yaml.safe_load(f)
+        enum = schema["$defs"]["session"]["properties"]["phase"]["enum"]
+        return [str(v) for v in enum]
+    except Exception:
+        return _PHASE_ENUM_FALLBACK
+
+
+def cmd_advance(args) -> int:
+    """session.phase を安全に前進させる（enum 検証つき・クォート落とし穴の回避）。"""
+    phases = _phase_enum()
+    yml = _require_ruamel()
+    path = Path(args.file)
+    with path.open("r", encoding="utf-8") as f:
+        data = yml.load(f)
+    if data is None:
+        data = {}
+    session = data.get("session")
+    if session is None:
+        print("❌ session が無い DML です（dmlctl init で作成したファイルを対象にしてください）", file=sys.stderr)
+        return 2
+    current = str(session.get("phase")) if session.get("phase") is not None else None
+
+    if args.phase:
+        target = args.phase
+        if target not in phases:
+            print(f"❌ 不正な phase '{target}'\n   有効値: {', '.join(phases)}", file=sys.stderr)
+            return 2
+    else:
+        if current is None:
+            target = phases[0]
+        elif current not in phases:
+            print(f"❌ 現在の phase '{current}' が enum 外です。--phase で明示してください（有効値: {', '.join(phases)}）", file=sys.stderr)
+            return 2
+        elif current == phases[-1]:
+            print(f"⚠ 既に最終フェーズ '{current}' です（変更なし）", file=sys.stderr)
+            return 0
+        else:
+            target = phases[phases.index(current) + 1]
+
+    session["phase"] = target
+    if args.status:
+        session["status"] = args.status
+    rc = _save_and_postprocess(
+        path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
+    )
+    print(f"✅ session.phase: {current or '(未設定)'} → {target}", file=sys.stderr)
+    return rc
+
+
+def cmd_action(args) -> int:
+    """actions[].done を id 指定でトグルする糖衣。"""
+    yml = _require_ruamel()
+    path = Path(args.file)
+    with path.open("r", encoding="utf-8") as f:
+        data = yml.load(f)
+    if data is None:
+        data = {}
+    actions_list = data.get("actions") or []
+    target = None
+    for a in actions_list:
+        if isinstance(a, dict) and a.get("id") == args.id:
+            target = a
+            break
+    if target is None:
+        known = [a.get("id") for a in actions_list if isinstance(a, dict)]
+        print(
+            f"❌ action '{args.id}' が見つかりません"
+            + (f"（既知: {', '.join(filter(None, known))}）" if known else "（actions[] が空）"),
+            file=sys.stderr,
+        )
+        return 2
+    done = not args.not_done
+    target["done"] = done
+    rc = _save_and_postprocess(
+        path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
+    )
+    state = "done" if done else "not done"
+    print(f"✅ action '{args.id}' を {state} にしました: {target.get('text', '')[:60]}", file=sys.stderr)
+    return rc
+
 
 def cmd_hint(args) -> int:
     if not SCHEMA_PATH.exists():
@@ -881,6 +975,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_rename.add_argument("--no-postprocess", action="store_true")
     p_rename.add_argument("--dry-run", action="store_true", help="書かずに置換箇所の一覧と編集後 schema を検証")
     p_rename.set_defaults(func=cmd_rename)
+
+    p_advance = sub.add_parser("advance", help="session.phase を次のフェーズへ進める（enum 検証つき）")
+    p_advance.add_argument("file")
+    p_advance.add_argument("--phase", help="任意の phase を明示指定（省略時は次へ進める）")
+    p_advance.add_argument("--status", help="session.status も同時に更新する（任意）")
+    p_advance.add_argument("--no-postprocess", action="store_true")
+    p_advance.add_argument("--dry-run", action="store_true", help="書かずに編集後 schema を検証")
+    p_advance.set_defaults(func=cmd_advance)
+
+    p_action = sub.add_parser("action", help="actions[].done を id 指定でトグルする")
+    p_action.add_argument("file")
+    p_action.add_argument("--id", required=True, help="対象 action の id（例: A1）")
+    p_action.add_argument("--not-done", action="store_true", help="done: false に戻す")
+    p_action.add_argument("--no-postprocess", action="store_true")
+    p_action.add_argument("--dry-run", action="store_true", help="書かずに編集後 schema を検証")
+    p_action.set_defaults(func=cmd_action)
 
     p_hint = sub.add_parser("hint", help="パスの期待型を schema から提示する（書き込み前の型確認）")
     p_hint.add_argument("--path", required=True, help="例: queries.users / scenarios[].brs[].pol / session.phase")

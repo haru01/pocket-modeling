@@ -53,7 +53,7 @@ docs/eventstorming/*.dml.yaml ──┬──→ eventstorming_build.py ──�
     │   ├── eventstorming_build.py  # DML → HTML レンダラ（全 9 セクション）
     │   ├── validate_dml.py         # Schema 構文検証
     │   ├── dmlctl.py               # 観点別スライス I/O・構造チェック
-    │   └── dml_filters/            # views（15）/ checks（18）の実装
+    │   └── dml_filters/            # views（16）/ checks（18）の実装
     ├── templates/event-flow.html
     └── examples/sample.dml.yaml
 ```
@@ -85,6 +85,10 @@ python3 $SKILL/dmlctl.py remove <file> --path=<a.b.c>
 
 # パスの期待型ヒント（書き込み前の型確認。ファイル引数不要）
 python3 $SKILL/dmlctl.py hint --path=<a.b.c>          # 例: queries.users / scenarios[].brs[].pol
+
+# セッション進行（phase 前進・action 完了トグル）
+python3 $SKILL/dmlctl.py advance <file> [--phase=<v>] [--status=<text>]
+python3 $SKILL/dmlctl.py action  <file> --id=<id> [--not-done]
 
 # 識別子の横断検索 / 一括リネーム（用語統一・state 改名。--ctx で BC 内に限定可）
 python3 $SKILL/dmlctl.py refs   <file> --name=<identifier>

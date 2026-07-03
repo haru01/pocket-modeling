@@ -33,7 +33,7 @@ AI は **`scripts/dmlctl.py` 経由でしか** DML を読み書きできない�
 
 | 項目 | 正 | 誤りがち |
 |---|---|---|
-| `session.phase` | 文字列 `'"3"'`（enum `'1'..'7'`） | 数値 `3` → type 違反 |
+| `session.phase` | **`dmlctl advance <file>`（enum 検証つき糖衣）** を使う。set で書くなら文字列 `'"3"'`（enum `'1'..'7'`） | 数値 `3` → type 違反 |
 | `queries[].users` | 文字列 `'受付・医師'`（複数ロールは 1 文字列に列挙） | リスト `[A, B]` → type 違反 |
 | `queries[].sources` | **配列** `[Order, Appraisal]` | 文字列 → type 違反。`users`（文字列）と非対称な点に注意 |
 | `scenarios[].pol` | **配列のみ** `pol: [P1, P2]` | 文字列 `pol: P1` → type 違反。`brs[].pol` は文字列でも配列でも可、という非対称に注意 |
@@ -273,8 +273,10 @@ DML は **`docs/eventstorming/<session>.dml.yaml`** 1 ファイルに **YAML 直
 1. **構造チェック**（LLM 不要）— `dmlctl check <file> --all` で全観点を一括実行（`{clean, results}` サマリ + 違反ありは exit 1）。個別に見たいときは `--check=<name>`
 2. **意味チェック**（観点別 Agent 起動）— `references/checks/*.md` を 1 観点ずつ
 
-**途中保存と再開**: `session.status` フィールドにフェーズ進捗を書く（例: `"Phase 4.6 完了"`）。
-再開時は `dmlctl view --view=session-meta` でフェーズを確認、`actions[].done` で進捗を引き継ぐ。
+**途中保存と再開**: フェーズ完了ごとに `dmlctl advance <file> [--status='Phase 4.6 完了']` で
+`session.phase` を前進させる（enum 検証つき。status も同時更新可）。action の完了は
+`dmlctl action <file> --id=A1`。再開時は `dmlctl view --view=session-meta` でフェーズを確認し、
+`--view=coverage` で書き漏れ（rules/errs/attrs/params 等の未記入要素）を俯瞰してから続きに入る。
 
 ### DML トップレベル構成（v8）
 

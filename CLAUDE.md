@@ -48,6 +48,10 @@ python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py remove <file>
 # パスの期待型ヒント（書き込み前の型確認。型非対称由来のリトライ防止。ファイル引数不要）
 python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py hint --path=<a.b.c>
 
+# セッション進行（phase 前進は enum 検証つき糖衣。--phase で任意指定、--status 同時更新可）
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py advance <file> [--phase=<v>] [--status=<text>]
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py action  <file> --id=<id> [--not-done]
+
 # 識別子の横断検索 / 一括リネーム（用語統一・state 改名など。完全一致のみ置換、散文中の言及は ⚠ 報告）
 python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py refs   <file> --name=<identifier> [--ctx=<bc>]
 python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py rename <file> --from=<old> --to=<new> [--ctx=<bc>] [--dry-run]
@@ -80,7 +84,7 @@ docs/eventstorming/*.dml.yaml  ──┐
 
 - `eventstorming_build.py` — DML から HTML 全 9 セクション（ストーリー／フロー図／次のアクション／オープンクエスチョン／意思決定ログ／コンテキスト候補／集約候補／リードモデル候補／DML 全文ハイライト）を組み立てる 1,900 行超のレンダラ。Mermaid・自前 SVG・YAML シンタックスハイライトを内蔵。v8 で旧 §1 ハッピーパス＋§2 代替シナリオを §1 ストーリーに統合
 - `validate_dml.py` — `references/dml.schema.yaml`（JSON Schema Draft 2020-12）で **構文** validity を機械検証。空 YAML や非 dict は「未記述」として違反扱いしない（進行中セッション許容）
-- `dmlctl.py` + `dml_filters/views.py` + `dml_filters/checks.py` — AI コンテキスト圧迫を避けるため、観点別スライスの I/O と純構造チェック（LLM 不要）を提供。15 view・18 check が登録済み
+- `dmlctl.py` + `dml_filters/views.py` + `dml_filters/checks.py` — AI コンテキスト圧迫を避けるため、観点別スライスの I/O と純構造チェック（LLM 不要）を提供。16 view・18 check が登録済み
 - 意味 validity（参照の実在・因果整合・モデル品質）は LLM ベースの `references/checks/*.md` が担う。**スキーマ通過は必要条件であって十分条件ではない**
 
 ## DML の構造（要点）

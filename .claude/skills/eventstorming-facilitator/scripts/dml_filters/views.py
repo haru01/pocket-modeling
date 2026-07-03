@@ -241,6 +241,111 @@ def top_level_keys(model: dict, **_) -> Any:
     return {"top_level_keys": summary}
 
 
+def coverage(model: dict, **_) -> Any:
+    """モデル充足度マトリクス。書き漏れのある要素だけを missing フィールド付きで返す。
+
+    フェーズ 5〜6 の「書くべきものが揃っているか」を俯瞰する view。schema 必須キーの
+    検証（validate）や参照整合（check）とは別レイヤーで、**任意だが揃っているべき**
+    フィールドの欠落を数える。期待フィールド:
+
+    - contexts:   description / lang / aggs
+    - aggregates: purpose / background / constraints / states / transitions / attrs /
+                  events（+ 各 event の params）
+    - scenarios:  rules / errs / evt-or-brs
+    - policies:   trg-or-trgs / cmd-or-note（副作用専用 POLICY は cmd 無し note 説明が正当）
+    - queries:    purpose / users / sources / formula
+    - decisions:  affects / 各 option の why（adopted）・why_not（非 adopted）
+    - narratives: kind:happy の存在 / entry
+    """
+
+    def _section(items: list, label_key: str, expected) -> dict[str, Any]:
+        total = 0
+        incomplete = []
+        for i, it in enumerate(items or []):
+            if not isinstance(it, dict):
+                continue
+            total += 1
+            missing = expected(it)
+            if missing:
+                incomplete.append(
+                    {"name": it.get(label_key) or f"#{i}", "missing": missing}
+                )
+        return {
+            "total": total,
+            "complete": total - len(incomplete),
+            **({"incomplete": incomplete} if incomplete else {}),
+        }
+
+    def _ctx_expected(c: dict) -> list[str]:
+        return [f for f in ("description", "lang", "aggs") if not c.get(f)]
+
+    def _agg_expected(a: dict) -> list[str]:
+        missing = [
+            f
+            for f in ("purpose", "background", "constraints", "states", "transitions", "attrs", "events")
+            if not a.get(f)
+        ]
+        noparams = [
+            ev.get("name") or "?"
+            for ev in (a.get("events") or [])
+            if isinstance(ev, dict) and not ev.get("params")
+        ]
+        if noparams:
+            missing.append(f"events[].params ({', '.join(noparams)})")
+        return missing
+
+    def _scenario_expected(s: dict) -> list[str]:
+        missing = [f for f in ("rules", "errs") if not s.get(f)]
+        if not s.get("evt") and not s.get("brs"):
+            missing.append("evt|brs")
+        return missing
+
+    def _policy_expected(p: dict) -> list[str]:
+        missing = []
+        if not p.get("trg") and not p.get("trgs"):
+            missing.append("trg|trgs")
+        if not p.get("cmd") and not p.get("note"):
+            missing.append("cmd|note")  # 副作用専用なら note で説明する
+        return missing
+
+    def _query_expected(q: dict) -> list[str]:
+        return [f for f in ("purpose", "users", "sources", "formula") if not q.get(f)]
+
+    def _decision_expected(d: dict) -> list[str]:
+        missing = []
+        if not d.get("affects"):
+            missing.append("affects")
+        for o in d.get("options") or []:
+            if not isinstance(o, dict):
+                continue
+            oname = o.get("name") or "?"
+            if o.get("adopted") is True and not o.get("why"):
+                missing.append(f"options[{oname}].why")
+            if o.get("adopted") is not True and not o.get("why_not"):
+                missing.append(f"options[{oname}].why_not")
+        return missing
+
+    def _narrative_expected(n: dict) -> list[str]:
+        return ["entry"] if not n.get("entry") else []
+
+    result: dict[str, Any] = {
+        "contexts": _section(model.get("contexts") or [], "name", _ctx_expected),
+        "aggregates": _section(model.get("aggregates") or [], "name", _agg_expected),
+        "scenarios": _section(model.get("scenarios") or [], "name", _scenario_expected),
+        "policies": _section(model.get("policies") or [], "name", _policy_expected),
+        "queries": _section(model.get("queries") or [], "name", _query_expected),
+        "decisions": _section(model.get("decisions") or [], "id", _decision_expected),
+        "narratives": _section(model.get("narratives") or [], "id", _narrative_expected),
+    }
+    has_happy = any(
+        isinstance(n, dict) and n.get("kind") == "happy"
+        for n in (model.get("narratives") or [])
+    )
+    if not has_happy:
+        result["narratives"]["missing_happy"] = True
+    return {"coverage": result}
+
+
 def full(model: dict, **_) -> Any:
     """全文をそのまま返す（安全弁・サイズ警告は呼び出し側で）。"""
     return model
@@ -266,5 +371,6 @@ VIEWS: dict[str, Callable[..., Any]] = {
     "scenarios": scenarios,
     "policies": policies,
     "top-level-keys": top_level_keys,
+    "coverage": coverage,
     "full": full,
 }
