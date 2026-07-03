@@ -83,6 +83,10 @@ python3 $SKILL/dmlctl.py set    <file> --path=<a.b.c>   --value=<yaml-literal>
 python3 $SKILL/dmlctl.py add    <file> --to=<list-path> --item=<yaml-literal>
 python3 $SKILL/dmlctl.py remove <file> --path=<a.b.c>
 
+# 識別子の横断検索 / 一括リネーム（用語統一・state 改名。--ctx で BC 内に限定可）
+python3 $SKILL/dmlctl.py refs   <file> --name=<identifier>
+python3 $SKILL/dmlctl.py rename <file> --from=<old> --to=<new> [--ctx=<bc>] [--dry-run]
+
 # 構造チェック（LLM 不要）
 python3 $SKILL/dmlctl.py checks                                  # check 名一覧
 python3 $SKILL/dmlctl.py check <file> --all                      # 全観点を一括実行（clean/results サマリ）

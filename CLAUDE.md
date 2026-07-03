@@ -45,6 +45,10 @@ python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py add    <file>
 python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py update <file> --path=<list-path> --where=<key=value> (--set-key=... --value=... | --merge-yaml=...)
 python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py remove <file> --path=<a.b.c> [--where=<key=value>]
 
+# 識別子の横断検索 / 一括リネーム（用語統一・state 改名など。完全一致のみ置換、散文中の言及は ⚠ 報告）
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py refs   <file> --name=<identifier> [--ctx=<bc>]
+python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py rename <file> --from=<old> --to=<new> [--ctx=<bc>] [--dry-run]
+
 # 構造チェック（LLM 不要・全観点は `dmlctl checks` で一覧）
 python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py check <file> --all           # 全観点を一括（clean/results サマリ, 違反で exit 1）
 python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py check <file> --check=<name>  # 個別観点

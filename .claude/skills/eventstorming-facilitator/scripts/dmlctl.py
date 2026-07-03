@@ -31,7 +31,16 @@ DML ファイルへの **唯一の I/O 経路** になる。
     dmlctl remove <file> --path=<a.b.c> [--where=<key=value>]
         フィールド/要素を削除する。--where 指定時はリスト内検索で削除。
 
-    dmlctl check <file> --check=<name>
+    dmlctl refs   <file> --name=<identifier> [--ctx=<bc>]
+        識別子の全出現箇所（完全一致）と散文中の言及（部分一致）を JSON で列挙する。
+        rename の事前調査・影響範囲の確認に使う。見つからなければ exit 1（grep 風）。
+
+    dmlctl rename <file> --from=<old> --to=<new> [--ctx=<bc>] [--dry-run]
+        識別子を全出現箇所で一括リネームする（完全一致のみ。`Event` は `EventId` に触れない）。
+        散文中の言及は置換せず ⚠ で報告する（手動フォロー用）。--ctx で BC 内に限定
+        （例: 特定 AGG の state 名だけ変える）。
+
+    dmlctl check <file> (--check=<name> | --all)
         構造チェック観点を実行し、違反を JSON で stdout に出力する。
 
     dmlctl validate <file>
@@ -77,6 +86,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from dml_filters.views import VIEWS  # noqa: E402
 from dml_filters.checks import CHECKS, finding_to_dict  # noqa: E402
+from dml_filters.refs import collect_refs, apply_rename  # noqa: E402
 
 
 TEMPLATE_PATH = SCRIPT_DIR.parent / "references" / "template.dml.yaml"
@@ -119,7 +129,7 @@ def _require_ruamel():
         from ruamel.yaml import YAML  # type: ignore
     except ImportError:
         print(
-            "❌ set/add/remove/update/init には ruamel.yaml が必要です（`pip install ruamel.yaml`）。\n"
+            "❌ set/add/remove/update/init/rename には ruamel.yaml が必要です（`pip install ruamel.yaml`）。\n"
             "   コメント・引用形式・キー順を保ったまま編集するためです。",
             file=sys.stderr,
         )
@@ -595,6 +605,78 @@ def cmd_update(args) -> int:
 # ============================================================
 
 
+def cmd_refs(args) -> int:
+    model = load_model(Path(args.file))
+    result = collect_refs(model, args.name, ctx=args.ctx)
+    if args.ctx and not result["occurrences"] and not result["mentions"]:
+        # ctx 指定が typo の可能性を案内（BC 名の実在確認）
+        known = [c.get("name") for c in (model.get("contexts") or []) if isinstance(c, dict)]
+        if args.ctx not in known:
+            print(f"⚠ ctx '{args.ctx}' は contexts[].name に存在しません（既知: {', '.join(filter(None, known))}）", file=sys.stderr)
+    payload = {
+        "name": args.name,
+        "count": len(result["occurrences"]),
+        "occurrences": result["occurrences"],
+        "mentions": result["mentions"],
+    }
+    sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2))
+    sys.stdout.write("\n")
+    return 0 if result["occurrences"] else 1  # grep 風: 見つからなければ 1
+
+
+def cmd_rename(args) -> int:
+    if args.from_ == args.to:
+        print("❌ --from と --to が同じです", file=sys.stderr)
+        return 2
+    yml = _require_ruamel()
+    path = Path(args.file)
+    with path.open("r", encoding="utf-8") as f:
+        data = yml.load(f)
+    if data is None:
+        print("⚠ 空ファイルのためリネーム対象がありません", file=sys.stderr)
+        return 2
+
+    # リネーム先が既に識別子として存在する場合は警告（A7 のような用語統合では意図的なので中断しない）
+    pre = collect_refs(data, args.to, ctx=args.ctx)
+    if pre["occurrences"]:
+        print(
+            f"⚠ '{args.to}' は既に {len(pre['occurrences'])} 箇所で使われています"
+            f"（用語統合なら想定どおり。別概念なら中断して --to を見直してください）",
+            file=sys.stderr,
+        )
+
+    replaced, mentions, conflicts = apply_rename(data, args.from_, args.to, ctx=args.ctx)
+    if conflicts:
+        print(
+            f"❌ リネームすると同一 mapping 内でキー '{args.to}' が重複します（置換は未実行）:",
+            file=sys.stderr,
+        )
+        for p in conflicts:
+            print(f"   - {p}", file=sys.stderr)
+        print("   先に既存キーを整理するか、rename でなく手動マージしてください", file=sys.stderr)
+        return 2
+    if not replaced:
+        scope = f"（--ctx={args.ctx} 内）" if args.ctx else ""
+        print(f"❌ 識別子 '{args.from_}' の完全一致箇所が見つかりません{scope}", file=sys.stderr)
+        return 2
+
+    rc = _save_and_postprocess(
+        path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
+    )
+    prefix = "（dry-run）" if args.dry_run else ""
+    print(f"✅ {prefix}'{args.from_}' → '{args.to}': {len(replaced)} 箇所を置換しました", file=sys.stderr)
+    for p in replaced:
+        print(f"   - {p}", file=sys.stderr)
+    if mentions:
+        print(
+            f"⚠ 散文・note 等の {len(mentions)} 箇所に '{args.from_}' への言及が残っています（rename は触りません）:",
+            file=sys.stderr,
+        )
+        for p in mentions:
+            print(f"   - {p}", file=sys.stderr)
+    return rc
+
+
 def cmd_check(args) -> int:
     if args.all and args.check:
         print("❌ --all と --check は同時指定できません（片方だけ指定）", file=sys.stderr)
@@ -752,6 +834,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_remove.add_argument("--no-postprocess", action="store_true")
     p_remove.add_argument("--dry-run", action="store_true", help="書かずに編集後 schema を検証")
     p_remove.set_defaults(func=cmd_remove)
+
+    p_refs = sub.add_parser("refs", help="識別子の全出現箇所を列挙する（rename の事前調査）")
+    p_refs.add_argument("file")
+    p_refs.add_argument("--name", required=True, help="検索する識別子（完全一致 + 散文中の言及）")
+    p_refs.add_argument("--ctx", help="BC 名で走査範囲を限定（contexts[name=ctx] とその ctx 配下要素）")
+    p_refs.set_defaults(func=cmd_refs)
+
+    p_rename = sub.add_parser("rename", help="識別子を全出現箇所で一括リネームする（ruamel.yaml）")
+    p_rename.add_argument("file")
+    p_rename.add_argument("--from", dest="from_", required=True, help="現在の識別子")
+    p_rename.add_argument("--to", required=True, help="変更後の識別子")
+    p_rename.add_argument("--ctx", help="BC 名でリネーム範囲を限定（例: 特定 AGG の state だけ変える）")
+    p_rename.add_argument("--no-postprocess", action="store_true")
+    p_rename.add_argument("--dry-run", action="store_true", help="書かずに置換箇所の一覧と編集後 schema を検証")
+    p_rename.set_defaults(func=cmd_rename)
 
     p_check = sub.add_parser("check", help="構造チェック観点を実行する")
     p_check.add_argument("file")

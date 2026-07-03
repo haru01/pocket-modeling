@@ -174,6 +174,7 @@ HTML 更新・DML 抜粋は出さない。本文末尾は問い 1 つで終わ�
   - 読み取り：`python3 scripts/dmlctl.py view <file> --view=<name>`（全文 Read を回避）
   - 書き込み：`python3 scripts/dmlctl.py set/add/remove <file> --path=... --value=...`（配列・dict は `--value='[...]'` か `add --item=` を使う。`set --value-file` は長文 prose 文字列専用で配列に使わない — 冒頭の「値の渡し方」表を参照）
   - 観点一覧：`dmlctl views` / `dmlctl checks`
+  - 用語統一・識別子リネーム：`dmlctl refs <file> --name=<id>` で全出現を確認 → `dmlctl rename <file> --from=<old> --to=<new> [--ctx=<bc>]` で一括置換（完全一致のみ。散文中の言及は ⚠ で報告されるので手動フォロー。`set/update` で 1 箇所ずつ書き換えるのはリネーム漏れの元）
 - 直接 `Read`/`Edit`/`Write` は PreToolUse フック（`scripts/hooks/block_direct_dml.py`）で自動ブロック。`Bash python3 dmlctl.py ...` のみが I/O 経路。**一時ファイルの作成も `--value`/`--item` のインラインで代替できるなら避ける**（`Write` で `/tmp/*.yaml` を作るのはアンチパターン）
 - フェーズ 2 で `dmlctl init <path> --session-id=... --domain=... [--goal=...]` で新規 DML を生成（テンプレートから session 入り空 DML を作成）
 - 書き出し後は **必ず** Agent tool で品質チェックを起動（`references/quality-check-agent.md`）。HTML は派生物なのでチェック不要
