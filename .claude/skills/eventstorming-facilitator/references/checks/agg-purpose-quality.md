@@ -50,4 +50,5 @@ python3 scripts/dmlctl.py view <session>.dml.yaml --view=agg-detail [--name <Agg
 
 ## 連携する構造チェック
 
-- なし（純粋に LLM による意味評価）
+- `agg_purpose_minlength` — 観点 1（purpose 30 字以上）は構造チェックに降格済み。先に走らせて
+  欠落・字数不足を解消しておき、LLM は単一責任・業務語彙・WHY の質的評価（観点 2〜5）に集中する

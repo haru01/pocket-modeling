@@ -53,7 +53,7 @@ docs/eventstorming/*.dml.yaml ──┬──→ eventstorming_build.py ──�
     │   ├── eventstorming_build.py  # DML → HTML レンダラ（全 9 セクション）
     │   ├── validate_dml.py         # Schema 構文検証
     │   ├── dmlctl.py               # 観点別スライス I/O・構造チェック
-    │   └── dml_filters/            # views（13）/ checks（12）の実装
+    │   └── dml_filters/            # views（15）/ checks（18）の実装
     ├── templates/event-flow.html
     └── examples/sample.dml.yaml
 ```

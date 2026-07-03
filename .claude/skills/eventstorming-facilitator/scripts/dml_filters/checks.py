@@ -684,6 +684,296 @@ def question_decision_link(model: dict) -> list[Finding]:
     return findings
 
 
+def agg_purpose_minlength(model: dict) -> list[Finding]:
+    """aggregates[].purpose が欠落 or 30 字未満なら警告する。
+
+    `references/checks/agg-purpose-quality.md`（意味チェック）の観点 1「purpose は 30 字以上か」
+    を構造チェックに降格したもの。単一責任・業務語彙の質的評価は引き続き LLM の責務。
+    """
+    MIN_LEN = 30
+    findings: list[Finding] = []
+    for i, agg in enumerate(model.get("aggregates") or []):
+        if not isinstance(agg, dict):
+            continue
+        name = agg.get("name") or f"#{i}"
+        purpose = (agg.get("purpose") or "").strip()
+        if not purpose:
+            findings.append(
+                Finding(
+                    kind="agg_purpose_minlength",
+                    path=f"aggregates[{i}].purpose",
+                    message=f"AGG '{name}' に purpose がありません（単一責任を 30 字以上で言語化してください）",
+                    slice={"agg": name, "purpose_len": 0},
+                )
+            )
+        elif len(purpose) < MIN_LEN:
+            findings.append(
+                Finding(
+                    kind="agg_purpose_minlength",
+                    path=f"aggregates[{i}].purpose",
+                    message=(
+                        f"AGG '{name}' の purpose が {len(purpose)} 字で短すぎます"
+                        f"（{MIN_LEN} 字以上で「何を保証する集約か」を言語化してください）"
+                    ),
+                    slice={"agg": name, "purpose": purpose, "purpose_len": len(purpose)},
+                )
+            )
+    return findings
+
+
+def decision_chosen_adopted(model: dict) -> list[Finding]:
+    """decisions[].chosen と options[].adopted: true の整合を検査する。
+
+    - chosen が options[].name に存在しない
+    - adopted: true の option が 0 件 / 2 件以上
+    - adopted: true の option.name が chosen と不一致
+    `references/checks/decision-rationale-clarity.md` の観点 4 を構造チェックに降格したもの。
+    """
+    findings: list[Finding] = []
+    for i, d in enumerate(model.get("decisions") or []):
+        if not isinstance(d, dict):
+            continue
+        did = d.get("id") or f"#{i}"
+        options = [o for o in (d.get("options") or []) if isinstance(o, dict)]
+        if not options:
+            continue  # options 未記入の進行中 decision はスキップ
+        chosen = d.get("chosen")
+        option_names = [o.get("name") for o in options]
+        adopted = [o.get("name") for o in options if o.get("adopted") is True]
+
+        if chosen and chosen not in option_names:
+            findings.append(
+                Finding(
+                    kind="decision_chosen_adopted",
+                    path=f"decisions[{i}].chosen",
+                    message=f"decision '{did}' の chosen '{chosen}' が options[].name に存在しません",
+                    slice={"decision": did, "chosen": chosen, "options": option_names},
+                )
+            )
+        if len(adopted) == 0:
+            findings.append(
+                Finding(
+                    kind="decision_chosen_adopted",
+                    path=f"decisions[{i}].options",
+                    message=f"decision '{did}' に adopted: true の option がありません（chosen と対で記述する）",
+                    slice={"decision": did, "chosen": chosen},
+                )
+            )
+        elif len(adopted) >= 2:
+            findings.append(
+                Finding(
+                    kind="decision_chosen_adopted",
+                    path=f"decisions[{i}].options",
+                    message=f"decision '{did}' で adopted: true が {len(adopted)} 件あります（採用は 1 件だけ）: {adopted}",
+                    slice={"decision": did, "adopted": adopted},
+                )
+            )
+        elif chosen and adopted[0] != chosen:
+            findings.append(
+                Finding(
+                    kind="decision_chosen_adopted",
+                    path=f"decisions[{i}]",
+                    message=f"decision '{did}' の chosen '{chosen}' と adopted: true の option '{adopted[0]}' が不一致",
+                    slice={"decision": did, "chosen": chosen, "adopted": adopted[0]},
+                )
+            )
+    return findings
+
+
+def decision_affects_presence(model: dict) -> list[Finding]:
+    """decisions[].affects が欠落 / 空なら警告する。
+
+    採用判断の影響範囲（AGG / Policy / BC）が無い decision は将来の読者がトレースできない。
+    `references/checks/decision-rationale-clarity.md` の観点 3 を構造チェックに降格したもの
+    （粒度の適切さ＝Policy 連鎖の漏れ等は引き続き LLM の責務）。
+    """
+    findings: list[Finding] = []
+    for i, d in enumerate(model.get("decisions") or []):
+        if not isinstance(d, dict):
+            continue
+        did = d.get("id") or f"#{i}"
+        affects = d.get("affects")
+        if not affects:
+            findings.append(
+                Finding(
+                    kind="decision_affects_presence",
+                    path=f"decisions[{i}].affects",
+                    message=(
+                        f"decision '{did}' に affects[] がありません"
+                        f"（影響を受ける AGG / Policy / BC を記載してください）"
+                    ),
+                    slice={"decision": did, "topic": d.get("topic")},
+                )
+            )
+    return findings
+
+
+def err_name_quality(model: dict) -> list[Finding]:
+    """scenarios[].errs[].err がコード風 / 汎用的すぎる名前でないかを検査する。
+
+    PascalCase 形式そのもの（`^[A-Z][A-Za-z0-9]*$`）は JSON Schema が担保するため、
+    ここでは schema を通過してしまう「業務エラー名として弱い」パターンだけを拾う:
+      - 数字を含む（`Err001` / `Http404` のようなコード風）
+      - 1 語のみ（`Invalid` / `Error` のような汎用語。大文字が 1 つ＝単語 1 個とみなす）
+    `references/checks/scenario-rules-quality.md` の観点 3 の機械化可能部分。
+    """
+    findings: list[Finding] = []
+    for i, s in enumerate(model.get("scenarios") or []):
+        if not isinstance(s, dict):
+            continue
+        sname = s.get("name") or f"#{i}"
+        for j, e in enumerate(s.get("errs") or []):
+            if not isinstance(e, dict):
+                continue
+            err = e.get("err") or ""
+            if not err:
+                continue  # 必須欠落は schema 検証の責務
+            if any(ch.isdigit() for ch in err):
+                findings.append(
+                    Finding(
+                        kind="err_name_quality",
+                        path=f"scenarios[{i}].errs[{j}].err",
+                        message=(
+                            f"scenario '{sname}' のエラー名 '{err}' が数字を含みコード風です"
+                            f"（業務語彙のエラー名に書き換えを検討: 例 Err001 → QuoteAlreadyConsumed）"
+                        ),
+                        slice={"scenario": sname, "err": err},
+                    )
+                )
+            elif sum(1 for ch in err if ch.isupper()) < 2:
+                findings.append(
+                    Finding(
+                        kind="err_name_quality",
+                        path=f"scenarios[{i}].errs[{j}].err",
+                        message=(
+                            f"scenario '{sname}' のエラー名 '{err}' が 1 語だけで汎用的すぎます"
+                            f"（何が・どう違反したかを含む複合語にしてください: 例 Invalid → ApplyDeadlineInvalid）"
+                        ),
+                        slice={"scenario": sname, "err": err},
+                    )
+                )
+    return findings
+
+
+def bc_vocabulary_collision(model: dict) -> list[Finding]:
+    """contexts[].lang 辞書の EN↔JP 完全一致衝突を検出する。
+
+    - 同名異義: 同カテゴリの同じ英語識別子が複数 BC で **異なる日本語ラベル** を持つ
+    - 異名同義: 同カテゴリの同じ日本語ラベルが **異なる英語識別子** に対応している（BC 内 / BC 間とも）
+    `references/checks/bc-vocabulary-consistency.md` の観点 1・2 のうち完全一致で判定できる部分の降格。
+    表記ゆれ（近縁語）や意図的な Conformist / ACL の判断は引き続き LLM の責務。
+    states は `cross_bc_state_name_collision`（同名 state はラベルで差別化すべし）と方向が
+    逆になるため対象外。
+    """
+    CATEGORIES = ("aggs", "actors", "cmds", "evts", "pols", "qrys", "vos")
+    # (cat, en) -> [(ctx, label)], (cat, label) -> [(ctx, en)]
+    by_en: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    by_label: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    for ctx in model.get("contexts") or []:
+        if not isinstance(ctx, dict):
+            continue
+        cname = ctx.get("name") or ""
+        lang = ctx.get("lang") or {}
+        if not isinstance(lang, dict):
+            continue
+        for cat in CATEGORIES:
+            cat_dict = lang.get(cat) or {}
+            if not isinstance(cat_dict, dict):
+                continue
+            for en, label in cat_dict.items():
+                if not en or not isinstance(label, str) or not label:
+                    continue
+                by_en.setdefault((cat, en), []).append((cname, label))
+                by_label.setdefault((cat, label), []).append((cname, en))
+
+    findings: list[Finding] = []
+    for (cat, en), occurrences in by_en.items():
+        labels = {label for _, label in occurrences}
+        if len(labels) >= 2:
+            owners = [f"{c}({label})" for c, label in occurrences]
+            findings.append(
+                Finding(
+                    kind="bc_vocabulary_collision",
+                    path=f"contexts[].lang.{cat}.{en}",
+                    message=(
+                        f"同名異義: '{en}' が複数 BC で異なる日本語ラベルを持ちます: {owners}。"
+                        f"別概念なら識別子を分けるか、意図的な流用なら note で Conformist / ACL を明示してください"
+                    ),
+                    slice={"category": cat, "identifier": en, "occurrences": owners},
+                )
+            )
+    for (cat, label), occurrences in by_label.items():
+        ens = {en for _, en in occurrences}
+        if len(ens) >= 2:
+            owners = [f"{c}.{en}" for c, en in occurrences]
+            findings.append(
+                Finding(
+                    kind="bc_vocabulary_collision",
+                    path=f"contexts[].lang.{cat}",
+                    message=(
+                        f"異名同義: 日本語ラベル '{label}' が異なる英語識別子 {sorted(ens)} に対応しています: {owners}。"
+                        f"同一概念なら識別子を統一してください"
+                    ),
+                    slice={"category": cat, "label": label, "identifiers": sorted(ens), "occurrences": owners},
+                )
+            )
+    return findings
+
+
+def crud_cmd_naming(model: dict) -> list[Finding]:
+    """CMD 名が CRUD 風接頭辞（Create/Add/Update/Delete/Get/Set 等）で始まっていないかを検査する。
+
+    CMD は業務行為（Publish / Apply / Conclude ...）で命名するのが Ubiquitous Language の作法。
+    `references/checks/bc-vocabulary-consistency.md` の観点 3 のヒューリスティック降格。
+    接頭辞の直後が大文字の場合のみフラグ（`Address...` のような偶然の前方一致は除外）。
+    """
+    CRUD_PREFIXES = (
+        "Create", "Add", "Update", "Delete", "Remove",
+        "Get", "Set", "Fetch", "Edit", "Modify", "Insert",
+    )
+
+    def _is_crud(name: str) -> str | None:
+        for p in CRUD_PREFIXES:
+            rest = name[len(p):]
+            if name.startswith(p) and rest and rest[0].isupper():
+                return p
+        return None
+
+    # cmd 名の出現箇所を収集（scenarios / policies / lang.cmds）
+    seen: dict[str, str] = {}  # cmd -> 最初に見つけた path
+    for i, s in enumerate(model.get("scenarios") or []):
+        if isinstance(s, dict) and s.get("cmd"):
+            seen.setdefault(s["cmd"], f"scenarios[{i}].cmd")
+    for i, p in enumerate(model.get("policies") or []):
+        if isinstance(p, dict) and p.get("cmd"):
+            seen.setdefault(p["cmd"], f"policies[{i}].cmd")
+    for i, ctx in enumerate(model.get("contexts") or []):
+        if not isinstance(ctx, dict):
+            continue
+        lang = ctx.get("lang") or {}
+        cmds = lang.get("cmds") if isinstance(lang, dict) else None
+        if isinstance(cmds, dict):
+            for cmd in cmds.keys():
+                seen.setdefault(cmd, f"contexts[{i}].lang.cmds.{cmd}")
+
+    findings: list[Finding] = []
+    for cmd, path in seen.items():
+        prefix = _is_crud(cmd)
+        if prefix:
+            findings.append(
+                Finding(
+                    kind="crud_cmd_naming",
+                    path=path,
+                    message=(
+                        f"CMD '{cmd}' が CRUD 風接頭辞 '{prefix}' で始まっています"
+                        f"（業務行為の動詞への言い換えを検討: 例 UpdateEvent → RescheduleEvent / PublishEvent）"
+                    ),
+                    slice={"cmd": cmd, "prefix": prefix},
+                )
+            )
+    return findings
+
+
 # ============================================================
 # レジストリ
 # ============================================================
@@ -702,4 +992,10 @@ CHECKS: dict[str, Callable[[dict], list[Finding]]] = {
     "dangling_lang_entry": dangling_lang_entry,
     "cross_bc_state_name_collision": cross_bc_state_name_collision,
     "question_decision_link": question_decision_link,
+    "agg_purpose_minlength": agg_purpose_minlength,
+    "decision_chosen_adopted": decision_chosen_adopted,
+    "decision_affects_presence": decision_affects_presence,
+    "err_name_quality": err_name_quality,
+    "bc_vocabulary_collision": bc_vocabulary_collision,
+    "crud_cmd_naming": crud_cmd_naming,
 }

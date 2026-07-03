@@ -74,3 +74,6 @@ python3 scripts/dmlctl.py view <session>.dml.yaml --view=decisions
 ## 連携する構造チェック
 
 - `question_decision_link` — closed question の decision_id 参照を先に確認
+- `decision_chosen_adopted` — 観点 4（chosen ⇔ adopted: true の整合）は構造チェックに降格済み
+- `decision_affects_presence` — 観点 3 のうち affects[] の有無判定は構造チェックに降格済み
+  （粒度の適切さ＝Policy 連鎖の漏れ等は引き続き本観点＝LLM の責務）

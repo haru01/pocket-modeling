@@ -190,7 +190,7 @@ narratives:
   - id: happy
     title: ハッピーパス — イベント作成から参加確定まで
     kind: happy
-    entry: 主催者がイベントを作成する         # フロー開始 scenarios[].name
+    entry: 主催者がイベントを下書きする         # フロー開始 scenarios[].name
     prose: |
       <ハッピーパス散文>
   - id: alt-waitlist
@@ -201,9 +201,9 @@ narratives:
       <代替シナリオ散文>
 
 scenarios:
-  - name: 主催者がイベントを作成する
-    cmd: CreateEvent
-    evt: EventCreated
+  - name: 主催者がイベントを下書きする
+    cmd: DraftEvent
+    evt: EventDrafted
     next: 参加者がイベントに参加申込する      # 全フロー共通の次（文字列）
 
   - name: 参加者がイベントに参加申込する

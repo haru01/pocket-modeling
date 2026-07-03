@@ -80,3 +80,5 @@ python3 scripts/dmlctl.py view <session>.dml.yaml --view=scenarios [--ctx <bc-na
 
 - 先に `dmlctl check <file> --check=dangling_cmd` で参照整合性を確認すること
 - 命名規約（PascalCase）違反は JSON Schema 検証が拾うため、ここでは扱わない
+- `err_name_quality` — 観点 3 のうち機械判定できる部分（数字入りコード風 / 1 語のみの汎用語）は
+  構造チェックに降格済み。LLM は業務語彙としての適切さ（観点 1・2・4）に集中する

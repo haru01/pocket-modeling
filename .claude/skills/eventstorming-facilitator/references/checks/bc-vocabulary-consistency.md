@@ -48,3 +48,7 @@ python3 scripts/dmlctl.py view <session>.dml.yaml --view=bc-language
 ## 連携する構造チェック
 
 - `language_coverage` — まず未登録識別子を解決
+- `bc_vocabulary_collision` — 観点 1・2 のうち **完全一致** の衝突（同 EN 別ラベル / 同ラベル別 EN）は
+  構造チェックに降格済み。LLM は表記ゆれ・近縁語・意図的な Conformist / ACL の判断に集中する
+- `crud_cmd_naming` — 観点 3 のうち CRUD 接頭辞（Create/Add/Update/Delete/Get/Set 等）の検出は
+  構造チェックに降格済み。LLM は接頭辞に現れない CRUD 的発想（貧血な命名）を評価する

@@ -47,12 +47,12 @@ contexts:
       actors:
         Organizer: 主催者
       cmds:
-        CreateEvent: イベントを作成する
+        DraftEvent: イベントを下書きする
         PublishEvent: イベントを公開する
         CancelEvent: イベントをキャンセルする
         CompleteEvent: イベントを終了する
       evts:
-        EventCreated: イベントが作成された
+        EventDrafted: イベントが下書きされた
         EventPublished: イベントが公開された
         EventCancelled: イベントがキャンセルされた
         EventCompleted: イベントが終了した
@@ -160,7 +160,7 @@ aggregates:
       - { name: capacity, type: int,     required: true, note: "1 以上" }
       - { name: startsAt, type: date,    required: true }
     events:
-      - name: EventCreated
+      - name: EventDrafted
         params:
           - { name: eventId,  type: EventId }
           - { name: title,    type: string }
@@ -212,7 +212,7 @@ aggregates:
 
   - name: Payment
     ctx: payment
-    purpose: "参加費の決済状態（保留→完了→返金）の単一の真実源"
+    purpose: "参加費の決済状態（保留→完了→返金）を単一の真実源として保持し、遷移の整合を保証する"
     background: "外部 PSP との決済結果を内部に映し戻し、申込確定（FinalizeEnrollment）の前提条件を満たす役割"
     constraints:
       - "PSP からの決済結果通知（webhook）と内部状態の整合性を保証"
@@ -241,11 +241,11 @@ scenarios:
   # pol の書き方（型が非対称な点に注意）:
   #   scenario 直下は配列のみ      → pol: [RequestPayment, NotifyParticipant]
   #   brs[].pol は文字列でも配列でも可 → pol: RequestPayment / pol: [A, B]
-  - name: 主催者がイベントを作成する
+  - name: 主催者がイベントを下書きする
     ctx: event-planning
     actor: Organizer
-    cmd: CreateEvent
-    evt: EventCreated
+    cmd: DraftEvent
+    evt: EventDrafted
     agg: Event
     next: 主催者がイベントを公開する
     rules:
@@ -364,7 +364,7 @@ narratives:
   - id: happy
     title: ハッピーパス — イベント作成から参加確定まで
     kind: happy
-    entry: 主催者がイベントを作成する
+    entry: 主催者がイベントを下書きする
     prose: |
       主催者がイベントを作成し公開すると、参加者が定員内で申込・決済を完了して
       参加確定する正規フロー。

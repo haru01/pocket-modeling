@@ -22,7 +22,17 @@ DML 品質チェックは **2 段階**で行う：
 | `state_reachability` | aggregates[].states に到達可能な transitions が無い状態（初期状態除く） | transitions を補強 |
 | `orphan_event` | EVT 宣言済みだが scenarios/policies のいずれからも参照されない | 削除 or 参照追加 |
 | `flow_chain_resolution` | `narratives[].entry` / `scenarios[].next` / `brs[].terminal` の参照が解決できない | typo 修正・narratives[].id の存在確認 |
+| `narrative_entry_consistency` | 複数 narrative が同一 entry を共有するのに next が dict 分岐していない | scenarios[].next を narrative.id キーの dict に |
+| `narrative_happy_unique` | `kind: happy` の narrative が 2 件以上 | happy は 1 本に統合 |
+| `dangling_lang_entry` | lang に登録された名前の実体が本体モデルに無い（typo / リネーム漏れ） | lang か本体を修正 |
+| `cross_bc_state_name_collision` | 複数 AGG で同名 state が lang.states のラベルで差別化されていない | lang.states を BC ごとに書き分け |
 | `question_decision_link` | closed question の `decision_id` が decisions[].id に存在しない | リンク修正 |
+| `agg_purpose_minlength` | aggregates[].purpose が欠落 or 30 字未満 | 「何を保証する集約か」を 30 字以上で言語化 |
+| `decision_chosen_adopted` | `chosen` と `options[].adopted: true` の不整合（不在 / 0 件 / 複数 / 不一致） | chosen と adopted を対で修正 |
+| `decision_affects_presence` | decisions[].affects が欠落 / 空 | 影響を受ける AGG / Policy / BC を記載 |
+| `err_name_quality` | errs[].err が数字入りコード風 or 1 語のみの汎用語 | 業務語彙の複合語エラー名に |
+| `bc_vocabulary_collision` | lang 辞書の同名異義（同 EN 別ラベル）/ 異名同義（同ラベル別 EN） | 識別子統一 or note で Conformist/ACL 明示 |
+| `crud_cmd_naming` | CMD が CRUD 風接頭辞（Create/Add/Update/Delete/Get/Set 等） | 業務行為の動詞に言い換え |
 
 実行例：
 
