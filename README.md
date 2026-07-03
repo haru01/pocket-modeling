@@ -83,6 +83,9 @@ python3 $SKILL/dmlctl.py set    <file> --path=<a.b.c>   --value=<yaml-literal>
 python3 $SKILL/dmlctl.py add    <file> --to=<list-path> --item=<yaml-literal>
 python3 $SKILL/dmlctl.py remove <file> --path=<a.b.c>
 
+# パスの期待型ヒント（書き込み前の型確認。ファイル引数不要）
+python3 $SKILL/dmlctl.py hint --path=<a.b.c>          # 例: queries.users / scenarios[].brs[].pol
+
 # 識別子の横断検索 / 一括リネーム（用語統一・state 改名。--ctx で BC 内に限定可）
 python3 $SKILL/dmlctl.py refs   <file> --name=<identifier>
 python3 $SKILL/dmlctl.py rename <file> --from=<old> --to=<new> [--ctx=<bc>] [--dry-run]

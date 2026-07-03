@@ -25,8 +25,9 @@ AI は **`scripts/dmlctl.py` 経由でしか** DML を読み書きできない�
 
 - **リスト要素のネストへ直接 set** — `set --path='contexts[name=billing].lang.states' --value='{...}'`。`key[selKey=selVal]` でリスト要素をキー選択して配下に降りられる（`remove --path='contexts[name=x]'` も可）。`lang` 全体を再投入せず狙った枝だけ書ける。
 - **`update --merge-yaml` は再帰マージ**（nested dict は保持・リーフは置換）。`--merge-yaml='{lang: {states: {...}}}'` で `lang.actors` 等を壊さず `states` だけ追加できる。dict 全体を置換したいときだけ `update --set-key`。
+- **書く前に `hint`** — `dmlctl hint --path=<a.b.c>`（ファイル引数不要）でパスの期待型・enum・必須キーと、コピペ可能な `set/add` の例が schema から出る。`hint --path=queries.users` → `--value='"テキスト"'`（文字列）、`hint --path=scenarios.brs.pol` → 文字列/配列の oneOf 両例。typo キーなら有効キー一覧つきでエラーになるので、型非対称の記憶に頼らず**書く前に 1 コマンドで確認**できる。
 - **書く前に `--dry-run`** — `set/add/update/remove` に `--dry-run` を付けると、本体を書かずに編集後の schema 検証だけ実行して違反を返す。型・必須キーの違反でファイルを汚して書き直す往復を防ぐ。
-- **未経験カテゴリは `--dry-run` 必須** — そのセッションで**初めて書くトップレベル要素やネスト要素**（`queries[]` / `scenarios[].pol` / 新しい AGG ブロック等）は、本書き込みの前に必ず `--dry-run` で型・必須キーを通してから書く。型非対称（上記チートシート）由来の往復はこれでゼロにできる。
+- **未経験カテゴリは `hint` → `--dry-run`** — そのセッションで**初めて書くトップレベル要素やネスト要素**（`queries[]` / `scenarios[].pol` / 新しい AGG ブロック等）は、`hint` で期待型を確認し、本書き込みの前に `--dry-run` で通してから書く。型非対称（上記チートシート）由来の往復はこれでゼロにできる。
 
 **スキーマ落とし穴チートシート**（過去に往復リトライを生んだ実例）:
 

@@ -40,6 +40,11 @@ DML ファイルへの **唯一の I/O 経路** になる。
         散文中の言及は置換せず ⚠ で報告する（手動フォロー用）。--ctx で BC 内に限定
         （例: 特定 AGG の state 名だけ変える）。
 
+    dmlctl hint --path=<a.b.c>
+        パスの期待型（型/enum/pattern/必須キー）と --value リテラル例を schema から提示する。
+        set/add/update の **書き込み前** に型非対称（users=文字列 / sources=配列 /
+        brs[].pol=両可 など）を確認する用途。ファイル引数は不要（schema のみ参照）。
+
     dmlctl check <file> (--check=<name> | --all)
         構造チェック観点を実行し、違反を JSON で stdout に出力する。
 
@@ -87,6 +92,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from dml_filters.views import VIEWS  # noqa: E402
 from dml_filters.checks import CHECKS, finding_to_dict  # noqa: E402
 from dml_filters.refs import collect_refs, apply_rename  # noqa: E402
+from dml_filters.hints import resolve_hint  # noqa: E402
 
 
 TEMPLATE_PATH = SCRIPT_DIR.parent / "references" / "template.dml.yaml"
@@ -677,6 +683,32 @@ def cmd_rename(args) -> int:
     return rc
 
 
+SCHEMA_PATH = SCRIPT_DIR.parent / "references" / "dml.schema.yaml"
+
+
+def cmd_hint(args) -> int:
+    if not SCHEMA_PATH.exists():
+        print(f"❌ schema が見つかりません: {SCHEMA_PATH}", file=sys.stderr)
+        return 2
+    with SCHEMA_PATH.open(encoding="utf-8") as f:
+        schema = yaml.safe_load(f)
+    result = resolve_hint(schema, args.path)
+    if "error" in result:
+        print(f"❌ {result['error']}", file=sys.stderr)
+        keys = result.get("valid_keys")
+        if keys:
+            print(f"   有効なキー: {', '.join(keys)}", file=sys.stderr)
+        return 2
+    example = result.pop("example", None)
+    sys.stdout.write(
+        yaml.safe_dump(result, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    )
+    if example:
+        # YAML dump のエスケープを避けて生の行で出す（コピペ可能な CLI 例）
+        sys.stdout.write(f"example: {example}\n")
+    return 0
+
+
 def cmd_check(args) -> int:
     if args.all and args.check:
         print("❌ --all と --check は同時指定できません（片方だけ指定）", file=sys.stderr)
@@ -849,6 +881,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_rename.add_argument("--no-postprocess", action="store_true")
     p_rename.add_argument("--dry-run", action="store_true", help="書かずに置換箇所の一覧と編集後 schema を検証")
     p_rename.set_defaults(func=cmd_rename)
+
+    p_hint = sub.add_parser("hint", help="パスの期待型を schema から提示する（書き込み前の型確認）")
+    p_hint.add_argument("--path", required=True, help="例: queries.users / scenarios[].brs[].pol / session.phase")
+    p_hint.set_defaults(func=cmd_hint)
 
     p_check = sub.add_parser("check", help="構造チェック観点を実行する")
     p_check.add_argument("file")
