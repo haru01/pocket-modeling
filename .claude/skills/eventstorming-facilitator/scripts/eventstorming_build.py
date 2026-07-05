@@ -1693,6 +1693,23 @@ def render_html(doc: DMLDocument) -> str:
 
     html = template
 
+    # テンプレ冒頭の編集ガイド用コメント（v5 以前のワークフロー説明）を出力から除去する。
+    # <!DOCTYPE html> の直後・<html> の前にある最初の HTML コメントブロックが対象。
+    html = re.sub(
+        r"(<!DOCTYPE html>\s*)<!--.*?-->\s*",
+        r"\1",
+        html,
+        count=1,
+        flags=re.DOTALL,
+    )
+
+    # <title>（<head> 内）のプレースホルダーを差し替える
+    html = re.sub(
+        r"<title>EventStorming — \{\{ドメイン名\}\}</title>",
+        f"<title>EventStorming — {esc(title)}</title>",
+        html,
+    )
+
     # ヘッダー（テンプレのプレースホルダーを差し替える）
     html = re.sub(
         r"<h1>EventStorming — \{\{ドメイン名\}\}</h1>",

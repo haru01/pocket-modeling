@@ -93,11 +93,176 @@ def agg_detail(model: dict, *, name: str | None = None, **_) -> Any:
     return {"aggregates": aggregates}
 
 
-def flow_causality(model: dict, *, id: str | None = None, **_) -> Any:
-    """narratives[].entry を起点に scenarios[].next を辿って各フローのステップ列を抽出（v6）。
+def _index_policies_by_trg(model: dict) -> dict[str, list[dict]]:
+    """evt 名 → その evt をトリガー（trg / trgs.evts）とする policy のリスト。"""
+    idx: dict[str, list[dict]] = {}
+    for p in model.get("policies") or []:
+        if not isinstance(p, dict):
+            continue
+        trg = p.get("trg")
+        if trg:
+            idx.setdefault(trg, []).append(p)
+        trgs = p.get("trgs") or {}
+        if isinstance(trgs, dict):
+            for ev in trgs.get("evts") or []:
+                idx.setdefault(ev, []).append(p)
+    return idx
 
-    フロー因果整合性のチェック観点に渡すスリム化スライス。policy ステップは
-    scenario.evt → policy.trg のマッチで自動挿入する（再帰的に policy.evt 連鎖も辿る）。
+
+def _pick_active_branch(sc: dict, flow_id: str) -> dict | None:
+    """メインパスが辿る分岐を 1 つ選ぶ: terminal==flow_id > terminal 無し > brs[0]。
+
+    eventstorming_build.py の _pick_active_branch と同型（レーン描画の単線化と共通の規約）。
+    非選択分岐は flow_causality では sidetracks[] として別途展開される。
+    """
+    brs = sc.get("brs") or []
+    if not brs:
+        return None
+    for br in brs:
+        if isinstance(br, dict) and br.get("terminal") == flow_id:
+            return br
+    for br in brs:
+        if isinstance(br, dict) and not br.get("terminal"):
+            return br
+    return brs[0] if isinstance(brs[0], dict) else None
+
+
+def _emit_policy_chain(
+    evt: str | None, steps: list, visited_pol: set, policies_by_trg: dict[str, list[dict]]
+) -> None:
+    """evt をトリガーとする policy ステップを再帰挿入（policy.evt 連鎖も辿る）。"""
+    if not evt:
+        return
+    for pol in policies_by_trg.get(evt, []):
+        pname = pol.get("name")
+        if not pname or pname in visited_pol:
+            continue
+        visited_pol.add(pname)
+        step = {
+            "step": pname,
+            "kind": "policy",
+            "ctx": pol.get("ctx"),
+            "trg": pol.get("trg"),
+            "cmd": pol.get("cmd"),
+            "evt": pol.get("evt"),
+        }
+        if pol.get("within") is not None:
+            step["within"] = pol["within"]  # EVENTUAL-TX の遅延許容 SLA
+        steps.append(step)
+        if pol.get("evt"):
+            _emit_policy_chain(pol["evt"], steps, visited_pol, policies_by_trg)
+
+
+def _branch_view(br: dict, taken: bool) -> dict:
+    """brs 要素を verbatim（cond/evt/pol/next/terminal/after/note）で出し、選択分岐に taken: true を注入。"""
+    out = {k: br[k] for k in ("cond", "evt", "pol", "next", "terminal", "after", "note") if k in br}
+    if taken:
+        out["taken"] = True
+    return out
+
+
+def _spawnable(br: dict, policies_by_trg: dict[str, list[dict]]) -> bool:
+    """非選択分岐を sidetrack として展開すべきか: next がある or 分岐 evt が policy を起動する。"""
+    return bool(br.get("next")) or br.get("evt") in policies_by_trg
+
+
+def _walk(
+    start: str | None,
+    flow_id: str,
+    *,
+    sc_idx: dict[str, dict],
+    policies_by_trg: dict[str, list[dict]],
+    visited_sc: set[str],
+    queue: list,
+    lead_evt: str | None = None,
+) -> list[dict]:
+    """start から next 連鎖を辿って step 列を返す（メインパス・sidetrack 共用）。
+
+    - visited_sc は flow 単位でメインパスと全 sidetrack が共有。既出 scenario に到達したら
+      {step, kind: scenario-ref} の 1 行参照で停止する（合流・ループの重複展開防止）
+    - 非選択分岐は (発生元 scenario 名, br) を queue に積むだけで、ここでは辿らない
+    - lead_evt は sidetrack の起点分岐 evt。冒頭でその policy 連鎖を emit する
+    - visited_pol は walk 呼び出しごとに新規（同じ補償 policy がメインと sidetrack の
+      両方に現れることは許容 — 「見えない」ことによる誤検知の防止を優先）
+    """
+    steps: list = []
+    visited_pol: set[str] = set()
+    if lead_evt:
+        _emit_policy_chain(lead_evt, steps, visited_pol, policies_by_trg)
+    current = start
+    while current:
+        if current in visited_sc:
+            steps.append({"step": current, "kind": "scenario-ref"})
+            break
+        visited_sc.add(current)
+        sc = sc_idx.get(current)
+        if sc is None:
+            steps.append({"step": current, "kind": "unresolved"})
+            break
+        active_br = _pick_active_branch(sc, flow_id)
+        cur_evt = active_br.get("evt") if active_br else sc.get("evt")
+        step: dict = {
+            "step": current,
+            "kind": "scenario",
+            "ctx": sc.get("ctx"),
+            "cmd": sc.get("cmd"),
+            "evt": cur_evt,
+        }
+        brs = [br for br in (sc.get("brs") or []) if isinstance(br, dict)]
+        if brs:
+            step["branches"] = [_branch_view(br, taken=(br is active_br)) for br in brs]
+            if sc.get("brMode"):
+                step["brMode"] = sc["brMode"]
+        terminal_here = bool(active_br and active_br.get("terminal") == flow_id)
+        if terminal_here:
+            step["terminal"] = flow_id
+        steps.append(step)
+        for br in brs:
+            if br is not active_br and _spawnable(br, policies_by_trg):
+                queue.append((current, br))
+        if cur_evt:
+            _emit_policy_chain(cur_evt, steps, visited_pol, policies_by_trg)
+        if terminal_here:
+            break
+        # 次の scenario を決定: active_br.next を優先、無ければ sc.next（v6 構文）
+        br_next = active_br.get("next") if active_br else None
+        if br_next:
+            current = br_next
+            continue
+        nv = sc.get("next")
+        if isinstance(nv, str):
+            current = nv
+        elif isinstance(nv, dict):
+            nxt = nv.get(flow_id)
+            if nxt is None:
+                # このフローの継続先が無い next-dict は verbatim 提示して停止
+                # （継続は他フローに属することを明示）
+                step["next"] = nv
+            current = nxt
+        else:
+            current = None
+    return steps
+
+
+def flow_causality(model: dict, *, id: str | None = None, **_) -> Any:
+    """narratives[].entry を起点にフロー連鎖を全分岐込みで抽出（v6 構文 / brs 対応版）。
+
+    フロー因果整合性・Saga 完結性のチェック観点に渡すスリム化スライス。
+
+    出力構造:
+    - flows[].steps[]: entry からメインパス（_pick_active_branch が選ぶ分岐）を線形に辿った step 列
+      - kind: scenario … {step, ctx, cmd, evt, branches?, brMode?, terminal?, next?}
+        - branches: brs 全件を verbatim（cond/evt/pol/next/terminal/note）で列挙し、
+          メインパスが辿った分岐に taken: true
+        - terminal: 選択分岐の terminal がこのフロー id のときのみ、その flow-id を出す
+          （next 省略による暗黙終端にはフィールドを出さない。false の合成はしない）
+        - next: sc.next が dict でこのフロー id のキーを持たない場合のみ verbatim 提示
+      - kind: policy … scenario/分岐の evt → policy.trg のマッチで自動挿入（policy.evt 連鎖も再帰）
+      - kind: scenario-ref … 既出 scenario への合流・ループ。{step} のみ
+      - kind: unresolved … next / entry が解決できない参照
+    - flows[].sidetracks[]: 非選択分岐（next を持つ or evt が policy を起動するもの）の展開チェーン。
+      {from: 分岐元 scenario 名, cond, evt, steps: [...]}。steps の形式はメインパスと同一。
+      sidetrack 内でさらに分岐が湧いた場合もネストせずフラットに追加される（from で辿れる）
 
     `id` で narratives[].id を絞り込み可能。
     """
@@ -106,49 +271,7 @@ def flow_causality(model: dict, *, id: str | None = None, **_) -> Any:
         narratives = [n for n in narratives if isinstance(n, dict) and n.get("id") == id]
 
     sc_idx = {s.get("name"): s for s in (model.get("scenarios") or []) if isinstance(s, dict)}
-    policies = [p for p in (model.get("policies") or []) if isinstance(p, dict)]
-    policies_by_trg: dict[str, list[dict]] = {}
-    for p in policies:
-        trg = p.get("trg")
-        if trg:
-            policies_by_trg.setdefault(trg, []).append(p)
-        trgs = p.get("trgs") or {}
-        if isinstance(trgs, dict):
-            for ev in trgs.get("evts") or []:
-                policies_by_trg.setdefault(ev, []).append(p)
-
-    def pick_active_branch(sc: dict, flow_id: str) -> dict | None:
-        brs = sc.get("brs") or []
-        if not brs:
-            return None
-        for br in brs:
-            if isinstance(br, dict) and br.get("terminal") == flow_id:
-                return br
-        for br in brs:
-            if isinstance(br, dict) and not br.get("terminal"):
-                return br
-        return brs[0] if isinstance(brs[0], dict) else None
-
-    def emit_policy_chain(evt: str, steps: list, visited: set) -> None:
-        if not evt:
-            return
-        for pol in policies_by_trg.get(evt, []):
-            pname = pol.get("name")
-            if not pname or pname in visited:
-                continue
-            visited.add(pname)
-            steps.append(
-                {
-                    "step": pname,
-                    "kind": "policy",
-                    "ctx": pol.get("ctx"),
-                    "trg": pol.get("trg"),
-                    "cmd": pol.get("cmd"),
-                    "evt": pol.get("evt"),
-                }
-            )
-            if pol.get("evt"):
-                emit_policy_chain(pol["evt"], steps, visited)
+    policies_by_trg = _index_policies_by_trg(model)
 
     result_flows = []
     for n in narratives:
@@ -158,47 +281,45 @@ def flow_causality(model: dict, *, id: str | None = None, **_) -> Any:
         if not entry:
             continue
         flow_id = n.get("id") or ""
-        steps: list = []
         visited_sc: set[str] = set()
-        visited_pol: set[str] = set()
-        current = entry
-        while current and current not in visited_sc:
-            visited_sc.add(current)
-            sc = sc_idx.get(current)
-            if sc is None:
-                steps.append({"step": current, "kind": "unresolved"})
-                break
-            active_br = pick_active_branch(sc, flow_id)
-            cur_evt = active_br.get("evt") if active_br else sc.get("evt")
-            steps.append(
-                {
-                    "step": current,
-                    "kind": "scenario",
-                    "ctx": sc.get("ctx"),
-                    "cmd": sc.get("cmd"),
-                    "evt": cur_evt,
-                    "terminal": bool(active_br and active_br.get("terminal") == flow_id),
-                }
-            )
-            if cur_evt:
-                emit_policy_chain(cur_evt, steps, visited_pol)
-            if active_br and active_br.get("terminal") == flow_id:
-                break
-            # 次の scenario を決定: active_br.next を優先、無ければ sc.next（v6 構文）
-            br_next = active_br.get("next") if active_br else None
-            if br_next:
-                current = br_next
-            else:
-                nv = sc.get("next")
-                if isinstance(nv, str):
-                    current = nv
-                elif isinstance(nv, dict):
-                    current = nv.get(flow_id)
-                else:
-                    current = None
-        result_flows.append(
-            {"id": flow_id, "title": n.get("title") or flow_id, "kind": n.get("kind"), "steps": steps}
+        queue: list = []
+        steps = _walk(
+            entry,
+            flow_id,
+            sc_idx=sc_idx,
+            policies_by_trg=policies_by_trg,
+            visited_sc=visited_sc,
+            queue=queue,
         )
+        sidetracks: list = []
+        while queue:
+            from_name, br = queue.pop(0)
+            st_steps = _walk(
+                br.get("next"),
+                flow_id,
+                sc_idx=sc_idx,
+                policies_by_trg=policies_by_trg,
+                visited_sc=visited_sc,
+                queue=queue,
+                lead_evt=br.get("evt"),
+            )
+            if not st_steps:
+                continue
+            st: dict = {"from": from_name}
+            if br.get("cond") is not None:
+                st["cond"] = br["cond"]
+            st["evt"] = br.get("evt")
+            st["steps"] = st_steps
+            sidetracks.append(st)
+        flow: dict = {
+            "id": flow_id,
+            "title": n.get("title") or flow_id,
+            "kind": n.get("kind"),
+            "steps": steps,
+        }
+        if sidetracks:
+            flow["sidetracks"] = sidetracks
+        result_flows.append(flow)
     return {"flows": result_flows}
 
 

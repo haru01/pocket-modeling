@@ -131,6 +131,13 @@ $defs:
   branchMode:
     type: string
     enum: [exclusive, concurrent, inclusive]    # X / + / O
+  triggerMode:
+    # trgs（複数トリガー）の結合方法。
+    #   all / concurrent = 全 evts が揃って初めて発火（AND join・Σ シンクバー）
+    #   any / or         = いずれか 1 つの evt で発火（OR・複数経路が同一 POLICY に合流）
+    # exclusive / inclusive は旧 branchMode 流用の後方互換で許容（新規は all/any を推奨）。
+    type: string
+    enum: [all, any, or, concurrent, exclusive, inclusive]
 
   # ---------- Domain / Subdomain（要素②・任意） ----------
   domain:
@@ -327,6 +334,7 @@ $defs:
             items: { $ref: "#/$defs/pascalCase" }
       next: { type: string }                                # この分岐が発火した時に進む scenarios[].name
       terminal: { $ref: "#/$defs/contextName" }             # この分岐がフロー終端（narratives[].id 参照）
+      after: { type: string }                               # タイムアウト分岐の待機時間（自然文。例「入金なく1週間」）
       note: { type: string }
     not:
       required: [next, terminal]                            # next と terminal の同時指定を禁止
@@ -400,12 +408,13 @@ $defs:
             type: array
             minItems: 1
             items: { $ref: "#/$defs/pascalCase" }
-          mode: { $ref: "#/$defs/branchMode" }
+          mode: { $ref: "#/$defs/triggerMode" }  # all(AND join) / any|or(OR)。省略時は join
       qry: { $ref: "#/$defs/pascalCase" }
       cmd: { $ref: "#/$defs/pascalCase" }        # 副作用専用 POLICY では省略可
       bulk: { type: boolean }
       evt: { $ref: "#/$defs/pascalCase" }
       agg: { $ref: "#/$defs/pascalCase" }        # v7・POL の cmd が変更する AGG（scenarios と対称化）
+      within: { type: string }                   # EVENTUAL-TX の遅延許容 SLA（自然文。例「火金の週2回」）
       note: { type: string }
     allOf:
       - not:

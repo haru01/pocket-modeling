@@ -476,9 +476,27 @@ def cmd_set(args) -> int:
         )
         return 2
     parent[last] = value
+    n = len(value) if isinstance(value, (list, dict)) else None
+    suffix = f"（{n} 件）" if n is not None else ""
+    print(f"✅ {args.path} を設定しました{suffix}", file=sys.stderr)
     return _save_and_postprocess(
         path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
     )
+
+
+def _toplevel_keys() -> list[str]:
+    """DML のトップレベルで受理されるキー一覧（typo 検知用。schema を真実源に）。"""
+    fallback = [
+        "domains", "contexts", "aggregates", "scenarios", "policies",
+        "decisions", "session", "narratives", "questions", "actions", "queries",
+    ]
+    try:
+        with SCHEMA_PATH.open(encoding="utf-8") as f:
+            schema = yaml.safe_load(f)
+        keys = list((schema.get("properties") or {}).keys())
+        return keys or fallback
+    except Exception:
+        return fallback
 
 
 def cmd_add(args) -> int:
@@ -489,25 +507,57 @@ def cmd_add(args) -> int:
     if data is None:
         data = {}
     segments = _parse_path(args.to)
-    target = data
-    for seg in segments:
-        target = _step(target, seg)
+    try:
+        parent, last = _resolve_parent(data, segments)
+    except (KeyError, ValueError) as e:
+        print(
+            f"❌ --to={args.to} のパスが解決できません: {e}\n"
+            "   途中の親要素が存在しません。親を先に `set` で作るか、--to のパスを確認してください。",
+            file=sys.stderr,
+        )
+        return 2
+    if isinstance(last, _Selector):
+        print(
+            "❌ add の --to はリストのキー名で終える必要があります"
+            "（リスト要素の選択は update --where を使う）",
+            file=sys.stderr,
+        )
+        return 2
+    # 末端リストキーが未存在なら空リストを自動生成する。
+    # ただしトップレベルの未知キー（typo）は build/validate まで待たず即座に弾く。
+    if isinstance(last, str) and isinstance(parent, dict) and last not in parent:
+        if len(segments) == 1 and last not in _toplevel_keys():
+            print(
+                f"❌ '{last}' は DML のトップレベルキーではありません（typo?）。\n"
+                f"   有効なキー: {', '.join(_toplevel_keys())}",
+                file=sys.stderr,
+            )
+            return 2
+        from ruamel.yaml.comments import CommentedSeq  # type: ignore
+
+        parent[last] = CommentedSeq()
+    try:
+        target = _step(parent, last)
+    except (KeyError, ValueError) as e:
+        print(f"❌ --to={args.to} が解決できません: {e}", file=sys.stderr)
+        return 2
     if not isinstance(target, list):
         print(f"❌ {args.to} はリストではありません", file=sys.stderr)
-        return 1
+        return 2
 
     if args.item is None and args.item_file is None:
         print("❌ --item か --item-file のいずれかが必須", file=sys.stderr)
-        return 1
+        return 2
     if args.item is not None and args.item_file is not None:
         print("❌ --item と --item-file は排他", file=sys.stderr)
-        return 1
+        return 2
     if args.item_file is not None:
         text = Path(args.item_file).read_text(encoding="utf-8")
         item = yaml.safe_load(text)
     else:
         item = _parse_value(args.item)
     target.append(item)
+    print(f"✅ {args.to} に 1 件追加しました（計 {len(target)} 件）", file=sys.stderr)
     return _save_and_postprocess(
         path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
     )
@@ -555,8 +605,13 @@ def cmd_remove(args) -> int:
             if len(parent) == before:
                 print(f"❌ {last.key}={last.val!r} の要素が見つかりません", file=sys.stderr)
                 return 2
+            print(
+                f"✅ {args.path} から {last.key}={last.val!r} の要素を削除しました",
+                file=sys.stderr,
+            )
         else:
             del parent[last]
+            print(f"✅ {args.path} を削除しました", file=sys.stderr)
     return _save_and_postprocess(
         path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
     )
@@ -835,8 +890,21 @@ def cmd_check(args) -> int:
             "clean": clean,
             "results": results,
         }
-        sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2))
-        sys.stdout.write("\n")
+        if getattr(args, "format", "json") == "summary":
+            if total == 0:
+                sys.stdout.write(f"✅ clean — {len(CHECKS)} 観点すべて違反なし\n")
+            else:
+                sys.stdout.write(
+                    f"⚠ {len(results)}/{len(CHECKS)} 観点で計 {total} 件の違反\n"
+                )
+                for r in results:
+                    sys.stdout.write(f"\n■ {r['check']}（{r['count']} 件）\n")
+                    for f in r["findings"]:
+                        sys.stdout.write(f"  - {f.get('message', '')}\n")
+                sys.stdout.write(f"\nclean: {len(clean)} 観点\n")
+        else:
+            sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2))
+            sys.stdout.write("\n")
         return 0 if total == 0 else 1
 
     if args.check not in CHECKS:
@@ -1000,6 +1068,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.add_argument("file")
     p_check.add_argument("--check", help="check 名（dmlctl checks で一覧）")
     p_check.add_argument("--all", action="store_true", help="全構造 check を一括実行しサマリを返す")
+    p_check.add_argument(
+        "--format",
+        choices=["json", "summary"],
+        default="json",
+        help="--all の出力形式（json=機械可読 / summary=人間可読の観点別サマリ）",
+    )
     p_check.set_defaults(func=cmd_check)
 
     p_validate = sub.add_parser("validate", help="JSON Schema 検証を実行する（validate_dml.py のラッパー）")

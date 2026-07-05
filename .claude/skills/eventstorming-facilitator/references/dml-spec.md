@@ -115,6 +115,10 @@ AI 実装エージェントが Issue から実装するときに意図を読み�
 
 加えて **業務エラーと実装エラーを区別する**。`errs[]` には業務的に発生し得る違反のみ書き、スケジューラ誤発火・null pointer・タイムアウト等のインフラ／実装エラーは含めない。判別基準は `references/checks/scenario-rules-quality.md` も参照。
 
+### `rules[]`/`errs[]` は全 scenario 義務ではない
+
+不変条件・業務エラーは、**goal に直結し業務価値を持つ scenario に絞って**書く。単純な CRUD・導線・通知だけの scenario は `rules`/`errs` が空でよい（無理に埋めると業務価値の薄いルールでノイズが増える）。`dmlctl view --view=coverage` に出る「未記入」は、**意図的に許容した箇所**と**未着手**を区別して読む — 残欠そのものはバグではない。どこに書くべきか迷ったら「この不変条件が破れると業務が困るか？」を基準にする。
+
 ### `pivotal: true`（節目イベント）の宣言
 
 Big Picture EventStorming の **Pivotal Event**（タイムラインを大きく区切る節目イベント）を、
@@ -181,9 +185,34 @@ policies:
 
 HTML §2 のフロー図では、`bulk: true` の POLICY は **fanout（× N バッジ + 3 枚スタック）** で描画される。
 
-### 複数トリガーの join（`trgs`）
+### 複数トリガーの join / OR（`trgs`）
 
-複数のイベントが揃って初めて起動する POLICY は、`trg`（単一）の代わりに `trgs`（`evts` 配列 + `mode`）を使う。HTML §2 では **BPMN シンクバー（Σ N）** で描画される。
+複数のイベントに反応する POLICY は、`trg`（単一）の代わりに `trgs`（`evts` 配列 + `mode`）を使う。`mode` で結合方法を区別する：
+
+- **`mode: all`（または `concurrent`）= join（AND）** — 全 evts が揃って初めて起動。HTML §2 では **BPMN シンクバー（Σ N）** で描画される。
+- **`mode: any`（または `or`）= OR** — いずれか 1 つの evt で起動。「複数の業務経路が同一 POLICY に合流する」構造（例: 返品確定・持ち戻り取消・一部返金合意のいずれでも同じ返金台帳へ記帳）を 1 つの POLICY で表す。経路別に POLICY を複製する必要がなくなる。
+
+```yaml
+policies:
+  - name: RegisterRefund
+    ctx: accounting
+    trgs:
+      evts: [ReturnConfirmed, RedeliveryCancelled, PartialRefundAgreed]
+      mode: or            # いずれかの経路で返金台帳に記帳される
+    cmd: ExecuteRefund
+    within: 火金の週2回     # 遅延許容 SLA（下記）
+```
+
+OR の意味論（1 つ揃えば発火してよいか、経路ごとに重複記帳しないか等）の妥当性は、構造チェックではなく `references/checks/saga-completeness.md` の LLM 観点で評価する。
+
+### 時間・期限・SLA（`policies[].within` / `brs[].after`）
+
+ドメインの時間制約は散文（note / cond）に逃がさず、専用フィールドで一級表現する：
+
+- **`policies[].within`** — EVENTUAL-TX の**遅延許容 SLA**。「いつまでに反応が完了すべきか / 実際どの頻度で回るか」を自然文で書く（例「火金の週2回」「出荷から24時間以内」）。POLICY が即時でなくバッチ・定期実行であることを明示し、競合（バッチ遅延窓でのキャンセル競合など）の議論の起点になる。
+- **`brs[].after`** — **タイムアウト分岐**の待機時間を自然文で書く（例「入金なく1週間」「本人確認3日不通」）。時刻駆動の分岐（期限切れ→自動取消など）を cond の散文ではなくフィールドで表す。
+
+いずれも optional・自然文。値は `flow-causality` view にも載り（`policy.within` / `branch.after`）、意味チェックが時間観点を評価できる。HTML の ⏱ バッジ描画は将来対応（未描画でも壊れない）。上表「時刻駆動（タイムアウト・失効）」の BULK policy + System scenario 方式と併用する（`within`/`after` は宣言、実処理は scenario/policy が担う）。
 
 ### POLICY のガード条件は呼び出される SCENARIO の `rules[]` に書く
 

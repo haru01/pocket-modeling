@@ -45,12 +45,22 @@ def load_schema(schema_path: Path = SCHEMA_PATH) -> dict | None:
     return _SCHEMA_CACHE
 
 
+# 条件付き必須（schema の if-then 由来）。欠落プロパティ名 → 発生条件の説明。
+# jsonschema の required 違反は allOf/then 経由で schema_path が複雑なため、
+# 欠落プロパティ名ベースの簡易ヒントに留める（dml.schema.yaml の if-then と対応）。
+_CONDITIONAL_REQUIRED = {
+    "qry": "policy に bulk: true があるとき qry が必須です",
+    "brs": "scenario に brMode があるとき brs が必須です",
+}
+
+
 def _format_error(err) -> str:
     """jsonschema のエラーを `scenarios/3/cmd: <message>` 形式に整形する。
 
     type 違反のときは「期待: array / 実際: str」のヒントを添える。
     配列の場所に文字列を渡した等（scenarios[].pol / queries[].sources など、キー名から
     型を推測しづらい非対称）を自己説明的にして書き直しの往復を減らす。
+    required 違反が条件付き必須（bulk→qry 等）由来のときは発生条件を添える。
     """
     loc = "/".join(str(p) for p in err.absolute_path) or "(root)"
     hint = ""
@@ -58,6 +68,12 @@ def _format_error(err) -> str:
         exp = err.validator_value
         exp = ", ".join(exp) if isinstance(exp, list) else exp
         hint = f"（期待: {exp} / 実際: {type(err.instance).__name__}）"
+    elif err.validator == "required":
+        missing = err.validator_value or []
+        for prop in missing:
+            if prop in _CONDITIONAL_REQUIRED and prop not in (err.instance or {}):
+                hint = f"（ヒント: {_CONDITIONAL_REQUIRED[prop]}）"
+                break
     return f"{loc}: {err.message}{hint}"
 
 

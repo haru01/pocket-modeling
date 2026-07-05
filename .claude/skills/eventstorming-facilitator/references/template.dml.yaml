@@ -75,6 +75,8 @@
 #     aggs: []                              # 所属 AGG 名の軽量名簿（PascalCase 文字列）
 
 # ---------- (F) Aggregate（トップレベル詳細定義） ----------
+# 新規 aggregates を追加するときは、所属 BC の `contexts[].lang.aggs` にも英→日辞書
+# エントリを同時追加する（`contexts[].aggs` の軽量名簿とは別物。language_coverage で検出可能）。
 # transitions[].from は実在状態のみ（schema が `^[A-Z][A-Z0-9_]*$` を強制）。
 # AGG の生成（creation）は transitions に書かず、states[] 先頭の入口状態として
 # 表現する（scenarios[].agg + lang.cmds で creation CMD は紐づけ済）。
@@ -130,6 +132,9 @@
 #     #   - { cond: "...", evt: <DivergeEvt>, next: <分岐先 scenario.name> }  # alt 経路の起点
 
 # ---------- (H) Policy（EVENTUAL-TX） ----------
+# 新規 policies を追加するときは、所属 BC の `contexts[].lang.pols` にも英→日辞書
+# エントリを同時追加する（language_coverage で検出可能）。
+# 複数トリガーは trgs（mode: all=AND join / any|or=OR）。遅延許容 SLA は within（例「火金の週2回」）。
 # policies:
 #   - name: <PolicyName>
 #     ctx: <bc-slug>

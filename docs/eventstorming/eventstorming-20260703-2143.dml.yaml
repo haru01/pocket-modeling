@@ -1,0 +1,1321 @@
+# ⚠ This file is managed by dmlctl (.claude/skills/eventstorming-facilitator/scripts/dmlctl.py).
+# AI agents must use `dmlctl view/init/set/add/remove/update` and MUST NOT edit this file directly
+# (PreToolUse hook blocks direct Read/Edit/Write). Humans may edit outside Claude Code.
+
+# =============================================================================
+# DML テンプレート — 新規 EventStorming セッション
+# =============================================================================
+# このファイルを `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.dml.yaml` に
+# コピーし、必要なセクションのコメントを外しながら埋めていく。
+#
+# .md は廃止。HTML（dist/eventstorming/*.html）は本 YAML のみから自動生成される。
+# AI は `scripts/dmlctl.py view/set/add` を介して必要な観点だけを読み書きする。
+#
+# 構文検証: `python3 scripts/validate_dml.py <this>.dml.yaml`
+# 詳細仕様: `references/dml-spec.md` / `references/dml.schema.yaml`
+#
+# 全フィールドは optional。空 YAML（{} のみ）でも valid（進行中セッション許容）。
+# =============================================================================
+
+# ---------- (A) セッションメタ（旧 .md ヘッダー） ----------
+# session:
+#   id: eventstorming-YYYYMMDD-HHMM
+#   domain: <ドメイン名>                    # 例: trade-in-exchange
+#   phase: "1"                               # v7・直近完了フェーズ（構造化）。
+#                                            # enum: "1" "2" "3" "4" "4.5" "4.6" "5" "6" "7"
+#                                            # HTML タブハイライトはこれを最優先で参照する。
+#                                            # 未設定の場合は status 文字列を regex 解釈するレガシー挙動。
+#   status: Phase 1 (スコープ確認中)          # 補足説明（自由文字列）。タブには使われない
+#   goal: <このセッションのゴール>
+#   started_at: YYYY-MM-DDTHH:MM:00+09:00
+#   html_link: ../../dist/eventstorming/eventstorming-YYYYMMDD-HHMM.html
+
+# ---------- (B) Narratives（ハッピーパス + 代替シナリオの単一情報源） ----------
+# narratives は HTML §1「ストーリー」と §2 フロー図駆動の単一情報源（v8）。
+# 旧トップレベル `story:` キーは廃止。ハッピーパスは kind: happy のエントリとしてここに書く。
+# `entry` を指定したエントリだけが §2 フロー図に 1 行描画される。
+# kind は必須・enum: [happy, alt]、kind:happy は 0 or 1 件（narrative_happy_unique で検出）。
+# narratives:
+#   - id: happy                              # フロー識別子（lowercase-with-hyphen）
+#     title: ハッピーパス
+#     kind: happy                            # 必須・happy / alt
+#     entry: <フロー開始 scenario.name>
+#     prose: |
+#       <ハッピーパス散文（400〜600 字）。{{主人公}}は {{課題}} を抱えていた…で始める。
+#        実装詳細（CMD/AGG/POLICY 名）は描かない。>
+#   - id: alt-1
+#     title: <代替シナリオの短い題>
+#     kind: alt
+#     entry: <フロー開始 scenario.name>      # 任意。指定なし → §2 フロー図は省略・散文のみ
+#     prose: |
+#       <代替シナリオの散文（100〜200字）>
+
+# ---------- (D) ドメイン分類（任意） ----------
+# subdomain.type は CORE_SUBDOMAIN / SUPPORTING_SUBDOMAIN / GENERIC_SUBDOMAIN を推奨。
+# 旧表記 CORE_DOMAIN / SUPPORTING_DOMAIN も後方互換で許容。
+# domains:
+#   - name: <domain-slug>
+#     vision: <ドメインビジョン>
+#     subs:
+#       - { name: <subdomain-slug>, type: CORE_SUBDOMAIN, vision: ... }
+
+# ---------- (E) Bounded Context ----------
+# name / lang（語彙の英→日辞書）/ up / dn / description（旧 .md §7 散文）
+# contexts:
+#   - name: <bc-slug>                       # lowercase-with-hyphen
+#     type: FEATURE                         # FEATURE / APPLICATION / SYSTEM / MICROSERVICE
+#     description: |                         # 旧 .md §7：境界の理由 / 含むシナリオ / 目的 / 背景 / 制約
+#       <BC 散文>
+#     lang:
+#       aggs:   { AggName: "集約日本語名" }
+#       actors: { ActorName: "アクター日本語名" }
+#       cmds:   { CommandName: "コマンド日本語名" }
+#       evts:   { EventName: "イベント日本語名" }
+#       pols:   { PolicyName: "ポリシー日本語名" }
+#       qrys:   { QryName: "クエリ日本語名" }
+#       vos:    { ValueObjName: "値オブジェクト日本語名" }
+#     up: []                                # upstream BC
+#     dn: []                                # downstream BC（{ ctx, rel: Customer-Supplier, ... }）
+#     aggs: []                              # 所属 AGG 名の軽量名簿（PascalCase 文字列）
+
+# ---------- (F) Aggregate（トップレベル詳細定義） ----------
+# transitions[].from は実在状態のみ（schema が `^[A-Z][A-Z0-9_]*$` を強制）。
+# AGG の生成（creation）は transitions に書かず、states[] 先頭の入口状態として
+# 表現する（scenarios[].agg + lang.cmds で creation CMD は紐づけ済）。
+# 入口で分岐する場合は「入口受付ステート」（例: APPLIED）を導入し
+# `{ from: APPLIED, to: [ACCEPTED, WAITLISTED], via: <CreationCmd> }` のように
+# to をリストにする。詳細は dml-spec.md「transitions[] の初期化規約」を参照。
+# state_reachability チェックは states[0] を入口とみなし、それ以外はいずれかの
+# to で到達可能でなければ違反として報告する。
+#
+# aggregates:
+#   - name: <AggName>
+#     ctx: <bc-slug>
+#     purpose: <30 字以上で「この AGG が単一に責任を持つこと」を一文に>
+#     background: <なぜ今この AGG を切り出すか>
+#     constraints:
+#       - <業務 / 法令 / プラットフォーム制約>
+#     states: [DRAFT, FINAL]                  # DRAFT が入口（transitions に書かない）
+#     transitions:
+#       - { from: DRAFT, to: FINAL, via: <CommandName> }
+#       # 単一状態のみで終わる AGG は `transitions: []`（空配列）を明示
+#     attrs:
+#       - { name: <fieldName>, type: <type>, required: true }
+#     events:
+#       - name: <EventName>
+#         params:
+#           - { name: <fieldName>, type: <type> }
+#         # 終端 EVT（後段で参照されない結果イベント）には terminal: true を付け、
+#         # orphan_event 検出から除外する。
+
+# ---------- (G) Scenario（CMD 実行ユースケース） ----------
+# 新規 scenarios を追加するときは、同 BC の `contexts[].lang.cmds` と `contexts[].lang.evts`
+# にも英→日辞書エントリを同時追加する（dmlctl check --check=language_coverage で検出可能）。
+# scenarios:
+#   - name: <アクター + 行為（日本語）>
+#     ctx: <bc-slug>
+#     actor: <ActorName>
+#     cmd: <CommandName>
+#     evt: <EventName>
+#     agg: <AggName>
+#     next: <次の scenarios[].name>          # フロー連鎖：全フロー共通の次（任意）
+#     # next:                                # 分岐点では dict 形式：narratives[].id ごとの次
+#     #   happy: <次 scenario.name>
+#     #   alt-1: <別 scenario.name>
+#     rules:
+#       - { rule: <英語の不変条件>, why: <なぜそれを守るか> }
+#     errs:
+#       - { cond: <エラー条件>, err: <ErrorName>, when: <発生時の補足> }
+#     # 分岐 brs[] 使用時:
+#     # brMode: exclusive
+#     # brs:
+#     #   - { cond: "...", evt: <HappyEvt> }                            # 通常分岐
+#     #   - { cond: "...", evt: <AltEvt>, terminal: alt-X }             # この分岐が alt-X を終端
+#     #   - { cond: "...", evt: <DivergeEvt>, next: <分岐先 scenario.name> }  # alt 経路の起点
+
+# ---------- (H) Policy（EVENTUAL-TX） ----------
+# policies:
+#   - name: <PolicyName>
+#     ctx: <bc-slug>
+#     trg: <EventName>                     # 単一トリガー（複数の場合 trgs を使う）
+#     cmd: <CommandName>                   # 副作用専用 POLICY なら省略可
+#     evt: <EventName>                     # 完了イベント名（任意）
+#
+# bulk: true の例（ファンアウト = 1 イベント受信時に N エンティティへ展開）：
+#   - name: NotifyOnCancellation
+#     ctx: notification
+#     trg: MeetupCancelled
+#     bulk: true                          # bulk: true のとき qry が必須（schema 検証）
+#     qry: ActiveRsvpsForMeetup           # 送信対象リストを返すクエリ名
+#
+# 複数トリガーの join（`trgs`）例：
+#   - name: GoodsReceivedJoin
+#     ctx: warehouse
+#     trgs:
+#       evts: [ParcelArrived, InspectionScheduled]
+#       mode: all                         # all（AND join） / any（OR）
+#     cmd: ConfirmReadyForInspection
+
+# ---------- (I) Flow（v6: 廃止） ----------
+# トップレベル flows[] は廃止。フロー情報は次の 3 か所に分散して保持される：
+#   - フロー識別子 / 見出し / 種別 / 散文 → narratives[]（上記 (B)）
+#   - フロー連鎖（順序） → scenarios[].next（上記 (G)）
+#   - 分岐終端          → scenarios[].brs[].terminal（上記 (G)）
+# §2 フロー図は narratives[].entry を起点に builder が自動構成する。
+
+# ---------- (J) 意思決定ログ（旧 .md §6） ----------
+# decisions:
+#   - id: D1
+#     topic: <意思決定のテーマ>
+#     chosen: <採用オプション名（options[].name のいずれかと一致）>
+#     options:
+#       # name: 追跡用 ID（英語 slug 推奨）。label: HTML 表示用の日本語ラベル（任意）
+#       - { name: <opt-1>, label: <日本語ラベル>, adopted: true,  why: <採用理由> }
+#       - { name: <opt-2>, label: <日本語ラベル>, adopted: false, why_not: <不採用理由> }
+#     affects: [<関連 AGG/BC 名>]
+
+# ---------- (K) オープンクエスチョン（旧 .md §5） ----------
+# questions:
+#   - id: Q1
+#     topic: <確認したい事項>
+#     why: <決まると何が変わるか>
+#     status: open                          # open | closed
+#     # decision_id: D1                      # closed の場合
+
+# ---------- (L) 次のアクション（旧 .md §4） ----------
+# actions:
+#   - id: A1
+#     text: <ステークホルダー向けに何をすればよいか>
+#     owner: <担当者（任意）>
+
+# ---------- (M) リードモデル候補（旧 .md §9） ----------
+# queries:
+#   - name: <QryName>
+#     ctx: <bc-slug>
+#     purpose: <何を確認して何を決めるか>
+#     users: <利用者（アクター / ポリシー）>
+#     sources:
+#       - <ソース AGG / EVT 等>
+#     formula: <算出条件・絞り込み式>
+
+# =============================================================================
+# 上記をすべてコメントアウトしているので、本ファイルそのものは valid な空 DML。
+# 必要なセクションからコメントを外して埋めていく。
+# =============================================================================
+session:
+  id: ec-order-20260703
+  domain: ec-order-management
+  phase: '7'
+  status: 'Phase 7 完了: 構造19観点 0違反・意味6観点の指摘反映済み（D1〜D7・A1〜A5）。残: A1 PO レビュー'
+  goal: キャンセルと出荷指示の競合、取消と返金の部門間認識ずれを可視化し、注文確定から配送完了・返品返金完了までの業務フローを整理する
+  started_at: '2026-07-03'
+  html_link: ../../dist/eventstorming/ec-order-20260703.html
+questions:
+  - id: Q1
+    topic: 法人まとめ買い注文（見積・請求書払い）を対象範囲に含めるか
+    why: 別フローで話が広がるため今回は対象外としたが、返金問題が法人にも波及するなら再検討
+    status: closed
+    decision_id: D1
+  - id: Q2
+    topic: 帳簿在庫と3PL実在庫の同期方式・頻度
+    why: 証言に「1時間ごと同期＋楽天併売ずれ」と「夜間1日1回突き合わせ＋棚卸差異」の2説あり。欠品発生メカニズムの理解に直結するため要確認
+    status: closed
+    note: '解決: 帳簿は即時（受注管理内で完結）・3PLからの入庫データ取込は日中数回・実在庫との突き合わせは夜間1回でアラートのみ。「1時間ごと同期」は誤情報だった。D2 で確定'
+    decision_id: D2
+  - id: Q3
+    topic: 配達完了イベント（ParcelDelivered）をモデルに含めるか
+    why: 配送会社の配達完了データとシステム未連携で、現状 CS が追跡ページを手動確認。モデル上の終端をどこに置くかの判断が必要
+    status: closed
+    decision_id: D3
+narratives:
+  - id: happy
+    kind: happy
+    title: ハッピーパス — 注文確定から配達まで
+    prose: "お客様がガジェットマートのサイトで商品を注文確定すると、決済代行（PSP)が即時にクレジットカードの与信を確保する。与信が取れると注文は「受注確定」となり、お客様へ注文確認メールが送られる。受注確定した注文は、1日3回（9時・13時・17時）の定時バッチで 3PL 倉庫へ出荷指示データとして送られる。3PL はピッキング・梱包を行い、当日または翌日にヤマトまたは佐川へ荷物を引き渡す。引き渡し時に送り状番号が受注管理システムへ戻り、注文は「出荷済み」となってお客様へ発送メールが送られる。同時に受注管理は決済代行へ売上確定を送り、与信済みだった代金が実際に請求される（出荷前に売上確定しないのが社内ルール）。商品は発送から1〜3日でお客様に届き、月あたり約2万件の注文の大半がこの流れで完結する。\n"
+    entry: 客が商品を注文確定する
+  - id: alt-cancel-before-batch
+    kind: alt
+    title: 代替 — 出荷指示バッチ前のキャンセル
+    prose: "お客様のキャンセル依頼を CS がメール・電話で受け付ける（CS 内の呼称は「取消」）。注文がまだ出荷指示バッチに乗っていなければ、受注管理で注文を取消にするだけで次バッチの対象から外れ、決済代行へ与信取消を送って完結する。\n"
+    entry: CSがキャンセル依頼を受け付ける
+  - id: alt-cancel-race
+    kind: alt
+    title: 代替 — バッチ後のキャンセル競合（出荷停止依頼）
+    prose: "出荷指示バッチが既に 3PL へ渡った後のキャンセル依頼は、システムでは止められない。CS が 3PL 窓口へ電話で出荷停止を依頼し、結果待ちの間の「取消依頼中」状態はシステムに存在せず担当者の Excel 管理となる。ピッキング前なら停止でき取消として完結、梱包済みなら出荷されてしまい、お届け後の返品扱いに切り替えてお客様へ案内する。\n"
+    entry: CSがキャンセル依頼を受け付ける
+  - id: alt-return-refund
+    kind: alt
+    title: 代替 — お届け後の返品と返金のタイムラグ
+    prose: "お届け後の返品は CS が理由（初期不良／お客様都合）を確認して返品受付番号を発行し、お客様が 3PL 倉庫へ返送する。検品が通ると「返品入庫」の連絡が入り、CS は注文を返品確定にして「返金処理いたします」とお客様へメールする。だが実際の返金は経理が週2回（火・金）まとめて決済代行の管理画面から操作し、カード会社の明細反映にさらに1〜2週間かかるため、CS の完了連絡から返金確認まで最長3週間近く空き、再入電の原因になっている。コンビニ払い・銀行振込の注文は口座確認が挟まりさらに時間がかかる。\n"
+    entry: CSが返品を受け付け受付番号を発行する
+  - id: alt-prepaid
+    kind: alt
+    title: 代替 — 前払い注文の入金待ちと期限切れ自動取消
+    entry: 客が商品を注文確定する
+    prose: コンビニ払い・銀行振込の注文（全体の約15%）は、入金が確認できるまで受注確定しない。入金待ちのまま1週間経過すると自動的に取消される。入金があれば通常フローに合流する。
+contexts:
+  - name: ordering
+    label_ja: 受注管理
+    note: 自社開発の受注管理システムが中心。帳簿在庫の引当もここが起点
+    lang:
+      actors:
+        Customer: 客
+        System: 受注管理システム
+        OrderStaff: 受注チーム担当
+      cmds:
+        PlaceOrder: 注文する
+        ConfirmOrder: 受注確定
+        CancelOrder: 注文取消
+        AutoCancelUnpaidOrder: 入金期限切れ自動取消
+        HoldOrder: 注文を保留にする
+        ReleaseHold: 保留解除
+      evts:
+        OrderPlaced: 注文が入った
+        OrderConfirmed: 受注が確定した
+        OrderCancelled: 注文が取消された
+        UnpaidOrderCancelled: 入金期限切れで自動取消された
+        OrderHeld: 注文が保留された
+      states:
+        AWAITING_PAYMENT: 入金待ち
+        CONFIRMED: 受注確定
+        ON_HOLD: 保留
+        SHIPPING_INSTRUCTED: 出荷指示済み
+        SHIPPED: 出荷済み
+        CANCELLED: 取消
+        RETURNED: 返品（顧客返品確定のみ。持ち戻りは含まない）
+      qrys:
+        FraudReviewQueue: 不正疑い保留注文の朝レビュー一覧
+      aggs:
+        Order: 注文
+      pols:
+        AutoCancelUnpaidOrderPolicy: 入金期限切れ自動取消ポリシー
+        FraudScreeningPolicy: 不正注文スクリーニング
+    description: "自社開発の受注管理システムを中心とした注文ライフサイクルの管理。**注文状態のマスター**であり、取消・自動取消もここで確定する。\n- 帳簿在庫の引当・解放と一体運用（取消時は SAME-TX で引当解除）\n- 「取消依頼中」に相当する状態がシステムに無く、バッチ後キャンセルの進行は担当者の Excel 管理"
+    up: []
+    dn:
+      - ctx: payment
+        rel: Customer-Supplier
+        note: 与信・売上確定・与信取消を指示
+      - ctx: fulfillment
+        rel: Customer-Supplier
+        note: 出荷指示バッチの送信元
+      - ctx: customer-support
+        note: CS が注文を参照・取消操作
+    sub: order-lifecycle
+    aggs:
+      - Order
+  - name: payment
+    label_ja: 決済連携
+    note: 外部の決済代行（PSP）との連携。与信と売上確定の2段階
+    lang:
+      cmds:
+        AuthorizePayment: 与信確保
+        CapturePayment: 売上確定
+        VoidAuthorization: 与信取消
+        PayPrepaid: 前払い入金
+      evts:
+        PaymentAuthorized: 与信が取れた
+        PaymentCaptured: 売上が確定した
+        AuthorizationVoided: 与信が取り消された
+        PaymentReceived: 入金が確認された
+        PaymentDeadlineExpired: 入金期限が切れた
+      vos:
+        Prepaid: 前払い（コンビニ払い・銀行振込。全注文の約15%）
+      states:
+        AUTHORIZED: 与信済み
+        CAPTURED: 売上確定
+        VOIDED: 与信取消済み
+        REFUNDED: 返金済み
+      aggs:
+        Payment: 決済
+      pols:
+        CaptureOnShipmentPolicy: 出荷時売上確定ポリシー
+    description: 外部の決済代行（PSP）との連携窓口。与信（注文時）と売上確定（出荷時）の2段階運用。前払い（コンビニ・銀振、約15%）は入金確認イベントを受ける。返金操作だけは経理が PSP 管理画面を直接操作しており、システムを経由しない。
+    up:
+      - ctx: ordering
+        rel: Customer-Supplier
+        note: 与信・売上確定・取消の指示元。実体は外部 PSP サービスへの窓口（PSP 自体は BC としてモデル化していない）
+    dn: []
+    sub: payment-gateway
+    aggs:
+      - Payment
+  - name: inventory
+    label_ja: 在庫管理
+    note: 帳簿在庫は受注管理が保持。実在庫との照合は夜間1回・差異アラートのみ（Q2 解決済み）
+    lang:
+      cmds:
+        ReserveStock: 在庫引当
+        PrioritizeBackorder: 入荷優先引当
+      evts:
+        StockReserved: 在庫が引き当てられた
+        BackorderReserved: 入荷分が優先引当された
+      vos:
+        BookStock: 帳簿在庫（受注管理システムが保持・サイト表示の元）
+        PhysicalStock: 実在庫（3PL 倉庫の現物。夜間突き合わせ・差異はアラートのみ）
+      aggs:
+        StockItem: 帳簿在庫品目
+    description: 受注管理側が保持する**帳簿在庫**の引当・解放。帳簿はシステム内で即時更新（注文で減・取消で戻）。3PL からは入庫データが日中数回届いて帳簿が増え、夜間バッチで実在庫と全品突き合わせ（差異はアラート一覧のみ・翌朝人間が修正）。棚卸差異・破損により月20〜40件の欠品が出荷指示後に顕在化する。
+    up:
+      - ctx: ordering
+        note: 注文確定・取消に伴う引当・解放の指示元
+      - ctx: fulfillment
+        rel: Conformist
+        note: 3PL 実在庫データに従属（同期方式の詳細は Q2）
+    dn: []
+    sub: order-lifecycle
+    aggs:
+      - StockItem
+  - name: fulfillment
+    label_ja: 出荷・物流
+    note: 3PL 倉庫と配送会社（ヤマト/佐川）。出荷指示は1日3回のバッチ
+    lang:
+      actors:
+        WarehouseStaff: 3PL倉庫担当
+        Carrier: 配送会社
+      cmds:
+        SendShippingInstruction: 出荷指示送信
+        PackOrder: ピッキング・梱包
+        HandOverToCarrier: 配送会社への引き渡し
+        ReportShippingHoldResult: 出荷停止結果の回答
+        InspectReturn: 返品検品
+        DeliverParcel: 配達
+        ReturnParcelToWarehouse: 持ち戻り返送
+        ShipReturnParcel: 返品商品の返送（着払い/元払い）
+      evts:
+        ShippingInstructed: 出荷指示が送られた
+        OrderPacked: 梱包された
+        OrderShipped: 出荷された
+        ShippingHeld: 出荷が停止された
+        StockoutReported: 欠品が連絡された
+        ReturnReceived: 返品が入庫された
+        ParcelDelivered: 配達された
+        ParcelReturnedToWarehouse: 持ち戻りで倉庫へ返送された
+        ReturnRejected: 返品が検品NGになった
+        ShippingHoldFailed: 出荷停止が間に合わなかった
+        ReturnParcelShipped: 返品商品が返送された
+      qrys:
+        PendingShipmentOrders: 出荷指示待ち注文一覧（受注確定済み・出荷指示未送信）
+      vos:
+        Cancellation: 注文キャンセル（CS は「取消」・物流は「キャンセル」と呼ぶ同一概念。D4 で BC ローカル呼称のまま維持と決定）
+        CustomerReturn: 返品（顧客起点・返品受付番号あり）
+        CarrierReturn: 持ち戻り返送（不在・受取拒否起点。返品とは別扱い）
+      states:
+        INSTRUCTED: 出荷指示受領
+        PACKED: 梱包済み
+        HANDED_OVER: 配送会社引き渡し済み
+        HELD: 出荷停止済み
+        CARRIER_RETURNED: 持ち戻り入庫
+      aggs:
+        Shipment: 出荷
+      pols:
+        ShippingInstructionBatchPolicy: 出荷指示バッチポリシー
+    description: 3PL 倉庫（委託）と配送会社（ヤマト/佐川）による出荷・配送・返品入庫。出荷指示は1日3回のバッチで、バッチ後の制御はガジェットマート側から効かない（出荷停止は電話依頼・結果はメール）。配達完了データは未連携で、社内的な終端は「出荷済み」。
+    up:
+      - ctx: ordering
+        rel: Customer-Supplier
+        note: 出荷指示バッチを受領
+      - ctx: customer-support
+        note: 出荷停止依頼（電話）を受ける
+    dn:
+      - ctx: inventory
+        note: 実在庫・欠品情報の提供元
+      - ctx: customer-support
+        note: 停止結果・欠品連絡・検品結果をメールで通知
+    sub: logistics
+    aggs:
+      - Shipment
+  - name: customer-support
+    label_ja: CS対応
+    note: キャンセル・欠品・返品の顧客窓口。CS は「取消」、物流は「キャンセル」と呼ぶ（同一概念の用語ゆれ）
+    lang:
+      actors:
+        CsAgent: CS担当
+      cmds:
+        AcceptCancellationRequest: 取消依頼の受付（顧客の言葉では「キャンセル」）
+        RequestShippingHold: 出荷停止依頼
+        ConfirmStockoutPreference: 欠品時の意向確認
+        AcceptReturnRequest: 返品受付
+        ConfirmReturn: 返品確定
+        ConfirmRedeliveryPreference: 再送・取消の意向確認
+        NegotiateReturnResolution: 検品NG対応の協議
+      evts:
+        CancellationRequested: キャンセル依頼が受け付けられた
+        ShippingHoldRequested: 出荷停止が依頼された
+        BackorderAccepted: 入荷待ちが選ばれた
+        ReturnRequested: 返品が受け付けられた
+        ReturnConfirmed: 返品が確定した
+        ReshipmentRequested: 再送が依頼された
+        PartialRefundAgreed: 一部返金で合意した
+        ReturnSentBack: 返品お断りで商品を送り返した
+        RedeliveryCancelled: 持ち戻り後に取消が選ばれた
+        StockoutCancellationRequested: 欠品キャンセルが選ばれた
+      vos:
+        StockoutCancellation: 欠品キャンセル（CS集計上の区分。システム操作は通常の取消と同一）
+        ReturnReceiptNumber: 返品受付番号
+        Cancellation: 注文キャンセル（CS は「取消」・物流は「キャンセル」と呼ぶ同一概念。D4 で BC ローカル呼称のまま維持と決定）
+        CompletionForCs: CS の「対応完了」＝返品確定＋返金案内メール送信時点（返金実行はまだ）
+      states:
+        REQUESTED: 返品受付済み（返送待ち）
+        INSPECTING: 検品中
+        ACCEPTED: 返品確定
+        REJECTED: 返品お断り
+        NEGOTIATING: 協議中
+      aggs:
+        ReturnCase: 返品案件
+      pols:
+        ManualCancelAfterHoldPolicy: 停止成功後の手動取消運用
+    description: キャンセル（CS 用語では「取消」）・欠品・返品・持ち戻りの顧客窓口。バッチ後キャンセルの進行管理は Excel、返金依頼は共有スプレッドシートへの手動記帳と、システム外の運用が集中している。
+    up:
+      - ctx: ordering
+        note: 注文状態の参照元
+      - ctx: fulfillment
+        note: 停止結果・検品結果・欠品連絡の受け手
+    dn:
+      - ctx: accounting
+        note: 返金シート記帳（手動・自動連携なし）
+    sub: after-sales-care
+    aggs:
+      - ReturnCase
+  - name: accounting
+    label_ja: 経理・返金
+    note: 返金は週2回（火・金）のまとめ実行。カード明細反映は1〜2週間
+    lang:
+      actors:
+        AccountingStaff: 経理担当
+      cmds:
+        ExecuteRefund: 返金実行
+        RequestBankInfo: 返金口座の確認依頼
+      evts:
+        RefundExecuted: 返金が実行された
+      vos:
+        CompletionForAccounting: 経理の「完了」＝PSP 返金操作済＋シート「済」記入（顧客の明細反映はさらに1〜2週間後）
+      states:
+        QUEUED: 記帳済み（返金待ち）
+        AWAITING_BANK_INFO: 口座情報待ち
+        EXECUTED: 返金操作済み
+      qrys:
+        RefundBacklog: 返金待ち・口座待ち案件の滞留一覧
+      aggs:
+        RefundRequest: 返金依頼
+      pols:
+        RefundSheetRegistrationPolicy: 返金シート記帳運用
+    description: 返金の実行主体。共有スプレッドシートを火・金の週2回確認し、PSP 管理画面から1件ずつ返金操作して「済」を付ける。銀行振込返金は顧客の口座情報待ちで何週間も滞留することがある。カード返金の明細反映は1〜2週間かかり、CS の「返金処理します」案内との時間差がクレームの温床。
+    up:
+      - ctx: customer-support
+        note: スプレッドシート経由（自動連携なし）
+      - ctx: payment
+        note: PSP 管理画面を直接操作
+    dn: []
+    sub: refund-operations
+    aggs:
+      - RefundRequest
+scenarios:
+  - name: 客が商品を注文確定する
+    ctx: ordering
+    actor: Customer
+    cmd: PlaceOrder
+    evt: OrderPlaced
+    pivotal: true
+    next:
+      happy: システムが帳簿在庫を引き当てる
+      alt-prepaid: システムが帳簿在庫を引き当てる
+    agg: Order
+  - name: システムが決済与信を確保する
+    ctx: payment
+    actor: System
+    cmd: AuthorizePayment
+    evt: PaymentAuthorized
+    next: システムが受注を確定し確認メールを送る
+    agg: Payment
+    errs:
+      - cond: カード与信NG
+        err: PaymentAuthorizationFailed
+        when: 注文確定と同一画面遷移内で即時実行され、NG なら顧客にその場でエラー表示・注文は成立しない
+  - name: システムが帳簿在庫を引き当てる
+    ctx: inventory
+    actor: System
+    cmd: ReserveStock
+    evt: StockReserved
+    next:
+      happy: システムが決済与信を確保する
+      alt-prepaid: 客がコンビニ・銀行振込で入金する
+    agg: StockItem
+    rules:
+      - rule: Reserve only within book stock quantity
+        why: 売り越し防止。セール時の注文集中で破られた実績あり（年数回・CS謝罪対応）
+    errs:
+      - cond: 帳簿在庫が不足
+        err: OutOfStock
+        when: サイトで在庫なし表示となり注文不可
+  - name: システムが受注を確定し確認メールを送る
+    ctx: ordering
+    actor: System
+    cmd: ConfirmOrder
+    evt: OrderConfirmed
+    next: システムが出荷指示バッチを3PLへ送信する
+    agg: Order
+    rules:
+      - rule: Confirm only after authorization or payment received
+        why: 与信なし・未入金のまま出荷工程に流さない
+      - rule: Fraud-flagged orders stay on hold until cleared
+        why: 転売されやすい商材（ゲーム機・高級イヤホン）の不正注文の水際対策。判断が属人的なのが課題
+  - name: システムが出荷指示バッチを3PLへ送信する
+    ctx: fulfillment
+    actor: System
+    cmd: SendShippingInstruction
+    evt: ShippingInstructed
+    pivotal: true
+    next: 3PLがピッキング・梱包する
+    agg: Order
+    rules:
+      - rule: Include only confirmed orders in the batch
+        why: 保留・取消の注文を出荷させない
+  - name: 3PLがピッキング・梱包する
+    ctx: fulfillment
+    actor: WarehouseStaff
+    cmd: PackOrder
+    brMode: exclusive
+    brs:
+      - cond: 実在庫あり・梱包完了
+        evt: OrderPacked
+        next: 3PLが配送会社へ荷物を引き渡す
+      - cond: 実在庫不足（帳簿在庫とのずれ・月20〜40件）
+        evt: StockoutReported
+        next: CSが欠品時の意向を顧客に確認する
+    agg: Shipment
+  - name: 3PLが配送会社へ荷物を引き渡す
+    ctx: fulfillment
+    actor: WarehouseStaff
+    cmd: HandOverToCarrier
+    evt: OrderShipped
+    pivotal: true
+    next: システムが売上を確定する
+    agg: Shipment
+  - name: システムが売上を確定する
+    ctx: payment
+    actor: System
+    cmd: CapturePayment
+    evt: PaymentCaptured
+    next: 配送会社が商品を配達する
+    agg: Payment
+  - name: 配送会社が商品を配達する
+    ctx: fulfillment
+    actor: Carrier
+    cmd: DeliverParcel
+    note: 配達完了データはシステム未連携。CS が問い合わせ都度、配送会社の追跡ページで手動確認（社内的には「出荷済み」が実質の終端）
+    brMode: exclusive
+    brs:
+      - cond: 受け取られた（配達完了データはシステム未連携）
+        evt: ParcelDelivered
+      - cond: 不在持ち戻り・受取拒否（月約100件）
+        evt: ParcelReturnedToWarehouse
+        next: CSが持ち戻り後の再送か取消かを確認する
+    agg: Shipment
+  - name: CSがキャンセル依頼を受け付ける
+    ctx: customer-support
+    actor: CsAgent
+    cmd: AcceptCancellationRequest
+    evt: CancellationRequested
+    next:
+      alt-cancel-before-batch: システムが注文を取消する
+      alt-cancel-race: CSが3PLへ出荷停止を依頼する
+  - name: システムが注文を取消する
+    ctx: ordering
+    actor: System
+    cmd: CancelOrder
+    evt: OrderCancelled
+    next: システムが与信を取り消す
+    note: 取消と同時に帳簿在庫の引当が自動で外れサイト在庫表示も戻る（SAME-TX）。前払いで入金前の注文は与信が無いため与信取消はスキップ
+    agg: Order
+    rules:
+      - rule: Do not cancel shipped orders
+        why: 商品もお金も渡ったままになる過去事故の再発防止。現状は運用ルールのみでシステム強制なし
+      - rule: Release stock reservation in the same transaction
+        why: 取消と引当解放の不整合防止（バッチ前は自動で守られている）
+    errs:
+      - cond: 出荷済み注文への取消操作
+        err: CancelAfterShipmentAttempted
+        when: システムは止めない（運用ルール頼み・要改善ポイント）
+  - name: システムが与信を取り消す
+    ctx: payment
+    actor: System
+    cmd: VoidAuthorization
+    evt: AuthorizationVoided
+    agg: Payment
+  - name: CSが3PLへ出荷停止を依頼する
+    ctx: customer-support
+    actor: CsAgent
+    cmd: RequestShippingHold
+    evt: ShippingHoldRequested
+    next: 3PLが出荷停止の結果を回答する
+    agg: Order
+    rules:
+      - rule: Track every hold request until 3PL answers
+        why: 「取消依頼中」状態がシステムに無く Excel 管理。3PLメール見落としで帳簿在庫が引当のまま残る
+  - name: 3PLが出荷停止の結果を回答する
+    ctx: fulfillment
+    actor: WarehouseStaff
+    cmd: ReportShippingHoldResult
+    brMode: exclusive
+    brs:
+      - cond: ピッキング前で停止できた（3PLが棚戻し・実在庫は正常化）
+        evt: ShippingHeld
+        next: システムが注文を取消する
+      - cond: 梱包済みで間に合わなかった — 出荷継続しお届け後の返品を案内
+        evt: ShippingHoldFailed
+        terminal: alt-cancel-race
+    agg: Shipment
+  - name: CSが欠品時の意向を顧客に確認する
+    ctx: customer-support
+    actor: CsAgent
+    cmd: ConfirmStockoutPreference
+    brMode: exclusive
+    brs:
+      - cond: 入荷待ちを選択（与信期限切れリスクあり）
+        evt: BackorderAccepted
+        next: システムが入荷分を優先引き当てする
+      - cond: キャンセルを選択（CS集計上は欠品キャンセル）
+        evt: StockoutCancellationRequested
+        next: システムが注文を取消する
+  - name: システムが入荷分を優先引き当てする
+    ctx: inventory
+    actor: System
+    cmd: PrioritizeBackorder
+    evt: BackorderReserved
+    next: システムが出荷指示バッチを3PLへ送信する
+  - name: CSが返品を受け付け受付番号を発行する
+    ctx: customer-support
+    actor: CsAgent
+    cmd: AcceptReturnRequest
+    evt: ReturnRequested
+    next: 客が返品商品を3PL倉庫へ返送する
+    agg: ReturnCase
+    rules:
+      - rule: Accept returns only for shipped orders
+        why: お届け後の商品だけが返品対象（システムでも返品ステータスは出荷済みからのみ）
+      - rule: Always record return reason
+        why: 初期不良かお客様都合かで送料負担が変わる
+      - rule: Accept return requests within 14 days of delivery
+        why: 返品受付期限は商品到着から14日以内。到着日をシステムが知らず CS が追跡ページで手動確認しているのが課題（D3・A2）
+    errs:
+      - cond: 商品到着から14日を超過した返品依頼
+        err: ReturnWindowExpired
+        when: 原則お断り。到着日をシステムが知らず CS が追跡ページで手動確認するため判定が不安定（D3・A2）
+  - name: 3PLが返品を検品し入庫する
+    ctx: fulfillment
+    actor: WarehouseStaff
+    cmd: InspectReturn
+    brMode: exclusive
+    brs:
+      - cond: 検品OK
+        evt: ReturnReceived
+        next: CSが返品を確定し返金予定を案内する
+      - cond: 検品NG（使用感・付属品欠品。月数件・揉め筋）
+        evt: ReturnRejected
+        next: CSが検品NGの対応を協議する
+  - name: CSが返品を確定し返金予定を案内する
+    ctx: customer-support
+    actor: CsAgent
+    cmd: ConfirmReturn
+    evt: ReturnConfirmed
+    next: 経理が返金を実行する
+  - name: 経理が返金を実行する
+    ctx: accounting
+    actor: AccountingStaff
+    cmd: ExecuteRefund
+    evt: RefundExecuted
+    pivotal: true
+    agg: RefundRequest
+    rules:
+      - rule: Refund exactly once per order
+        why: 催促で焦った二重記帳による二重返金未遂の再発防止（現状は仕組みで防げていない）
+      - rule: Bank refunds require customer account info
+        why: 口座不明のまま実行できず「口座待ち」滞留になる
+    errs:
+      - cond: 銀振返金で顧客の口座情報が未取得
+        err: BankInfoMissing
+        when: 何週間も滞留しCS・経理がお互い様子見
+      - cond: 同一注文に2件目の返金依頼が記帳された
+        err: DuplicateRefundAttempted
+        when: 顧客催促で焦った二重記帳。過去に二重返金しかけた事故あり・現状は目視頼み
+  - name: 客がコンビニ・銀行振込で入金する
+    ctx: payment
+    actor: Customer
+    cmd: PayPrepaid
+    brMode: exclusive
+    brs:
+      - cond: 期限内に入金あり
+        evt: PaymentReceived
+        next: システムが受注を確定し確認メールを送る
+      - cond: 入金なく1週間経過
+        evt: PaymentDeadlineExpired
+        next: システムが入金期限切れ注文を自動取消する
+    agg: Payment
+  - name: システムが入金期限切れ注文を自動取消する
+    ctx: ordering
+    actor: System
+    cmd: AutoCancelUnpaidOrder
+    evt: UnpaidOrderCancelled
+  - name: CSが持ち戻り後の再送か取消かを確認する
+    ctx: customer-support
+    actor: CsAgent
+    cmd: ConfirmRedeliveryPreference
+    brMode: exclusive
+    brs:
+      - cond: 再送を希望
+        evt: ReshipmentRequested
+        next: システムが出荷指示バッチを3PLへ送信する
+      - cond: 取消を希望（売上確定済みのため返金対象としてシートに記帳）
+        evt: RedeliveryCancelled
+        next: 経理が返金を実行する
+  - name: CSが検品NGの対応を協議する
+    ctx: customer-support
+    actor: CsAgent
+    cmd: NegotiateReturnResolution
+    brMode: exclusive
+    brs:
+      - cond: 一部返金で合意
+        evt: PartialRefundAgreed
+        next: 経理が返金を実行する
+      - cond: 返品お断り・商品を送り返す
+        evt: ReturnSentBack
+  - name: 受注担当が保留を解除する
+    ctx: ordering
+    actor: OrderStaff
+    cmd: ReleaseHold
+    agg: Order
+    note: 本人確認OK・住所確認済み・変更反映・入荷済みなど保留理由の解消後に手動で戻す
+  - name: 配送会社が持ち戻り品を倉庫へ返送する
+    ctx: fulfillment
+    actor: Carrier
+    cmd: ReturnParcelToWarehouse
+    agg: Shipment
+    note: フロー上は「配送会社が商品を配達する」の持ち戻り分岐（ParcelReturnedToWarehouse）として発生
+  - name: CSが返金口座の確認を依頼する
+    ctx: accounting
+    actor: CsAgent
+    cmd: RequestBankInfo
+    agg: RefundRequest
+    note: 銀振返金で顧客口座が未取得の場合。返事が来ないまま滞留しがち（errs BankInfoMissing 参照）
+  - name: 客が返品商品を3PL倉庫へ返送する
+    ctx: fulfillment
+    actor: Customer
+    cmd: ShipReturnParcel
+    evt: ReturnParcelShipped
+    next: 3PLが返品を検品し入庫する
+policies:
+  - name: ShippingInstructionBatchPolicy
+    ctx: fulfillment
+    trg: OrderConfirmed
+    cmd: SendShippingInstruction
+    bulk: true
+    note: 受注確定した注文を1日3回（9時・13時・17時）の定時バッチでまとめて3PLへ送る。即時ではないことがキャンセル競合の構造要因
+    qry: PendingShipmentOrders
+  - name: CaptureOnShipmentPolicy
+    ctx: payment
+    trg: OrderShipped
+    cmd: CapturePayment
+    note: 出荷済みになったタイミングで PSP へ売上確定を送る（出荷前に確定しないのが社内ルール）
+  - name: AutoCancelUnpaidOrderPolicy
+    ctx: ordering
+    trg: PaymentDeadlineExpired
+    cmd: AutoCancelUnpaidOrder
+    note: 前払い注文が入金なく1週間経過したら自動取消（タイマー駆動。DML に期限・タイマーの一級表現が無いため trg は期限切れイベントで代用）
+  - name: RefundSheetRegistrationPolicy
+    ctx: accounting
+    trg: ReturnConfirmed
+    cmd: ExecuteRefund
+    note: '自動連携なし: CS が共有スプレッドシートへ手動記帳し、経理が火・金の週2回まとめて PSP 管理画面から返金操作。書き忘れ（返金停止）・二重記帳（二重返金未遂）・金額誤記の事故源。持ち戻り取消（RedeliveryCancelled）・一部返金合意（PartialRefundAgreed）も同じシート運用'
+  - name: ManualCancelAfterHoldPolicy
+    ctx: customer-support
+    trg: ShippingHeld
+    cmd: CancelOrder
+    note: 3PL の停止完了メールを CS が目視して受注管理で手動取消。メール見落としで帳簿在庫が引当のまま残り、サイト在庫なし表示の機会損失が発生（夜間同期の差異アラートで発覚するが自動補正はされない）
+  - name: FraudScreeningPolicy
+    ctx: ordering
+    trg: OrderPlaced
+    cmd: HoldOrder
+    agg: Order
+    note: 転売容易商材×初回顧客×複数個・届け先≠請求先・要注意顧客リスト該当を自動判定して保留（OrderHeld）。受注チームが朝に前日分を目視レビューし電話本人確認 → OK なら ReleaseHold で復帰、3日不通なら CancelOrder（Order の transitions ON_HOLD 行に対応）。判断基準が属人的でベテランと新人で割れる
+    evt: OrderHeld
+domains:
+  - name: ec-order-management
+    vision: 家電・ガジェット専門店として「買ったあとの安心」で選ばれ続ける（リピーター率4割超の源泉）。速さと価格では大手と戦わない
+    subs:
+      - name: after-sales-care
+        type: CORE_SUBDOMAIN
+        vision: キャンセル・欠品・返品・返金のもたつきゼロ。外部委託先との「境目」の判断権（出荷停止・返品可否）を自社で握る
+      - name: order-lifecycle
+        type: SUPPORTING_SUBDOMAIN
+        vision: 注文状態のマスター管理と帳簿在庫の整合。コアを支える正確な状態遷移
+      - name: refund-operations
+        type: SUPPORTING_SUBDOMAIN
+        vision: 返金実行の確実性とトレーサビリティ（現状はスプレッドシート運用）
+      - name: logistics
+        type: GENERIC_SUBDOMAIN
+        vision: 倉庫内作業・配送は 3PL・配送会社へ完全委託。自前でやる気はない
+      - name: payment-gateway
+        type: GENERIC_SUBDOMAIN
+        vision: 決済そのものは PSP に任せる
+aggregates:
+  - name: Order
+    ctx: ordering
+    purpose: 注文の成立から出荷・取消・返品までのライフサイクル状態を一元管理し、決済・出荷・返金の各処理が判断の拠り所にする注文状態の唯一の真実源を担う
+    background: 自社開発の受注管理システム。ステータスは7値だが「取消」がどのステータスからも選べてしまい（過去に出荷済み注文の誤取消事故）、「保留」が欠品・不正確認・法人請求書手配の何でも入れになっており、「取消依頼中」「返金済み」に相当する状態が存在しない
+    constraints:
+      - 出荷済み以降は取消にしない（運用ルールのみ。システムでは強制されていない）
+      - 前払い注文は入金確認まで受注確定にしない
+      - 入金待ちのまま1週間経過した注文は自動取消する
+    states:
+      - AWAITING_PAYMENT
+      - CONFIRMED
+      - ON_HOLD
+      - SHIPPING_INSTRUCTED
+      - SHIPPED
+      - CANCELLED
+      - RETURNED
+    transitions:
+      - from: AWAITING_PAYMENT
+        to: CONFIRMED
+        via: ConfirmOrder
+        when: 入金が確認された
+      - from: AWAITING_PAYMENT
+        to: CANCELLED
+        via: AutoCancelUnpaidOrder
+        when: 入金なく1週間経過
+      - from: CONFIRMED
+        to: SHIPPING_INSTRUCTED
+        via: SendShippingInstruction
+        when: 1日3回の定時バッチ
+      - from: CONFIRMED
+        to: ON_HOLD
+        via: HoldOrder
+        when: 不正疑い（自動フラグ＋朝の目視）・住所不備・変更依頼・欠品入荷待ち
+      - from: ON_HOLD
+        to: CONFIRMED
+        via: ReleaseHold
+        when: 本人確認OK・住所確認済み・変更反映・入荷済みなど理由解消
+      - from: ON_HOLD
+        to: CANCELLED
+        via: CancelOrder
+        when: 本人確認3日不通・欠品キャンセル選択
+      - from: CONFIRMED
+        to: CANCELLED
+        via: CancelOrder
+        when: バッチ前キャンセル（引当は同時に自動解放）
+      - from: SHIPPING_INSTRUCTED
+        to: SHIPPED
+        via: HandOverToCarrier
+        when: 3PLから送り状番号が返却された
+      - from: SHIPPING_INSTRUCTED
+        to: CANCELLED
+        via: CancelOrder
+        when: 出荷停止成功後にCSが3PLメールを目視して手動取消（見落としリスク）
+      - from: SHIPPED
+        to: RETURNED
+        via: ConfirmReturn
+        when: 返品入庫・検品OK後
+      - from: SHIPPED
+        to: CANCELLED
+        via: CancelOrder
+        when: 運用ルールでは禁止だがシステム上は操作可能（過去に誤取消事故）
+        note: as-is の穴として意図的に記載
+    attrs:
+      - name: orderId
+        type: string
+        required: true
+      - name: customerId
+        type: string
+        required: true
+      - name: paymentMethod
+        type: string
+        required: true
+        note: カード / コンビニ払い / 銀行振込
+      - name: totalAmount
+        type: number
+        required: true
+      - name: shippingAddress
+        type: string
+        required: true
+        note: 不備（番地欠落等）だと保留
+      - name: holdReason
+        type: string
+        note: 現状は備考欄の自由記述でしか保留理由が分からない
+      - name: trackingNumber
+        type: string
+        note: 出荷時に3PLから返却される送り状番号
+    events:
+      - name: OrderPlaced
+        params:
+          - name: orderId
+            type: string
+          - name: paymentMethod
+            type: string
+          - name: totalAmount
+            type: number
+      - name: OrderCancelled
+        params:
+          - name: orderId
+            type: string
+          - name: cancelReason
+            type: string
+            note: 顧客都合 / 欠品 / 入金期限切れ / 不正
+          - name: requestedBy
+            type: string
+            note: 顧客 / CS / システム
+  - name: Payment
+    ctx: payment
+    purpose: 注文ごとの決済の与信・売上確定・与信取消・返金という資金ライフサイクルを表し、注文状態と独立に「お金が今どうなっているか」に答える
+    background: 現状この状態を自社システムは保持しておらず、実体は PSP 側の管理画面にのみ存在する。返金済みかどうかは共有スプレッドシートの「済」印が唯一の記録で、注文の「返品」ステータスと返金完了が別物であることが部門間認識ずれの根因
+    constraints:
+      - 与信のみ確保し、出荷前に売上確定しない（社内ルール）
+      - 与信には有効期限があり、入荷待ちが長引くと失効する
+      - カード返金の明細反映は操作から1〜2週間かかる（自社では制御不能）
+    states:
+      - AUTHORIZED
+      - CAPTURED
+      - VOIDED
+      - REFUNDED
+    transitions:
+      - from: AUTHORIZED
+        to: CAPTURED
+        via: CapturePayment
+        when: 出荷済みになったタイミング
+      - from: AUTHORIZED
+        to: VOIDED
+        via: VoidAuthorization
+        when: 出荷前のキャンセル成立
+      - from: CAPTURED
+        to: REFUNDED
+        via: ExecuteRefund
+        when: 返品確定・持ち戻り取消・一部返金合意の後（火金バッチ）
+        note: 明細反映はさらに1〜2週間
+    attrs:
+      - name: orderId
+        type: string
+        required: true
+      - name: method
+        type: string
+        required: true
+      - name: authorizedAmount
+        type: number
+      - name: authorizationExpiresAt
+        type: date
+        note: 与信有効期限。入荷待ちが長引くと失効リスク
+    events:
+      - name: RefundExecuted
+        params:
+          - name: orderId
+            type: string
+          - name: amount
+            type: number
+          - name: method
+            type: string
+            note: カード返金 / 銀行振込
+        terminal: true
+  - name: StockItem
+    ctx: inventory
+    purpose: 商品ごとの帳簿在庫数と引当量を管理し、サイト在庫表示と注文可否判断の元になる数字の整合を守る
+    background: 帳簿在庫は受注管理が保持し、実在庫は 3PL 倉庫にある。夜間バッチの突き合わせは差異アラートのみで自動補正されず、楽天など併売チャネル・棚卸差異により月20〜40件の欠品が出荷指示後に顕在化する
+    constraints:
+      - 引当は帳簿在庫の範囲内で行う（セール時の注文集中で売り越しが年数回発生＝破られている）
+      - 取消時は引当を解放し帳簿在庫を戻す（バッチ前取消は自動、停止成功後は手動で見落としリスク）
+    attrs:
+      - name: sku
+        type: string
+        required: true
+      - name: bookQuantity
+        type: number
+        required: true
+        note: 帳簿在庫数（サイト表示の元）
+      - name: reservedQuantity
+        type: number
+        required: true
+      - name: physicalQuantitySnapshot
+        type: number
+        note: 夜間突き合わせ時点の3PL実在庫。差異はアラートのみ
+  - name: Shipment
+    ctx: fulfillment
+    purpose: 出荷指示単位の倉庫内進行（ピッキング・梱包・引き渡し・停止・持ち戻り）を表し、キャンセルが間に合うかどうかの判断材料を提供する
+    background: 実体は 3PL の倉庫システム内にあり、ガジェットマート側からは進行状況が見えない。出荷停止は電話依頼・結果はメールという境目の弱さが、キャンセル競合問題の中心
+    constraints:
+      - 出荷指示バッチに乗った後はガジェットマート側から直接止められない
+      - ピッキング前なら停止可能、梱包後は停止不可（3PL の作業進行次第）
+    states:
+      - INSTRUCTED
+      - PACKED
+      - HANDED_OVER
+      - HELD
+      - CARRIER_RETURNED
+    transitions:
+      - from: INSTRUCTED
+        to: PACKED
+        via: PackOrder
+        when: ピッキング・梱包完了
+      - from: INSTRUCTED
+        to: HELD
+        via: ReportShippingHoldResult
+        when: ピッキング前に停止依頼が間に合った
+      - from: PACKED
+        to: HANDED_OVER
+        via: HandOverToCarrier
+        when: 配送会社へ引き渡し
+      - from: HANDED_OVER
+        to: CARRIER_RETURNED
+        via: ReturnParcelToWarehouse
+        when: 不在持ち戻り・受取拒否（月約100件）
+  - name: ReturnCase
+    ctx: customer-support
+    purpose: 返品の受付から検品結果・返品確定・返金案内までを一つの案件として追跡し、お客様への案内と実際の処理状態のずれを無くす拠り所になる
+    background: 返品受付番号で管理。検品NG時の協議（一部返金・お断り）が月数件あり揉め筋。CS の「対応完了」は返品確定＋案内メール時点で、返金実行とは別であることが「お金が戻らない」クレームの構図を生む
+    constraints:
+      - 返品は出荷済み（お届け後）の注文のみ受け付ける
+      - 初期不良かお客様都合かで送料負担が変わるため、受付時に理由を必ず確認する
+      - 検品NG品は無断で返金しない（協議で一部返金かお断りかを決める）
+    states:
+      - REQUESTED
+      - INSPECTING
+      - ACCEPTED
+      - REJECTED
+      - NEGOTIATING
+    transitions:
+      - from: REQUESTED
+        to: INSPECTING
+        via: InspectReturn
+        when: 返送品が3PL倉庫に着荷
+      - from: INSPECTING
+        to: ACCEPTED
+        via: ConfirmReturn
+        when: 検品OK
+      - from: INSPECTING
+        to: NEGOTIATING
+        via: NegotiateReturnResolution
+        when: 検品NG（使用感・付属品欠品）
+      - from: NEGOTIATING
+        to: ACCEPTED
+        via: ConfirmReturn
+        when: 一部返金で合意
+      - from: NEGOTIATING
+        to: REJECTED
+        via: NegotiateReturnResolution
+        when: 返品お断り・商品を送り返す
+    attrs:
+      - name: returnReceiptNumber
+        type: string
+        required: true
+      - name: orderId
+        type: string
+        required: true
+      - name: reason
+        type: string
+        required: true
+        note: 初期不良 / お客様都合（送料負担の判定に必須）
+      - name: refundAmount
+        type: number
+        note: 一部返金合意の場合は満額と異なる
+    events:
+      - name: ReturnConfirmed
+        params:
+          - name: returnReceiptNumber
+            type: string
+          - name: orderId
+            type: string
+          - name: refundAmount
+            type: number
+  - name: RefundRequest
+    ctx: accounting
+    purpose: 返金すべき案件の台帳として、依頼の発生から返金操作完了までを漏れなく・重複なく追跡する
+    background: 現状は共有スプレッドシートが実体で、返金実行は経理による火・金の週2回のまとめ操作。CS の書き忘れで返金が止まり、二重記帳で二重返金しかけ、銀振返金は口座情報待ちで何週間も滞留する
+    constraints:
+      - 同一注文への返金依頼は1件のみ（現状は仕組みで防げていない）
+      - 銀行振込返金は顧客の口座情報が揃うまで実行できない
+    states:
+      - QUEUED
+      - AWAITING_BANK_INFO
+      - EXECUTED
+    transitions:
+      - from: QUEUED
+        to: AWAITING_BANK_INFO
+        via: RequestBankInfo
+        when: 銀振返金で顧客の口座情報が未取得
+      - from: AWAITING_BANK_INFO
+        to: EXECUTED
+        via: ExecuteRefund
+        when: 口座情報が揃った後の火金バッチ
+      - from: QUEUED
+        to: EXECUTED
+        via: ExecuteRefund
+        when: 火金バッチで PSP 管理画面から操作
+    attrs:
+      - name: orderId
+        type: string
+        required: true
+      - name: amount
+        type: number
+        required: true
+        note: 手書き転記のため誤記が発生
+      - name: method
+        type: string
+        required: true
+      - name: reason
+        type: string
+        required: true
+      - name: queuedAt
+        type: date
+        note: 滞留日数の起点（現状シートでは追えていない）
+queries:
+  - name: PendingShipmentOrders
+    ctx: fulfillment
+    purpose: 出荷指示バッチの対象注文を抽出する
+    users: 受注管理システム（バッチ）
+    sources:
+      - Order
+    formula: status=CONFIRMED かつ 出荷指示未送信の注文一覧
+  - name: RefundBacklog
+    ctx: accounting
+    purpose: 返金待ち案件の一覧と滞留日数を可視化する（共有スプレッドシートの代替。書き忘れ・二重記帳・滞留を仕組みで検知）
+    users: 経理担当・CS担当
+    sources:
+      - RefundRequest
+      - Order
+      - ReturnCase
+    formula: QUEUED / AWAITING_BANK_INFO の返金依頼を queuedAt からの経過日数付きで列挙。同一 orderId の重複はエラー表示
+  - name: CancellationRaceBoard
+    ctx: customer-support
+    purpose: バッチ後キャンセルの出荷停止依頼の進行状況を一覧する（担当者 Excel の代替。「取消依頼中」の可視化）
+    users: CS担当・受注チーム
+    sources:
+      - Order
+      - Shipment
+    formula: 取消依頼ありかつ SHIPPING_INSTRUCTED の注文と 3PL 停止結果（未回答/停止成功/間に合わず）の突き合わせ
+  - name: StockDiscrepancyAlert
+    ctx: inventory
+    purpose: 帳簿在庫と実在庫の差異を検知し原因調査に回す（夜間突き合わせの結果。現状アラートのみで放置されがち）
+    users: 受注チーム・在庫担当
+    sources:
+      - StockItem
+    formula: bookQuantity − reservedQuantity ≠ physicalQuantitySnapshot の SKU と差分数
+  - name: FraudReviewQueue
+    ctx: ordering
+    purpose: 不正疑いで自動保留になった注文の朝レビュー一覧
+    users: 受注チーム
+    sources:
+      - Order
+    formula: ON_HOLD かつ holdReason=不正疑い の前日分注文
+decisions:
+  - id: D1
+    topic: 法人まとめ買い注文（見積・請求書払い）の扱い
+    chosen: exclude-from-scope
+    affects:
+      - Order
+    options:
+      - name: exclude-from-scope
+        label: 今回は対象外
+        why: 別フローで話が広がりすぎ、ゴールの2課題（キャンセル競合・返金ずれ）に直結しない
+        adopted: true
+      - name: include-in-scope
+        label: 対象に含める
+        why_not: 本線の解像度が下がる。返金問題が法人にも波及すると分かった時点で再検討
+  - id: D2
+    topic: 帳簿在庫と実在庫の同期方式（証言ゆれの解消）
+    chosen: book-immediate-nightly-reconcile
+    affects:
+      - StockItem
+      - inventory
+      - fulfillment
+    options:
+      - name: book-immediate-nightly-reconcile
+        label: 帳簿は即時・夜間突き合わせ
+        why: 差異は月20〜40件規模で翌朝の人手修正で業務上許容できているため、実在庫照合は夜1回で足りる（帳簿はシステム内で即時、入庫データは日中数回取込。高橋氏に直接確認済み）
+        adopted: true
+      - name: hourly-sync
+        label: 1時間ごと同期
+        why_not: そのような仕組みは存在しないと本人が否定（初期証言の誤り）
+  - id: D3
+    topic: 配達完了イベント（ParcelDelivered）のモデル上の扱い
+    chosen: model-as-business-event
+    affects:
+      - Shipment
+      - ReturnCase
+      - customer-support
+    options:
+      - name: model-as-business-event
+        label: 業務イベントとして正式に扱う
+        why: 返品受付期限「到着から14日」の起点・持ち戻り（月100件）の予防・「届きましたか」問い合わせ（1日20〜30件）の工数削減。「今できてないだけで、無い出来事ではない」
+        adopted: true
+      - name: shipped-as-terminal
+        label: 出荷済みを終端とし注記のみ
+        why_not: 勝負どころ（アフターケア）の起点日付が手作業のまま固定化する
+  - id: D4
+    topic: 「取消（CS）/キャンセル（物流）」の用語統一
+    chosen: keep-bc-local-labels
+    affects:
+      - customer-support
+      - fulfillment
+    options:
+      - name: keep-bc-local-labels
+        label: BC ごとのラベル差として維持
+        why: 部門の呼び分けは業務実態。lang の対訳で吸収すれば混乱しない
+        adopted: true
+      - name: unify-term
+        label: 全社で用語統一
+        why_not: 現場の呼称変更コストが得られる利益に見合わない
+  - id: D5
+    topic: 返金台帳（共有スプレッドシート）のモデル化
+    chosen: model-refund-request-aggregate
+    affects:
+      - RefundRequest
+      - Payment
+    options:
+      - name: model-refund-request-aggregate
+        label: RefundRequest 集約として一級でモデル化
+        why: 書き忘れ・二重記帳・口座待ち滞留というゴール直結の事故がシートに集中。集約＋RefundBacklog クエリで仕組み化の土台を描く
+        adopted: true
+      - name: keep-as-manual-note
+        label: 手運用として注記に留める
+        why_not: 「返品ステータス≠返金完了」という認識ずれの根因が構造のまま残る
+  - id: D6
+    topic: 「保留」ステータスの多義性の解消方針
+    chosen: explicit-hold-reason
+    affects:
+      - Order
+    options:
+      - name: explicit-hold-reason
+        label: 保留理由を属性として明示
+        why: 欠品待ち・不正確認・住所不備・変更対応で後続処理が全く違うのに備考欄頼み。まず holdReason の構造化で十分
+        adopted: true
+      - name: split-hold-states
+        label: 保留を複数ステータスに分割
+        why_not: 4種以上への状態分割は受注管理の画面・帳票・オペレータ教育の改修を伴い、誤選択時の是正コストが holdReason 属性の構造化より高い
+  - id: D7
+    topic: 「Hold」の同語異義（注文保留 vs 出荷停止）の扱い
+    chosen: keep-with-qualifiers
+    affects:
+      - Order
+      - Shipment
+      - customer-support
+    options:
+      - name: keep-with-qualifiers
+        label: 目的語付き識別子で区別して維持
+        adopted: true
+        why: HoldOrder/OrderHeld/ON_HOLD（注文保留）と RequestShippingHold/ShippingHeld/HELD（出荷停止）は識別子に目的語が付き文脈で判別可能。改名コストが混同リスクを上回る
+      - name: rename-order-hold
+        label: 注文保留側を SuspendOrder 等へ改名
+        why_not: 現場用語はどちらも「保留」「止める」であり英語だけ変えても業務会話の混線は解けない。lang のラベルと note での区別が実効的
+actions:
+  - id: A1
+    text: 完成した HTML を高橋氏経由で PO・経営レビューに回す（CORE=アフターケアの合意形成）
+    owner: 高橋
+    done: false
+  - id: A2
+    text: 配送会社の配達完了データ連携を検討する（返品期限14日の起点・持ち戻り月100件の予防・問い合わせ1日20〜30件の工数削減。D3）
+    done: false
+  - id: A3
+    text: 返金台帳のシステム化を検討する（RefundRequest 集約と RefundBacklog クエリが土台。書き忘れ・二重記帳・口座待ち滞留の仕組み検知。D5）
+    done: false
+  - id: A4
+    text: 「取消依頼中」の可視化（CancellationRaceBoard）を検討する（Excel 管理の代替。3PL 停止結果メールの見落とし防止）
+    done: false
+  - id: A5
+    text: 出荷済み注文の取消操作をシステムで禁止する改修を検討する（過去事故の再発防止。運用ルール頼みの解消）
+    done: false

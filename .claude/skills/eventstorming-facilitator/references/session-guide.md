@@ -177,7 +177,7 @@ BC 候補が出揃ったら、依存方向を決める前に **どこに投資�
 
 **不足検知：** 全 AGG の `aggregates[].purpose` が 30 字以上書かれているか確認。空・短すぎる項目はホットスポット `H-WHY` 候補としてマークし、`references/quality-check.md` の S8 で再走時に検出される。
 
-**DML への反映（必須）：** §5 で確定した AGG メタを `.dml.yaml` のトップレベル `aggregates[]` に追加する。各エントリは `name`（必須・PascalCase）・`ctx`（必須・所属 BC の `contexts[].name`）・`purpose`（必須）・`background`（推奨）・`constraints[]`（推奨）・`states`（推奨・upper-snake 配列）。AGG は所有 BC は 1 つ。同時に、所属 BC の `contexts[].aggs` には AGG 名（PascalCase 文字列）を**軽量名簿**として追加する（詳細を持たない）。
+**DML への反映（必須）：** §5 で確定した AGG メタを `.dml.yaml` のトップレベル `aggregates[]` に追加する。各エントリは `name`（必須・PascalCase）・`ctx`（必須・所属 BC の `contexts[].name`）・`purpose`（必須）・`background`（推奨）・`constraints[]`（推奨）・`states`（推奨・upper-snake 配列）。AGG は所有 BC は 1 つ。同時に、所属 BC の `contexts[].aggs` には AGG 名（PascalCase 文字列）を**軽量名簿**として追加する（詳細を持たない）。**さらに `contexts[].lang.aggs` にも英→日ラベルを同時登録する**（`aggs` 名簿とは別の辞書。同様に policies を足したら `lang.pols` へ。漏れは `dmlctl check --check=language_coverage` が検出する）。
 
 **推奨追加項目（フェーズ5でもよい）：**
 - `aggregates[].transitions[]`: 1〜2 件、`from`/`to`/`via`（scenarios[].cmd と一致するトリガー CMD 名）／必要なら `when`

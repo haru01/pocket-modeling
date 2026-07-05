@@ -10,6 +10,17 @@ python3 scripts/dmlctl.py view <session>.dml.yaml --view=flow-causality
 
 すべての `narratives[]`（entry 付き）から派生する各フローと、各ステップに紐づく scenarios/policies の cmd/evt/trg/ctx を抽出したスライスを取得。
 
+view 出力の読み方（brs 分岐対応版）:
+
+- `steps[]` はメインパス。scenario step の `branches[]` に brs 全分岐が verbatim で列挙され、
+  メインパスが辿った分岐に `taken: true` が付く
+- **代替分岐の終端・補償チェーンはフローの `sidetracks[]` 側に現れる**（{from, cond, evt, steps}）。
+  補償 policy（タイムアウト取消・手動フォロー等）は sidetrack 先頭に挿入される
+- `kind: scenario-ref` は既出 scenario への合流参照であり、**正当な合流・終端として扱う**
+  （sidetrack 末尾の業務 EVT / scenario-ref 到達は open-ended ではない）
+- `terminal` は分岐がそのフローを終端させるときのみ現れる（値は flow-id）。next 省略による
+  暗黙終端も正当（scenario への terminal 宣言追加は schema 上不可能なので提案しない）
+
 補助的に、`dmlctl view --view=policies` も評価対象に追加すると POL チェーンの全貌が見える。
 
 ## LLM へのプロンプト
@@ -20,7 +31,8 @@ policies を読み、各フローの **Saga が完結しているか** を評価
 
 「Saga が完結している」とは:
 1. ハッピーパスの flow は **最終的な業務イベント** で終端する（例: 注文完了 / 配送完了）
-2. 代替シナリオの flow は **業務的にも処理が止まっていい状態**（中断 / 補償完了）で終端する
+2. 代替シナリオの flow は **業務的にも処理が止まっていい状態**（中断 / 補償完了）で終端する。
+   代替分岐の終端は steps ではなく sidetracks[] 側に現れることがある — 突合してから判定する
 3. POLICY 連鎖の途中で **オーバーラップ・抜け** がない（同じ EVT で複数 POLICY が起動する場合、
    業務的に独立しているか・併発で問題ないかを検証）
 4. **補償 transactions** が定義されているか（例: タイムアウト時の与信解放）

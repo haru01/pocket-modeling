@@ -8,8 +8,20 @@
 python3 scripts/dmlctl.py view <session>.dml.yaml --view=flow-causality [--id <flow-id>]
 ```
 
-各 step の `kind`（scenario / policy）/ `ctx` / `cmd` / `evt` / `trg` を含む。
+各 step の `kind`（scenario / policy / scenario-ref / unresolved）/ `ctx` / `cmd` / `evt` / `trg` を含む。
 unresolved な step は構造チェック側で先に検出済みであることを前提とする。
+
+view 出力の読み方（brs 分岐対応版）:
+
+- `steps[]` はメインパス（各分岐点で 1 本を選んだ線形時系列）
+- scenario step の `branches[]` に **brs 全分岐が verbatim**（cond / evt / pol / next / terminal / note）で
+  列挙され、メインパスが辿った分岐に `taken: true` が付く
+- **非選択分岐の行き先はフローの `sidetracks[]` に展開される**。`{from: 分岐元 scenario 名, cond, evt,
+  steps: [...]}` で、steps の形式はメインパスと同一（policy 挿入・さらなる分岐もある）
+- `kind: scenario-ref` は既出 scenario への **合流**（重複展開を避けた参照）。連鎖の途切れではない
+- `terminal` は分岐がそのフローを終端させるときのみ現れる（値は flow-id）。**next 省略による暗黙終端は
+  正当な終端であり、terminal フィールドが無いことは不備ではない**（terminal は schema 上 `brs[]` にのみ
+  存在するため、「scenario に terminal を宣言せよ」という修正提案はしないこと）
 
 ## LLM へのプロンプト
 
@@ -21,7 +33,10 @@ unresolved な step は構造チェック側で先に検出済みであること
 1. **アクター起点の CMD** から始まり、**POLICY による非同期遷移** で別 BC へ流れ、最終 EVT で終端しているか
 2. **連続する step の間に説明されない飛躍** がないか（例: 検品完了 → いきなり配送完了。承認 / 査定確定 / 出荷指示 がスキップされている等）
 3. **POLICY の trg** が直前ステップの evt と整合しているか
-4. **業務上の「分岐」が落ちていないか**（rejected/timeout/suspicious 等の代替フローが必要なポイントが抜けていないか）
+4. **業務上の「分岐」が落ちていないか**（rejected/timeout/suspicious 等の代替フローが必要なポイントが抜けていないか）。
+   ただし missing_branches の判定は、**必ず各 step の branches[] と flow の sidetracks[] を突合してから**
+   行うこと（分岐は steps の線形列には現れず branches/sidetracks 側にモデル済みのことが多い。
+   モデル済みの分岐を「無い」と報告しない）
 
 入力 (YAML):
 {{flow_causality_yaml}}

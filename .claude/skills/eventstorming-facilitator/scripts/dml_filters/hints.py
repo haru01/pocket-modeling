@@ -97,23 +97,81 @@ def _valid_keys(schema: dict, nodes: list[dict]) -> list[str]:
     return sorted(keys)
 
 
-def _short(schema: dict, node: dict) -> str:
-    """プロパティ一覧用の短い型ラベル。"""
+def _short(schema: dict, node: dict, depth: int = 0) -> str:
+    """プロパティ一覧用の短い型ラベル。
+
+    depth=0 の object は 1 階層だけプロパティ名を展開する
+    （`object{name, type, vision}` のように）。depth>=1 では名前だけに潰して
+    無限再帰を防ぐ。array の要素も depth を引き継ぐ。
+    """
     node, ref = _resolve(schema, node)
     if "oneOf" in node:
-        return " | ".join(_short(schema, alt) for alt in node["oneOf"])
+        return " | ".join(_short(schema, alt, depth) for alt in node["oneOf"])
     if "enum" in node:
         return f"enum[{', '.join(map(str, node['enum']))}]"
     t = node.get("type")
     if t == "array":
         items = node.get("items")
-        inner = _short(schema, items) if isinstance(items, dict) else "any"
+        inner = _short(schema, items, depth) if isinstance(items, dict) else "any"
         return f"array<{inner}>"
     if t == "object" or "properties" in node:
+        props = node.get("properties") or {}
+        if depth < 1 and props:
+            inner = ", ".join(props.keys())
+            base = ref or "object"
+            return f"{base}{{{inner}}}"
         return ref or "object"
     if ref:
         return f"{ref}({t or 'string'})"
     return t or "any"
+
+
+def _conditional_and_exclusive(node: dict) -> tuple[list[str], list[str]]:
+    """object ノードの allOf / node 直下 not から、条件付き必須と排他制約を抽出する。
+
+    - if-then（`{if: {required:[k], properties:{k:{const:v}}}, then:{required:[r,...]}}`）
+      → 「k: v のとき r 必須」（例: policy の bulk: true → qry 必須）
+    - not.required（`{not: {required:[a, b]}}`。allOf 要素 or node 直下の両方）
+      → 「a と b は同時指定不可」（例: policy の trg / trgs 排他）
+    """
+    conditional: list[str] = []
+    exclusive: list[str] = []
+
+    def _add_not(sub: dict) -> None:
+        req = ((sub or {}).get("required")) or []
+        if len(req) >= 2:
+            exclusive.append(" と ".join(req) + " は同時指定不可")
+
+    def _add_if_then(sub: dict) -> None:
+        cond = sub.get("if") or {}
+        then = sub.get("then") or {}
+        cond_req = cond.get("required") or []
+        then_req = then.get("required") or []
+        if not then_req:
+            return
+        cond_props = cond.get("properties") or {}
+        parts = []
+        for k in cond_req:
+            const = (cond_props.get(k) or {}).get("const")
+            if const is None:
+                parts.append(k)
+            elif isinstance(const, bool):
+                parts.append(f"{k}: {'true' if const else 'false'}")
+            else:
+                parts.append(f"{k}: {const}")
+        trigger = " かつ ".join(parts) if parts else "条件成立時"
+        conditional.append(f"{trigger} のとき {', '.join(then_req)} 必須")
+
+    for sub in node.get("allOf") or []:
+        if not isinstance(sub, dict):
+            continue
+        if "not" in sub:
+            _add_not(sub["not"])
+        if "if" in sub and "then" in sub:
+            _add_if_then(sub)
+    if isinstance(node.get("not"), dict):
+        _add_not(node["not"])
+    return conditional, exclusive
 
 
 def _describe(schema: dict, node: dict) -> dict:
@@ -141,6 +199,11 @@ def _describe(schema: dict, node: dict) -> dict:
         d["type"] = "object"
         if node.get("required"):
             d["required"] = list(node["required"])
+        conditional, exclusive = _conditional_and_exclusive(node)
+        if conditional:
+            d["conditional"] = conditional
+        if exclusive:
+            d["exclusive"] = exclusive
         props = node.get("properties") or {}
         if props:
             d["properties"] = {k: _short(schema, v) for k, v in props.items()}

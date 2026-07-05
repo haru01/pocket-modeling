@@ -196,7 +196,7 @@ DML 抜粋は ` ```dml ` コードブロックで囲む。
 
 HTML は MD と並行して常に最新状態を保つ。`open` で起動した外部ブラウザは `<meta http-equiv="refresh">` で 3 秒ごとに自動リロードして反映される。
 
-**Claude Code preview panel は meta-refresh を実行しない** ため、フェーズ完了時にチャット応答の最後で `Read dist/eventstorming/<session>.html` を必ず呼び、preview panel に最新版を表示する。これで内蔵プレビュー・外部ブラウザの両方で最新状態が見られる。
+**Claude Code preview panel は meta-refresh を実行しない** ため、フェーズ完了時にチャット応答の最後で `Read dist/eventstorming/<session>.html` を必ず呼び、preview panel に最新版を表示する。これで内蔵プレビュー・外部ブラウザの両方で最新状態が見られる。HTML は数千行になるので、この `Read` は `limit` 付き（冒頭 数十行）で可 — 目的は preview 反映のトリガーであり、全文をコンテキストに載せる必要はない。
 
 ---
 

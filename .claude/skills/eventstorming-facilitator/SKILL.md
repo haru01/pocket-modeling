@@ -164,7 +164,7 @@ HTML 更新・DML 抜粋は出さない。本文末尾は問い 1 つで終わ�
 - **出力先**: `dist/eventstorming/`（`.dml.yaml` は `docs/`、HTML は `dist/`）
 - **手動ビルド/全件/監視**: `python3 scripts/eventstorming_build.py <session>.dml.yaml` ／ `--all` ／ `--watch`
 - **フェーズ2完了時のみ** `Bash open dist/eventstorming/<session>.html`。自動リロードはしない
-- **Claude Code preview panel への反映** — フェーズ完了テンプレ末尾で `Read dist/eventstorming/<session>.html` を必ず呼ぶ
+- **Claude Code preview panel への反映** — フェーズ完了テンプレ末尾で `Read dist/eventstorming/<session>.html` を必ず呼ぶ。HTML は数千行になるため **`limit` 付き（例: 冒頭 数十行）で可**。全文をコンテキストに載せる必要はなく、preview panel への反映がトリガーできれば十分
 - **スマホアプリ案内** — HTML 新規/再生成のフェーズ完了テンプレに「📱 HTML をダウンロードしてブラウザで」を必ず添える
 - **描画仕様詳細**: `references/html-render-spec.md`、テンプレ: `templates/event-flow.html`
 
@@ -269,6 +269,12 @@ DML は **`docs/eventstorming/<session>.dml.yaml`** 1 ファイルに **YAML 直
 | **フェーズ 6 完了** | **`decisions[]`**（id/topic/chosen/options/affects・options ごとに why/why_not）。`questions[].status` を closed にして `decision_id` を紐付け |
 | フェーズ 7（最終） | `dmlctl check --all` で全構造観点クリア → 観点別 LLM 評価 → `actions[].done` 更新 |
 | ユーザーが「保存して」 | 即座に該当フィールドに反映 |
+
+**フェーズ別の書き出し規律（脚注）**:
+
+- **フェーズ 3 の `ctx` は仮置きで良い**（⑩）: `scenarios[].ctx` は schema 必須だが、BC 境界はフェーズ 4.5 で確定するので、フェーズ 3 では暫定 slug（例 `ordering` `payment`）で仮置きしてよい。4.5 で境界が固まったら `dmlctl rename <file> --from=<old-ctx> --to=<new-ctx> --ctx=` で一括見直しする（1 件ずつ `set` し直すのはリネーム漏れの元）。
+- **フェーズ 5 の `rules`/`errs` は全 scenario 義務ではない**（⑪）: goal に直結し、不変条件・業務エラーが業務価値を持つ scenario に絞る。単純な CRUD・導線 scenario は空でよい。`dmlctl view --view=coverage` に出る残欠は「意図的に許容した箇所」と「未着手」を区別して読む（残欠＝バグではない）。
+- **`aggregates[]`/`policies[]` を足したら lang にも同時登録**（⑬）: 所属 BC の `contexts[].lang.aggs`／`lang.pols` にも英→日ラベルを同時登録する（`contexts[].aggs` の軽量名簿とは別物）。漏れは `dmlctl check --check=language_coverage` が検出する。
 
 **書き出し後の品質チェック（必須）**: 詳細は `references/quality-check.md`。
 

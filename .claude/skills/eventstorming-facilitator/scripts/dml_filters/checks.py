@@ -388,6 +388,30 @@ def flow_chain_resolution(model: dict) -> list[Finding]:
     return findings
 
 
+def _diverges_downstream(start: str | None, by_name: dict[str, dict]) -> bool:
+    """start から単一 next（str）チェーンを辿り、下流に「narrative を区別する分岐点」
+    （next の dict 化 or brs[].terminal）があれば True を返す。
+
+    共有 entry の直後しばらく同じ経路を辿ってから下流で分岐する「合流区間」を
+    正当と認めるための判定。visited でサイクルガードする。
+    """
+    visited: set[str] = set()
+    cur = start
+    while cur and cur not in visited:
+        visited.add(cur)
+        sc = by_name.get(cur)
+        if sc is None:
+            return False
+        if isinstance(sc.get("next"), dict):
+            return True
+        for br in sc.get("brs") or []:
+            if isinstance(br, dict) and br.get("terminal"):
+                return True
+        nxt = sc.get("next")
+        cur = nxt if isinstance(nxt, str) else None
+    return False
+
+
 def narrative_entry_consistency(model: dict) -> list[Finding]:
     """複数の narrative が同一 scenario を `entry` に指す場合、
     対応する scenarios[].next が narrative.id をキーとする dict 形式に
@@ -399,6 +423,8 @@ def narrative_entry_consistency(model: dict) -> list[Finding]:
     OK パターン：
       - scenarios[].next が dict 形式で全 narrative.id をカバー
       - 漏れている narrative.id が brs[].terminal で別途終端宣言されている
+      - entry 直下は単一 next でも、下流のどこかで narrative を区別する分岐点がある
+        （合流区間。`_diverges_downstream` で判定）
     """
     narratives = model.get("narratives") or []
     scenarios = model.get("scenarios") or []
@@ -459,16 +485,19 @@ def narrative_entry_consistency(model: dict) -> list[Finding]:
             # 単一値 or 未設定 — brs[].terminal で各 narrative が個別に終端
             # 宣言されていれば OK、そうでなければ全 narrative が同じフローを辿る
             unhandled = [nid for nid in nids if nid not in terminal_narratives]
-            if len(unhandled) >= 2:
+            # 下流で narrative を区別する分岐点があれば「合流区間」として許容
+            if len(unhandled) >= 2 and not _diverges_downstream(
+                nxt if isinstance(nxt, str) else None, by_name
+            ):
                 findings.append(
                     Finding(
                         kind="narrative_entry_consistency",
                         path=f"scenarios[].next",
                         message=(
                             f"narratives {unhandled} が entry '{entry_name}' を共有しているのに、"
-                            f"scenario.next が単一値（または未設定）です。narrative.id をキーとする"
-                            f"dict 形式に書き換えるか、brs[].terminal でフロー別に終端宣言してください"
-                            f"（dml-spec.md v6 規約）"
+                            f"scenario.next が単一値（または未設定）で、下流にも分岐点がありません。"
+                            f"narrative.id をキーとする dict 形式に書き換えるか、brs[].terminal で"
+                            f"フロー別に終端宣言してください（dml-spec.md v6 規約）"
                         ),
                         slice={
                             "entry": entry_name,
@@ -722,11 +751,12 @@ def agg_purpose_minlength(model: dict) -> list[Finding]:
 
 
 def decision_chosen_adopted(model: dict) -> list[Finding]:
-    """decisions[].chosen と options[].adopted: true の整合を検査する。
+    """decisions[].chosen と options[].adopted の整合を検査する。
 
-    - chosen が options[].name に存在しない
-    - adopted: true の option が 0 件 / 2 件以上
-    - adopted: true の option.name が chosen と不一致
+    採用は chosen から導出できるため adopted の明示は任意（ビルダーも
+    `adopted is None → name == chosen` で描画する）。検査するのは:
+    - chosen が options[].name に存在しない（必須）
+    - adopted: true を明示している場合のみ、2 件以上 / chosen と不一致 を検出
     `references/checks/decision-rationale-clarity.md` の観点 4 を構造チェックに降格したもの。
     """
     findings: list[Finding] = []
@@ -750,25 +780,16 @@ def decision_chosen_adopted(model: dict) -> list[Finding]:
                     slice={"decision": did, "chosen": chosen, "options": option_names},
                 )
             )
-        if len(adopted) == 0:
+        if len(adopted) >= 2:
             findings.append(
                 Finding(
                     kind="decision_chosen_adopted",
                     path=f"decisions[{i}].options",
-                    message=f"decision '{did}' に adopted: true の option がありません（chosen と対で記述する）",
-                    slice={"decision": did, "chosen": chosen},
-                )
-            )
-        elif len(adopted) >= 2:
-            findings.append(
-                Finding(
-                    kind="decision_chosen_adopted",
-                    path=f"decisions[{i}].options",
-                    message=f"decision '{did}' で adopted: true が {len(adopted)} 件あります（採用は 1 件だけ）: {adopted}",
+                    message=f"decision '{did}' で adopted: true が {len(adopted)} 件あります（採用は 1 件だけ。通常は adopted を省いて chosen に任せる）: {adopted}",
                     slice={"decision": did, "adopted": adopted},
                 )
             )
-        elif chosen and adopted[0] != chosen:
+        elif adopted and chosen and adopted[0] != chosen:
             findings.append(
                 Finding(
                     kind="decision_chosen_adopted",
@@ -897,7 +918,10 @@ def bc_vocabulary_collision(model: dict) -> list[Finding]:
                     path=f"contexts[].lang.{cat}.{en}",
                     message=(
                         f"同名異義: '{en}' が複数 BC で異なる日本語ラベルを持ちます: {owners}。"
-                        f"別概念なら識別子を分けるか、意図的な流用なら note で Conformist / ACL を明示してください"
+                        f"解消手段: (1) 同一概念ならラベルを両 BC で統一 "
+                        f"(2) 別概念なら `dmlctl rename --from={en} --to=<新名> --ctx=<bc>` で識別子を分離 "
+                        f"(3) 意図的な流用なら contexts[].note（lang エントリ単位の note は持てない）に "
+                        f"Conformist / ACL の関係を明記"
                     ),
                     slice={"category": cat, "identifier": en, "occurrences": owners},
                 )
@@ -912,7 +936,9 @@ def bc_vocabulary_collision(model: dict) -> list[Finding]:
                     path=f"contexts[].lang.{cat}",
                     message=(
                         f"異名同義: 日本語ラベル '{label}' が異なる英語識別子 {sorted(ens)} に対応しています: {owners}。"
-                        f"同一概念なら識別子を統一してください"
+                        f"解消手段: (1) 同一概念なら `dmlctl rename` で識別子を 1 つに統一 "
+                        f"(2) 別概念ならラベルを書き分ける "
+                        f"(3) BC 間の意図的な同義なら contexts[].note に Conformist / ACL を明記"
                     ),
                     slice={"category": cat, "label": label, "identifiers": sorted(ens), "occurrences": owners},
                 )

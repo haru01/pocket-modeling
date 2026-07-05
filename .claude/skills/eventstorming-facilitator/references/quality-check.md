@@ -63,10 +63,10 @@ exit code はいずれも違反 0 件＝0、それ以外＝1。
 | 観点ファイル | 評価対象 | 対応する dmlctl view |
 |---|---|---|
 | `checks/scenario-rules-quality.md` | rules/errs の業務語彙適切性 | `scenarios` |
-| `checks/saga-completeness.md` | POLICY 連鎖と Saga 完結性 | `flow-causality` + `policies` |
+| `checks/saga-completeness.md` | POLICY 連鎖と Saga 完結性 | `flow-causality`（brs 分岐・sidetracks 込み）+ `policies` |
 | `checks/bc-vocabulary-consistency.md` | BC 間の同義語/異義語 | `bc-language` |
 | `checks/agg-purpose-quality.md` | AGG の purpose 30 字以上・単一責任 | `agg-detail` |
-| `checks/causal-chain-completeness.md` | フローの因果連鎖の途切れ | `flow-causality` |
+| `checks/causal-chain-completeness.md` | フローの因果連鎖の途切れ | `flow-causality`（brs 分岐・sidetracks 込み） |
 | `checks/decision-rationale-clarity.md` | 意思決定の why/why_not の明瞭さ | `decisions` |
 
 実行手順：
