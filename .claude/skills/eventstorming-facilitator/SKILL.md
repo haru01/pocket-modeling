@@ -38,7 +38,7 @@ PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/even
 
 | フェーズ | 書き出し対象（`.dml.yaml` フィールド） |
 |---------|--------------------------------------|
-| 1. スコープ確認 | `session`（id/domain/goal/status） |
+| 1. スコープ確認 | `session`（id/domain/goal/status。実書き込みはフェーズ 2 冒頭の `dmlctl init` でまとめて行う — フェーズ 1 では HTML を作らないため） |
 | **2. ストーリー確認** | 初回 `dmlctl init` → **`narratives[]`（`kind: happy` のハッピーパス散文 1 本 + `kind: alt` の代替シナリオ 2〜3 本、prose は粗で可）** → `Bash open <session>.html` 初回起動 |
 | 3. イベント発見 | `scenarios[]` 仮 entries ＋ `contexts[].lang` 新規識別子 ＋ **節目イベント選定（`scenarios[].pivotal: true` 2〜4 個）** |
 | 4. CMD→EVT→POLICY チェーン | `scenarios[]`（`next`/`brs[].terminal` 付き）／ `policies[]` / `narratives[].entry`（happy + 代替 1〜2）／ `contexts[]` の `up`/`dn`・`description`（BC 散文） |
