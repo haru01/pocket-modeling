@@ -5,9 +5,11 @@ DML 品質チェックは **2 段階**で行う：
 1. **構造チェック（Python のみ）** — `dmlctl check <file> --all` で全観点を一括判定（参照整合性・
    命名・到達可能性）。個別に見るときは `--check=<name>`。LLM は使わない。
 2. **意味チェック（観点別フィルタ + LLM）** — `dmlctl view <file> --view=<name>` で必要な
-   スライスだけを切り出し、それを `references/checks/<name>.md` のプロンプトで LLM に渡す。
+   スライスだけを切り出し、それを `references/checks/<name>.md` のプロンプトで Agent に渡す。
 
-旧運用（DML 全文を 1 件の LLM に投げる）は **廃止**。LLM コンテキスト圧迫と再現性低下のため。
+**DML 全文を LLM に渡さない**：成熟期の `.dml.yaml` は 40 KB 超になりコンテキストを圧迫するうえ、
+入力が大きいほど判定の再現性が落ちる。構造は Python で再現性高く・低コストに検出し、
+意味は観点別の最小スライスに絞ることで LLM のフォーカスと精度を保つ。
 
 ---
 
@@ -52,38 +54,75 @@ exit code はいずれも違反 0 件＝0、それ以外＝1。
 
 ## 意味チェック観点（観点別フィルタ → LLM）
 
-`references/checks/<name>.md` を 1 観点 1 ファイルで持つ。各 .md は次を含む：
+`references/checks/<name>.md` を 1 観点 1 ファイルで持つ。各 .md は
+抽出条件（呼ぶべき view）・LLM へのプロンプト・期待される所見（合格/不合格の具体例）を含む。
 
-- 抽出条件（呼ぶべき `dmlctl view --view=<...>` コマンド）
-- LLM へのプロンプト（評価観点・出力フォーマット）
-- 期待される所見（合格 / 不合格の具体例）
-
-現在の観点一覧：
-
-| 観点ファイル | 評価対象 | 対応する dmlctl view |
+| 観点ファイル | 評価対象 | 取得すべき view |
 |---|---|---|
-| `checks/scenario-rules-quality.md` | rules/errs の業務語彙適切性 | `scenarios` |
-| `checks/saga-completeness.md` | POLICY 連鎖と Saga 完結性 | `flow-causality`（brs 分岐・sidetracks 込み）+ `policies` |
-| `checks/bc-vocabulary-consistency.md` | BC 間の同義語/異義語 | `bc-language` |
-| `checks/agg-purpose-quality.md` | AGG の purpose 30 字以上・単一責任 | `agg-detail` |
-| `checks/causal-chain-completeness.md` | フローの因果連鎖の途切れ | `flow-causality`（brs 分岐・sidetracks 込み） |
-| `checks/decision-rationale-clarity.md` | 意思決定の why/why_not の明瞭さ | `decisions` |
-
-実行手順：
-
-1. 構造チェックを先に走らせて違反 0 にする（意味チェックが誤判定するのを防ぐ）
-2. Agent tool で 1 観点ずつ起動。Agent への入力は **`dmlctl view` の出力 + 当該 .md の指示**
-3. Agent の返した所見を AI / 人間が確認し、修正が必要なら DML を編集（`dmlctl set/add/remove` 経由）
+| `checks/scenario-rules-quality.md` | rules/errs の業務語彙適切性 | `--view=scenarios [--ctx=<bc>]` |
+| `checks/saga-completeness.md` | POLICY 連鎖と Saga 完結性 | `--view=flow-causality` + `--view=policies` |
+| `checks/bc-vocabulary-consistency.md` | BC 間の同義語/異義語 | `--view=bc-language` |
+| `checks/agg-purpose-quality.md` | AGG の purpose 30 字以上・単一責任 | `--view=agg-detail [--name=<AggName>]` |
+| `checks/causal-chain-completeness.md` | フローの因果連鎖の途切れ | `--view=flow-causality [--id=<flow-id>]` |
+| `checks/decision-rationale-clarity.md` | 意思決定の why/why_not の明瞭さ | `--view=decisions` |
 
 ---
 
-## チェック起動の標準フロー
+## 標準フロー（書き出し後に必ず実行）
 
-```bash
-# 1) 構造チェック（全観点を一括実行。違反があれば exit 1 + results に詳細）
-python3 scripts/dmlctl.py check <session>.dml.yaml --all
+1. **構造チェック** — `dmlctl check <file> --all`。違反があれば `dmlctl set/add/remove` で修正して
+   再走（意味チェックの誤判定ノイズを防ぐため、0 件にしてから次へ）
+2. **意味チェック** — 観点ごとに Agent を 1 件ずつ起動。入力は **view スライス + 当該 .md の指示**：
 
-# 2) 意味チェック（Agent 起動）— quality-check-agent.md / causal-check-agent.md 参照
+```
+Agent(
+  description: "EventStorming意味チェック (scenario-rules-quality)",
+  prompt: """
+以下の手順で評価してください。
+
+1. `python3 .claude/skills/eventstorming-facilitator/scripts/dmlctl.py view \
+   <session>.dml.yaml --view=scenarios` を Bash で実行し、scenarios[] スライスを得る
+2. `.claude/skills/eventstorming-facilitator/references/checks/scenario-rules-quality.md` を Read
+3. 同 .md の「LLM へのプロンプト」と「出力フォーマット」に従って、上記 1 のスライスを評価
+4. 出力フォーマットに沿った JSON で所見を返す
+"""
+)
 ```
 
-意味チェック起動の詳細は `quality-check-agent.md` を参照。
+観点 .md と view を差し替えれば他観点にも同じパターンで適用できる（上の早見表を参照）。
+
+3. **所見への対応**：
+   - `verdict: ok` / `complete` / `clear` — 何もしない
+   - `needs-revision` / `gap` / `vague` — 該当 DML 要素を `dmlctl set/add/remove` で修正
+   - `critical` / `broken` / `incomplete` — チャットにホットスポット候補として列挙し、ユーザーに 1 問 1 答で確認
+
+ホットスポットの提示フォーマット例：
+
+```
+### 意味チェック所見
+[scenario-rules-quality]
+- [?] scenarios「会員が下取をキャンセルする」 — rule に why 不足。
+      推奨: why: "...（業務文脈で言語化）"
+```
+
+---
+
+## 因果チェック（フロー整合性のサブセット起動）
+
+ユーザーが「フロー整合性チェック」「因果チェーンチェック」「causal check」を求めたら、
+因果連鎖に関わる観点だけを抜き出して実行する：
+
+1. **構造** — `--check=` で `flow_chain_resolution` / `unknown_evt_in_policy` / `dangling_cmd` /
+   `state_reachability` / `orphan_event` の 5 観点（`--all` で代替可）。0 件にしてから次へ
+2. **意味** — `checks/causal-chain-completeness.md` と `checks/saga-completeness.md` の 2 観点を
+   1 Agent でまとめて起動してよい（view は `flow-causality` + `policies`）。所見は
+   **ビジネス言語**（CMD / POLICY / TRIGGER 等の技術用語を使わない）で列挙させる
+3. **questions[] への昇格** — 業務判断が必要な所見は `questions[]` に open で追加する：
+
+```bash
+python3 scripts/dmlctl.py add <session>.dml.yaml --to=questions \
+  --item='{id: Q13, topic: "<業務的に未解決な事項>", why: "<決まると何が変わるか>", status: open}'
+```
+
+4. **結果報告** — ファシリテーター本体への返答は 1 行。
+   問題なし:「因果チェック完了：問題なし」／問題あり: 追加した Q 番号と要約

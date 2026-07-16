@@ -182,7 +182,7 @@ BC 候補が出揃ったら、依存方向を決める前に **どこに投資�
 - `aggregates[].events[]`: AGG が emit する EVT を `name`／`params` で列挙
 - `aggregates[].attrs[]`: ペイロード属性を `name`／`type`／`required`／`note` で
 
-これにより quality-check / causal-check が以下の整合を検証できる：
+これにより品質チェック（構造＋意味）が以下の整合を検証できる：
 - `scenarios[].agg` ⇔ `aggregates[].name`（孤立 AGG / 未定義 AGG 参照の検出）
 - `scenarios[].cmd` ⇔ `aggregates[].transitions[].via`（CMD が AGG 状態遷移に紐付くか）
 - `scenarios[].evt` ⇔ `aggregates[].events[].name`（EVT が AGG の宣言済み発火イベントか）

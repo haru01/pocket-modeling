@@ -144,7 +144,7 @@ assistant が自己判断する。
   - **フェーズ4.6: 全 AGG エントリの `aggregates[].purpose`（30字以上）が記入され、`background`/`constraints[]` の有無を判定**
   - フェーズ5: 全 AGG の不変条件・エラー、`brs` 分岐、**`aggregates[].attrs[]` / `aggregates[].events[].params[]` の確定**。各 `rules[].why`、各 `errs[].when` の記入率を確認
   - **フェーズ6: 主要な設計判断が `decisions[]` に記録され、各 option に `why`/`why_not` が記述されている**
-  - フェーズ7: causal-check 完了、残課題レビュー済
+  - フェーズ7: 因果チェック（quality-check.md §因果チェック）完了、残課題レビュー済
 
 ### 往復と判定するシグナル
 

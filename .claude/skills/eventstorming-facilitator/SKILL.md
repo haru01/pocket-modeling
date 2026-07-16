@@ -178,7 +178,7 @@ HTML 更新・DML 抜粋は出さない。本文末尾は問い 1 つで終わ�
   - 用語統一・識別子リネーム：`dmlctl refs <file> --name=<id>` で全出現を確認 → `dmlctl rename <file> --from=<old> --to=<new> [--ctx=<bc>]` で一括置換（完全一致のみ。散文中の言及は ⚠ で報告されるので手動フォロー。`set/update` で 1 箇所ずつ書き換えるのはリネーム漏れの元）
 - 直接 `Read`/`Edit`/`Write` は PreToolUse フック（`scripts/hooks/block_direct_dml.py`）で自動ブロック。`Bash python3 dmlctl.py ...` のみが I/O 経路。**一時ファイルの作成も `--value`/`--item` のインラインで代替できるなら避ける**（`Write` で `/tmp/*.yaml` を作るのはアンチパターン）
 - フェーズ 2 で `dmlctl init <path> --session-id=... --domain=... [--goal=...]` で新規 DML を生成（テンプレートから session 入り空 DML を作成）
-- 書き出し後は **必ず** Agent tool で品質チェックを起動（`references/quality-check-agent.md`）。HTML は派生物なのでチェック不要
+- 書き出し後は **必ず** Agent tool で品質チェックを起動（`references/quality-check.md` §標準フロー）。HTML は派生物なのでチェック不要
 - **ユーザーが DML を直接編集した場合**: 次ターン応答前に `dmlctl view` で観点別に再読み込みし変更を把握、必要なら品質チェックを起動
 
 ---
@@ -317,8 +317,8 @@ Markdown 風の散文として書く。bullet (`- foo`) と `**強調**` は HTM
 
 | キーワード例 | 参照 |
 |---|---|
-| 「フロー整合性チェック」「因果チェーンチェック」「causal check」 | `references/causal-check-agent.md` |
-| 「表記チェック」「品質チェック」「quality check」 | `references/quality-check-agent.md` |
+| 「フロー整合性チェック」「因果チェーンチェック」「causal check」 | `references/quality-check.md` §因果チェック |
+| 「表記チェック」「品質チェック」「quality check」 | `references/quality-check.md` §標準フロー |
 
 サブエージェントの結果は1行でユーザー報告。
 
@@ -349,13 +349,10 @@ Markdown 風の散文として書く。bullet (`- foo`) と `**強調**` は HTM
 | `references/domain-starters.md` | よくあるドメインの候補イベントリスト |
 | `references/template.dml.yaml` | 新規セッション用 DML スケルトン（旧 template.md を置き換え） |
 | `references/term-glossary.md` | DDD／EventStorming 用語の 1 行ポイント解説辞書。専門用語初出時に AI が引いてチャットに添える |
-| `references/quality-check.md` | 品質チェック方針（構造→意味の 2 段階） |
-| `references/causal-check.md` | DML 因果連鎖チェック方針 |
-| `references/quality-check-agent.md` | 品質チェック起動プロンプト |
+| `references/quality-check.md` | 品質チェック（構造→意味の 2 段階・Agent 起動テンプレ・因果チェックサブセット） |
 | `references/checks/*.md` | 意味チェック 6 観点（scenario-rules-quality / saga-completeness / bc-vocabulary-consistency / agg-purpose-quality / causal-chain-completeness / decision-rationale-clarity） |
 | `scripts/dmlctl.py` | DML 観点別 I/O CLI（view/set/add/remove/check） |
 | `scripts/dml_filters/*.py` | view と check の Python 実装 |
-| `references/causal-check-agent.md` | フロー整合性起動プロンプト |
 | `references/chat-output-format.md` | チャット出力テンプレート完全版 |
 | `templates/event-flow.html` | HTML 出力の汎用テンプレート |
 | `examples/sample.dml.yaml` | DML 参照例（コミュニティイベント参加ドメイン、`narratives[]`（entry 付き）/ `decisions[]` を含む） |
