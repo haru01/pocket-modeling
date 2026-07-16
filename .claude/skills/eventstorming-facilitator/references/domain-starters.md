@@ -205,14 +205,7 @@
 [4] 通知が再送された
 ```
 
-**BC 昇格サイン**：
-- 複数種類の通知を統一管理（APPROVAL / REMINDER / SURVEY / CANCELLATION 等）
-- 送信状態（QUEUED / SENT / FAILED / RETRYING）を持つ
-- 監査ログ兼用
-
-**POLICY 留置サイン**：
-- 1 種類の通知のみ
-- 送ったら追跡しない
+**昇格 vs 留置**：判定サインは `dml-spec.md` §1（複数種類・送信状態・監査 → BC 昇格／1 種類・追跡なし → POLICY 留置）
 
 ### スケジューラ（外部トリガー）
 

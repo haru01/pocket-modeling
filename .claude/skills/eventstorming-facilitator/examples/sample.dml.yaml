@@ -1,15 +1,11 @@
 # yaml-language-server: $schema=../references/dml.schema.yaml
 # ============================================================
-# サンプル DML：コミュニティイベント参加ドメイン（v8 文法の参照例）
+# サンプル DML：コミュニティイベント参加ドメイン（現行文法のフル参照例）
 # ============================================================
-# 含むもの:
-#   ① ドメイン分類 (domains[] / subs[] / subdomainType)
-#   ② BC + カテゴリ別 lang (v5+) + up/dn + description (v5)
-#   ③ AGG トップレベル化 (v3) + purpose/background/constraints (v4) + transitions/attrs/events
-#   ④ SCENARIO + brMode + brs[].terminal (v6) + next 連鎖 (v6) + rules/errs
-#   ⑤ POLICY + trgs join + bulk + agg (v7)
-#   ⑥ narratives[] (v8 で旧 story: 統合) + kind:happy/alt + entry
-#   ⑦ decisions[] (v4) + options[].label (v6) + adopted/why/why_not
+# ドメイン分類（domains/subs）／BC（lang・up/dn・description）／
+# AGG（purpose/background/constraints/states/transitions/attrs/events）／
+# SCENARIO（brMode・brs[].terminal・next 連鎖・rules/errs）／POLICY（trgs join・bulk・agg）／
+# narratives（kind: happy/alt・entry）／decisions（options[].label・adopted/why/why_not）を含む。
 # ============================================================
 
 session:
@@ -238,9 +234,6 @@ aggregates:
         terminal: true
 
 scenarios:
-  # pol の書き方（型が非対称な点に注意）:
-  #   scenario 直下は配列のみ      → pol: [RequestPayment, NotifyParticipant]
-  #   brs[].pol は文字列でも配列でも可 → pol: RequestPayment / pol: [A, B]
   - name: 主催者がイベントを下書きする
     ctx: event-planning
     actor: Organizer
@@ -401,7 +394,6 @@ decisions:
 
 # リードモデル候補カード。粒度ルール: (a) 計算値を含む / (b) 複数集約・複数 BC 横断 /
 # (c) BULK（一覧）のいずれか。単一集約への単純ルックアップは載せない。
-# 型の非対称に注意: users は文字列（複数ロールは 1 文字列に列挙）／ sources は配列。
 queries:
   - name: RemainingCapacityView
     ctx: participation

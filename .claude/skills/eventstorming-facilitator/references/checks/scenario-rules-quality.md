@@ -72,7 +72,7 @@ python3 scripts/dmlctl.py view <session>.dml.yaml --view=scenarios [--ctx <bc-na
 
 ## 関連スキーマ制限（errs に `why` は無い）
 
-`rules[]` には `why` フィールドがあるが、`errs[]` には無い（v8 時点）。errs の業務的理由は
+`rules[]` には `why` フィールドがあるが、`errs[]` には無い。errs の業務的理由は
 `when` フィールドに自然文で書く。`why` を書くと PostToolUse hook の schema 検証で
 `Additional properties are not allowed ('why' was unexpected)` で弾かれる。
 

@@ -66,7 +66,7 @@ policies を読み、各フローの **Saga が完結しているか** を評価
 
 ## POLICY のガード条件はどこに書くか
 
-policy schema には `rules[]` が無い（v8 時点）。「この POLICY を skip するべき業務条件」は、
+policy schema には `rules[]` が無い。「この POLICY を skip するべき業務条件」は、
 **policy の `note` に簡潔に書きつつ、policy が起動する CMD を実行する SCENARIO の `rules[]` /
 `errs[]` にガードを書く**。
 

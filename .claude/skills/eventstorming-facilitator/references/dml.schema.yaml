@@ -1,16 +1,14 @@
 # DML (Domain Modeling Language) JSON Schema — Draft 2020-12
 #
-# DML は YAML 形式のドメインモデル（contexts / aggregates / scenarios / policies の 4 リスト + 任意の
-# domains / decisions）。
-# v3 で AGG をトップレベル `aggregates[]` に切り出した（旧 v2 の `contexts[].aggs[]` 内 dict 形式は廃止）。
-# v4 で「意思決定ログ（採用/不採用理由）」を `decisions[]` トップレベルとして追加。
-# v6 でトップレベル `flows[]` を廃止し、`scenarios[].next` / `brs[].next` / `brs[].terminal` の
-# 連鎖と `narratives[].entry` + `narratives[].kind` の組み合わせでフローを表現するモデルに移行。
+# DML は YAML 形式のドメインモデル（contexts / aggregates / scenarios / policies の 4 リスト
+# + decisions + 散文系 session / narratives / actions / questions / queries + 任意の domains）。
+# フローはトップレベル flows[] ではなく、narratives[].entry + narratives[].kind と
+# scenarios[].next / brs[].next / brs[].terminal の連鎖で表現する。
 # HTML §3 フロー図は narratives[] の各エントリを起点に scenarios[].next を辿り、
-# 途中で scenarios[].evt → policies[].trg をマッチさせて policy を自動挿入して生成される
-# （旧 event-flow-svg DSL は廃止）。
+# 途中で scenarios[].evt → policies[].trg をマッチさせて policy を自動挿入して生成される。
 # このスキーマは「構文 validity（形が正しいか）」のみを機械検証する。
-# 「意味 validity（参照の実在・因果整合・モデル品質）」は causal-check / quality-check が担う。
+# 「意味 validity（参照の実在・因果整合・モデル品質）」は品質チェックが担う
+# （references/quality-check.md：構造チェック＋LLM 意味チェック）。
 # スキーマ通過は必要条件であって十分条件ではない。
 #
 # 検証例:
@@ -31,7 +29,6 @@
 #   - トップレベルキーは略語禁止（contexts / aggregates / scenarios / policies / queries /
 #     decisions / questions / actions / narratives / domains / session）
 #   - 散文は narratives[] に一本化。ハッピーパスは kind: happy のエントリ、代替は kind: alt
-#     （旧トップレベル `story:` は v8 で廃止）
 #   - ネストの短いキー（name/type/vision/note/lang/mod/qry/cmd/evt/agg/pol 等）は維持
 #   - 主なネスト略語: ctx / aggs / sub(s) / up / dn / rel / prRoles / brMode / brs /
 #     cond / err / errs / resp / tech / trg / trgs / evts / cmds / lang / mod / via
@@ -115,16 +112,14 @@ $defs:
     type: string
     enum: [U, D, S, C, OHS, PL, ACL, CF, SK, P]
   subdomainType:
-    # subs[] 配下のサブドメイン種別。3 値とも `_SUBDOMAIN` で揃え（フィールド名 `subs` と整合）、
-    # `CORE_DOMAIN` / `SUPPORTING_DOMAIN` の旧表記との混在で typo を踏まないようにする。
-    # 旧表記（CORE_DOMAIN / SUPPORTING_DOMAIN）も後方互換として許容する。
+    # subs[] 配下のサブドメイン種別。新規は `_SUBDOMAIN` の 3 値で揃える。
     type: string
     enum:
       - CORE_SUBDOMAIN
       - SUPPORTING_SUBDOMAIN
       - GENERIC_SUBDOMAIN
-      - CORE_DOMAIN           # 後方互換: ≤ v6 で書かれた既存セッション用
-      - SUPPORTING_DOMAIN     # 後方互換: ≤ v6 で書かれた既存セッション用
+      - CORE_DOMAIN           # 後方互換: 旧表記の既存セッション用
+      - SUPPORTING_DOMAIN     # 後方互換: 旧表記の既存セッション用
   bcType:
     type: string
     enum: [FEATURE, APPLICATION, SYSTEM, MICROSERVICE]
