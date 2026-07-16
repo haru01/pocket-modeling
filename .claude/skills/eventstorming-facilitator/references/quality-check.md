@@ -22,7 +22,7 @@ DML 品質チェックは **2 段階**で行う：
 | `unknown_evt_in_policy` | `policies[].trg` / `policies[].trgs.evts` が aggregates[].events[].name に未宣言 | EVT 宣言を補強 |
 | `language_coverage` | AGG/CMD/EVT/POL が contexts[].lang に未登録 | contexts[].lang に英→日辞書を追加 |
 | `state_reachability` | aggregates[].states に到達可能な transitions が無い状態（初期状態除く） | transitions を補強 |
-| `orphan_event` | EVT 宣言済みだが scenarios/policies のいずれからも参照されない | 削除 or 参照追加 |
+| `orphan_event` | EVT 宣言済みだが scenarios/policies のいずれからも参照されない | 削除 or 参照追加（意図的な終端 EVT は `events[].terminal: true` で除外） |
 | `flow_chain_resolution` | `narratives[].entry` / `scenarios[].next` / `brs[].terminal` の参照が解決できない | typo 修正・narratives[].id の存在確認 |
 | `narrative_entry_consistency` | 複数 narrative が同一 entry を共有するのに next が dict 分岐していない | scenarios[].next を narrative.id キーの dict に |
 | `narrative_happy_unique` | `kind: happy` の narrative が 2 件以上 | happy は 1 本に統合 |
