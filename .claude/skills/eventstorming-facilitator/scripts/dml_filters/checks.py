@@ -30,6 +30,65 @@ def finding_to_dict(f: Finding) -> dict[str, Any]:
     return {"kind": f.kind, "path": f.path, "message": f.message, "slice": f.slice}
 
 
+def _iter_ctx_lang(model: dict):
+    """contexts[] を走査し、dict 形の lang を持つ要素だけ `(i, ctx, lang)` を yield する。
+
+    `lang.{cmds,evts,pols,...}` を横断するチェックが繰り返す
+    「isinstance ガード → lang 取得 → isinstance ガード」の共通プリアンブルを集約。
+    ctx 名の導出（`ctx.get("name") or f"#{i}"` 等）は用途がまちまちなので呼び出し側に残す。
+    """
+    for i, ctx in enumerate(model.get("contexts") or []):
+        if not isinstance(ctx, dict):
+            continue
+        lang = ctx.get("lang") or {}
+        if not isinstance(lang, dict):
+            continue
+        yield i, ctx, lang
+
+
+def _scenario_events(model: dict) -> set[str]:
+    """scenarios[].evt と scenarios[].brs[].evt に現れる EVT 名の集合。"""
+    out: set[str] = set()
+    for s in model.get("scenarios") or []:
+        if not isinstance(s, dict):
+            continue
+        if s.get("evt"):
+            out.add(s["evt"])
+        for br in s.get("brs") or []:
+            if isinstance(br, dict) and br.get("evt"):
+                out.add(br["evt"])
+    return out
+
+
+def _policy_events(model: dict) -> set[str]:
+    """policies[] がトリガー/発行する EVT 名の集合（trg / trgs.evts / evt）。"""
+    out: set[str] = set()
+    for p in model.get("policies") or []:
+        if not isinstance(p, dict):
+            continue
+        if p.get("trg"):
+            out.add(p["trg"])
+        if p.get("evt"):
+            out.add(p["evt"])
+        trgs = p.get("trgs") or {}
+        if isinstance(trgs, dict):
+            for ev in trgs.get("evts") or []:
+                out.add(ev)
+    return out
+
+
+def _aggregate_events(model: dict) -> set[str]:
+    """aggregates[].events[].name に宣言された EVT 名の集合。"""
+    out: set[str] = set()
+    for a in model.get("aggregates") or []:
+        if not isinstance(a, dict):
+            continue
+        for ev in a.get("events") or []:
+            if isinstance(ev, dict) and ev.get("name"):
+                out.add(ev["name"])
+    return out
+
+
 # ============================================================
 # 個別チェック
 # ============================================================
@@ -106,24 +165,9 @@ def dangling_cmd(model: dict) -> list[Finding]:
 
 def unknown_evt_in_policy(model: dict) -> list[Finding]:
     """policies[].trg / policies[].trgs.evts が aggregates[].events[].name に未宣言ならフラグ。"""
-    aggregates = model.get("aggregates") or []
-    declared_evts: set[str] = set()
-    for agg in aggregates:
-        if not isinstance(agg, dict):
-            continue
-        for ev in agg.get("events") or []:
-            if isinstance(ev, dict) and ev.get("name"):
-                declared_evts.add(ev["name"])
-
-    # scenarios[].evt と scenarios[].brs[].evt も宣言済み扱い（実運用で aggregates に書き忘れる例あり）
-    for s in model.get("scenarios") or []:
-        if not isinstance(s, dict):
-            continue
-        if s.get("evt"):
-            declared_evts.add(s["evt"])
-        for br in s.get("brs") or []:
-            if isinstance(br, dict) and br.get("evt"):
-                declared_evts.add(br["evt"])
+    # aggregates[].events に加え、scenarios[].evt / brs[].evt も宣言済み扱い
+    # （実運用で aggregates に書き忘れる例があるため）
+    declared_evts = _aggregate_events(model) | _scenario_events(model)
 
     findings: list[Finding] = []
     for i, pol in enumerate(model.get("policies") or []):
@@ -162,14 +206,8 @@ def language_coverage(model: dict) -> list[Finding]:
     scenarios[].cmd / scenarios[].evt / policies[].name / aggregates[].name / aggregates[].events[].name が
     どこかの contexts[].lang.{cmds/evts/pols/aggs} に登録されているか確認する。
     """
-    contexts = model.get("contexts") or []
     registered: set[str] = set()
-    for ctx in contexts:
-        if not isinstance(ctx, dict):
-            continue
-        lang = ctx.get("lang") or {}
-        if not isinstance(lang, dict):
-            continue
+    for _i, _ctx, lang in _iter_ctx_lang(model):
         for cat in ("aggs", "actors", "cmds", "evts", "pols", "qrys", "vos"):
             cat_dict = lang.get(cat) or {}
             if isinstance(cat_dict, dict):
@@ -246,26 +284,7 @@ def orphan_event(model: dict) -> list[Finding]:
     v7: `events[].terminal: true` のイベントは「業務的にここで止まる」終端イベント
     （失敗系・タイムアウト系など）として orphan 判定から除外する。
     """
-    referenced: set[str] = set()
-    for s in model.get("scenarios") or []:
-        if not isinstance(s, dict):
-            continue
-        if s.get("evt"):
-            referenced.add(s["evt"])
-        for br in s.get("brs") or []:
-            if isinstance(br, dict) and br.get("evt"):
-                referenced.add(br["evt"])
-    for p in model.get("policies") or []:
-        if not isinstance(p, dict):
-            continue
-        if p.get("trg"):
-            referenced.add(p["trg"])
-        trgs = p.get("trgs") or {}
-        if isinstance(trgs, dict):
-            for ev in trgs.get("evts") or []:
-                referenced.add(ev)
-        if p.get("evt"):
-            referenced.add(p["evt"])
+    referenced = _scenario_events(model) | _policy_events(model)
 
     findings: list[Finding] = []
     for i, agg in enumerate(model.get("aggregates") or []):
@@ -553,7 +572,8 @@ def dangling_lang_entry(model: dict) -> list[Finding]:
         "aggs": {a.get("name") for a in (model.get("aggregates") or []) if isinstance(a, dict)},
         "qrys": {q.get("name") for q in (model.get("queries") or []) if isinstance(q, dict)},
         "actors": set(),
-        "vos": set(),  # vos は scenarios/policies/aggregates では参照されないので空のまま（cross-ref しない）
+        # vos は意図的に非対象: scenarios/policies/aggregates 本体に現れず（attrs.type の
+        # 自由文字列で参照される程度）、厳密な cross-ref は誤検知を招くため declared に含めない。
     }
     for s in model.get("scenarios") or []:
         if isinstance(s, dict):
@@ -590,19 +610,9 @@ def dangling_lang_entry(model: dict) -> list[Finding]:
                     declared["evts"].add(ev["name"])
 
     findings: list[Finding] = []
-    for i, ctx in enumerate(model.get("contexts") or []):
-        if not isinstance(ctx, dict):
-            continue
-        lang = ctx.get("lang") or {}
-        if not isinstance(lang, dict):
-            continue
+    for i, ctx, lang in _iter_ctx_lang(model):
         ctx_name = ctx.get("name") or f"#{i}"
         for cat, real_set in declared.items():
-            if cat == "vos":
-                # VOs は scenarios/policies/aggregates 本体には現れない（attrs.type で参照される程度）。
-                # 厳密な cross-ref は attrs.type の自由文字列まで追わないと判定できないので、本チェックでは
-                # vos の dangling は対象外（誤検知を避ける）。
-                continue
             cat_dict = lang.get(cat) or {}
             if not isinstance(cat_dict, dict):
                 continue
@@ -890,13 +900,8 @@ def bc_vocabulary_collision(model: dict) -> list[Finding]:
     # (cat, en) -> [(ctx, label)], (cat, label) -> [(ctx, en)]
     by_en: dict[tuple[str, str], list[tuple[str, str]]] = {}
     by_label: dict[tuple[str, str], list[tuple[str, str]]] = {}
-    for ctx in model.get("contexts") or []:
-        if not isinstance(ctx, dict):
-            continue
+    for _i, ctx, lang in _iter_ctx_lang(model):
         cname = ctx.get("name") or ""
-        lang = ctx.get("lang") or {}
-        if not isinstance(lang, dict):
-            continue
         for cat in CATEGORIES:
             cat_dict = lang.get(cat) or {}
             if not isinstance(cat_dict, dict):

@@ -26,6 +26,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from dml_filters.flow_walk import index_policies_by_trg, pick_active_branch
+
 try:
     # DML を構造化して読むためのオプション依存（validate_dml.py と同じ依存）。
     # 不在時は §3/§9/§7 は描画スキップ（§11 の生 DML 表示にフォールバック）。
@@ -237,27 +239,6 @@ def localize(identifier: str, glossary_index: dict[str, str]) -> str:
     return glossary_index.get(identifier, identifier)
 
 
-def _pick_active_branch(sc: dict, flow_id: str) -> dict | None:
-    """指定フロー上で「いまアクティブな」brs[] エントリを 1 つ選ぶ。
-
-    優先順位:
-      1. `terminal == flow_id` の brs（このフローはここで終わる宣言）
-      2. `terminal` を持たない brs（happy 系・デフォルト分岐）
-      3. fallback: 最初の brs
-    brs が無ければ None を返す。
-    """
-    brs = sc.get("brs") or []
-    if not brs:
-        return None
-    for br in brs:
-        if br.get("terminal") == flow_id:
-            return br
-    for br in brs:
-        if not br.get("terminal"):
-            return br
-    return brs[0]
-
-
 def _collect_pivotal_evts(model: dict) -> set[str]:
     """scenarios[].pivotal: true の scenario が発火する EVT 名（evt / brs[].evt）を集める。
 
@@ -294,6 +275,10 @@ def _scenario_steps_to_notes(
     `pivotal_evts` に含まれる EVT の付箋は is_pivotal=True で強調描画される。
     """
     pivotal_evts = pivotal_evts or set()
+
+    def _evt_note(ev: str) -> Note:
+        return Note(kind="event", label=localize(ev, gloss), is_pivotal=ev in pivotal_evts)
+
     notes: list[Note] = []
     actor = sc.get("actor") or ""
     if actor and not (SKIP_SYSTEM_ACTOR and actor == "System"):
@@ -307,17 +292,16 @@ def _scenario_steps_to_notes(
         # フロー別描画: アクティブな brs.evt のみ
         ev = active_br.get("evt")
         if ev:
-            notes.append(Note(kind="event", label=localize(ev, gloss), is_pivotal=ev in pivotal_evts))
+            notes.append(_evt_note(ev))
     elif sc.get("evt"):
-        ev = sc["evt"]
-        notes.append(Note(kind="event", label=localize(ev, gloss), is_pivotal=ev in pivotal_evts))
+        notes.append(_evt_note(sc["evt"]))
     elif sc.get("brs"):
         mode = sc.get("brMode", "exclusive")
         for i, br in enumerate(sc["brs"]):
             ev = br.get("evt")
             if not ev:
                 continue
-            n = Note(kind="event", label=localize(ev, gloss), is_pivotal=ev in pivotal_evts)
+            n = _evt_note(ev)
             if mode == "concurrent" and i > 0:
                 n.is_fanout = True
             notes.append(n)
@@ -353,6 +337,24 @@ def _policy_steps_to_notes(
     return notes
 
 
+def _mark_prev_async(flow: Flow, *, join: bool = False) -> None:
+    """直前 Lane の末尾 Note を非同期境界にする（新レーン追加の前段共通処理）。
+
+    join=True かつ直前 Lane が存在すれば joins_into_next（BPMN シンクバー）も立てる。
+    """
+    if flow.lanes and flow.lanes[-1].notes:
+        flow.lanes[-1].notes[-1].is_async = True
+        if join:
+            flow.lanes[-1].joins_into_next = True
+
+
+def _append_lane(flow: Flow, bc_name: str, notes: list) -> None:
+    """notes を持つ新規 Lane を flow に追加する。"""
+    lane = Lane(bc_name=bc_name, description="")
+    lane.notes = list(notes)
+    flow.lanes.append(lane)
+
+
 def build_flows_from_dml(model: dict, glossary_index: dict[str, str]) -> list[Flow]:
     """DML の `narratives[].entry` を起点に scenarios[].next を辿り、フロー描画用の
     `list[Flow]` を組み立てる（v6）。policy ステップは scenario.evt → policy.trg
@@ -373,7 +375,6 @@ def build_flows_from_dml(model: dict, glossary_index: dict[str, str]) -> list[Fl
       - 次が trgs（join）policy → 前 Lane の joins_into_next=True（BPMN Σ N シンクバー）
     """
     scenarios = model.get("scenarios") or []
-    policies = model.get("policies") or []
     narratives = model.get("narratives") or []
     pivotal_evts = _collect_pivotal_evts(model)
 
@@ -389,17 +390,7 @@ def build_flows_from_dml(model: dict, glossary_index: dict[str, str]) -> list[Fl
         scenarios_by_name[name] = s
 
     # evt 名 → トリガーされる policies のリスト
-    policies_by_trg: dict[str, list[dict]] = {}
-    for p in policies:
-        if not isinstance(p, dict):
-            continue
-        trg = p.get("trg")
-        if trg:
-            policies_by_trg.setdefault(trg, []).append(p)
-        trgs = p.get("trgs") or {}
-        if isinstance(trgs, dict):
-            for evt in (trgs.get("evts") or []):
-                policies_by_trg.setdefault(evt, []).append(p)
+    policies_by_trg = index_policies_by_trg(model)
 
     def emit_policies(evt: str, flow: Flow, ctx_box: list, visited: set):
         """evt をトリガーとする policy を再帰的に挿入する。"""
@@ -414,13 +405,8 @@ def build_flows_from_dml(model: dict, glossary_index: dict[str, str]) -> list[Fl
             if not pol_notes:
                 continue
             pol_ctx = pol.get("ctx", "")
-            if flow.lanes and flow.lanes[-1].notes:
-                flow.lanes[-1].notes[-1].is_async = True
-                if pol.get("trgs"):
-                    flow.lanes[-1].joins_into_next = True
-            lane = Lane(bc_name=pol_ctx, description="")
-            lane.notes = list(pol_notes)
-            flow.lanes.append(lane)
+            _mark_prev_async(flow, join=bool(pol.get("trgs")))
+            _append_lane(flow, pol_ctx, pol_notes)
             ctx_box[0] = pol_ctx
             # 再帰: この policy が emit する evt で更に triggering policies を辿る
             if pol.get("evt"):
@@ -450,7 +436,7 @@ def build_flows_from_dml(model: dict, glossary_index: dict[str, str]) -> list[Fl
                 )
                 break
 
-            active_br = _pick_active_branch(sc, flow_id)
+            active_br = pick_active_branch(sc, flow_id)
             notes = _scenario_steps_to_notes(
                 sc, glossary_index, active_br=active_br, pivotal_evts=pivotal_evts
             )
@@ -459,11 +445,8 @@ def build_flows_from_dml(model: dict, glossary_index: dict[str, str]) -> list[Fl
                 if flow.lanes and ctx == ctx_box[0]:
                     flow.lanes[-1].notes.extend(notes)
                 else:
-                    if flow.lanes and flow.lanes[-1].notes:
-                        flow.lanes[-1].notes[-1].is_async = True
-                    lane = Lane(bc_name=ctx, description="")
-                    lane.notes = list(notes)
-                    flow.lanes.append(lane)
+                    _mark_prev_async(flow)
+                    _append_lane(flow, ctx, notes)
                 ctx_box[0] = ctx
 
             # この scenario の発火 evt（active_br 優先、無ければ scenario.evt）
@@ -580,6 +563,21 @@ PHASE_DONE_COUNT = {
 }
 
 
+# レガシー status 文字列 → done_count の対応（具体度の高い順。先頭一致優先）。
+# 各要素は `phase_kw\s*` に続く正規表現サフィックスと、そのとき点灯するステップ数。
+_LEGACY_PHASE_PATTERNS = [
+    (r"7.*完了", 9),
+    (r"6", 8),
+    (r"5", 7),
+    (r"4\.6", 6),
+    (r"4\.5", 5),
+    (r"4", 4),
+    (r"3", 3),
+    (r"2", 2),
+    (r"1", 1),
+]
+
+
 def render_progress(status: str, phase: str | None = None) -> str:
     """SKILL.md のワークフロー（9 ステップ）と整合する進捗バーを生成。
 
@@ -606,24 +604,10 @@ def render_progress(status: str, phase: str | None = None) -> str:
         # 順序は具体度の高いものから（"フェーズ4.6" は "フェーズ4" にもマッチするため先行評価）
         # 「フェーズ」「Phase」両表記を許容。数字との間は半角/全角の空白を許容する。
         phase_kw = r"(?:フェーズ|Phase)"
-        if re.search(rf"{phase_kw}\s*7.*完了", status):
-            done_count = 9
-        elif re.search(rf"{phase_kw}\s*6", status):
-            done_count = 8
-        elif re.search(rf"{phase_kw}\s*5", status):
-            done_count = 7
-        elif re.search(rf"{phase_kw}\s*4\.6", status):
-            done_count = 6
-        elif re.search(rf"{phase_kw}\s*4\.5", status):
-            done_count = 5
-        elif re.search(rf"{phase_kw}\s*4", status):
-            done_count = 4
-        elif re.search(rf"{phase_kw}\s*3", status):
-            done_count = 3
-        elif re.search(rf"{phase_kw}\s*2", status):
-            done_count = 2
-        elif re.search(rf"{phase_kw}\s*1", status):
-            done_count = 1
+        for suffix, cnt in _LEGACY_PHASE_PATTERNS:
+            if re.search(rf"{phase_kw}\s*{suffix}", status):
+                done_count = cnt
+                break
 
     last_idx = len(phases) - 1
     items = []
@@ -917,6 +901,21 @@ def _inline_md(text: str) -> str:
     return "".join(parts)
 
 
+def _slug_heading(label_ja: str, slug: str) -> str:
+    """カード見出し: label_ja があれば「日本語 — slug」、無ければ slug のみ。
+
+    §6 BC カードと §7 AGG カードで共通。呼び出し側は「見出しに使う label_ja」を
+    決めて渡す（空文字なら slug 単独）。
+    """
+    if label_ja:
+        return (
+            f'<span class="label-ja">{esc(label_ja)}</span>'
+            f' <span class="dash">—</span> '
+            f'<span class="slug">{esc(slug)}</span>'
+        )
+    return f'<span class="slug">{esc(slug)}</span>'
+
+
 def render_bc_cards(cards: list[dict]) -> str:
     if not cards:
         return '<div class="todo-placeholder">TODO: フェーズ4完了後に追記</div>'
@@ -925,15 +924,7 @@ def render_bc_cards(cards: list[dict]) -> str:
         desc_html = _render_markdown_prose(c.get("description") or "")
         intent_html = render_intent_blocks(c)
         lang_html = _render_bc_languages(c.get("languages_by_cat") or [])
-        label_ja = c.get("label_ja") or ""
-        if label_ja:
-            heading = (
-                f'<span class="label-ja">{esc(label_ja)}</span>'
-                f' <span class="dash">—</span> '
-                f'<span class="slug">{esc(c["name"])}</span>'
-            )
-        else:
-            heading = f'<span class="slug">{esc(c["name"])}</span>'
+        heading = _slug_heading(c.get("label_ja") or "", c["name"])
         out.append(
             f'<div class="bc-card">\n'
             f'    <h3>{heading}</h3>\n'
@@ -1316,14 +1307,7 @@ def render_agg_cards_from_dml(
             state_diagram_html, transitions_html, inv_html, err_html, events_html,
         ]
         agg_label_ja = glossary_index.get(a["name"], "")
-        if agg_label_ja and agg_label_ja != a["name"]:
-            heading = (
-                f'<span class="label-ja">{esc(agg_label_ja)}</span>'
-                f' <span class="dash">—</span> '
-                f'<span class="slug">{esc(a["name"])}</span>'
-            )
-        else:
-            heading = f'<span class="slug">{esc(a["name"])}</span>'
+        heading = _slug_heading(agg_label_ja if agg_label_ja != a["name"] else "", a["name"])
         out.append(
             f'<div class="bc-card">\n'
             f'    <h3>{heading}</h3>\n'

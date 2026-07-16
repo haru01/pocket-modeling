@@ -80,6 +80,7 @@ set/add/remove/update/init は成功後に build + validate を自動実行す�
 from __future__ import annotations
 
 import argparse
+import functools
 import io
 import json
 import re
@@ -105,6 +106,19 @@ from dml_filters.hints import resolve_hint  # noqa: E402
 TEMPLATE_PATH = SCRIPT_DIR.parent / "references" / "template.dml.yaml"
 BUILD_SCRIPT = SCRIPT_DIR / "eventstorming_build.py"
 VALIDATE_SCRIPT = SCRIPT_DIR / "validate_dml.py"
+SCHEMA_PATH = SCRIPT_DIR.parent / "references" / "dml.schema.yaml"
+
+
+@functools.lru_cache(maxsize=1)
+def _load_schema() -> dict:
+    """dml.schema.yaml を読んで dict を返す（プロセス内キャッシュ）。
+
+    例外はあえて握りつぶさない — fallback の要否は呼び出し側の関心
+    （_toplevel_keys / _phase_enum はハードコード fallback へ、cmd_hint は事前の
+    exists() ガードで明示エラーにする）。
+    """
+    with SCHEMA_PATH.open(encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
 DML_HEADER = (
     "# ⚠ This file is managed by dmlctl (.claude/skills/eventstorming-facilitator/scripts/dmlctl.py).\n"
@@ -278,6 +292,33 @@ def _parse_where(where: str) -> tuple[str, object]:
     key, _, raw = where.partition("=")
     key = key.strip()
     return key, _parse_value(raw.strip())
+
+
+def _load_doc(file: str):
+    """編集系コマンド共通のロード: ruamel を用意し args.file を round-trip 読み込み。
+
+    戻り値は `(yml, path, data)`。`data` が None（空ファイル）のときの初期化・エラー
+    ハンドリングはコマンドごとに異なるため、呼び出し側で `if data is None:` を続ける。
+    """
+    yml = _require_ruamel()
+    path = Path(file)
+    with path.open("r", encoding="utf-8") as f:
+        data = yml.load(f)
+    return yml, path, data
+
+
+def _save(path: Path, yml, data, args) -> int:
+    """編集系コマンド共通の保存: args の no_postprocess / dry_run を橋渡しする薄い wrapper。"""
+    return _save_and_postprocess(path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run)  # noqa: E501
+
+
+def _match_indices(target_list, key, expected) -> list[int]:
+    """target_list（--where 対象リスト）内で dict かつ key==expected の要素 index を返す。"""
+    return [
+        i
+        for i, elem in enumerate(target_list)
+        if isinstance(elem, dict) and elem.get(key) == expected
+    ]
 
 
 def _save_and_postprocess(
@@ -459,10 +500,7 @@ def cmd_init(args) -> int:
 
 
 def cmd_set(args) -> int:
-    yml = _require_ruamel()
-    path = Path(args.file)
-    with path.open("r", encoding="utf-8") as f:
-        data = yml.load(f)
+    yml, path, data = _load_doc(args.file)
     if data is None:
         data = {}
     segments = _parse_path(args.path)
@@ -479,9 +517,7 @@ def cmd_set(args) -> int:
     n = len(value) if isinstance(value, (list, dict)) else None
     suffix = f"（{n} 件）" if n is not None else ""
     print(f"✅ {args.path} を設定しました{suffix}", file=sys.stderr)
-    return _save_and_postprocess(
-        path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
-    )
+    return _save(path, yml, data, args)
 
 
 def _toplevel_keys() -> list[str]:
@@ -491,19 +527,14 @@ def _toplevel_keys() -> list[str]:
         "decisions", "session", "narratives", "questions", "actions", "queries",
     ]
     try:
-        with SCHEMA_PATH.open(encoding="utf-8") as f:
-            schema = yaml.safe_load(f)
-        keys = list((schema.get("properties") or {}).keys())
+        keys = list((_load_schema().get("properties") or {}).keys())
         return keys or fallback
     except Exception:
         return fallback
 
 
 def cmd_add(args) -> int:
-    yml = _require_ruamel()
-    path = Path(args.file)
-    with path.open("r", encoding="utf-8") as f:
-        data = yml.load(f)
+    yml, path, data = _load_doc(args.file)
     if data is None:
         data = {}
     segments = _parse_path(args.to)
@@ -526,10 +557,11 @@ def cmd_add(args) -> int:
     # 末端リストキーが未存在なら空リストを自動生成する。
     # ただしトップレベルの未知キー（typo）は build/validate まで待たず即座に弾く。
     if isinstance(last, str) and isinstance(parent, dict) and last not in parent:
-        if len(segments) == 1 and last not in _toplevel_keys():
+        toplevel_keys = _toplevel_keys()
+        if len(segments) == 1 and last not in toplevel_keys:
             print(
                 f"❌ '{last}' は DML のトップレベルキーではありません（typo?）。\n"
-                f"   有効なキー: {', '.join(_toplevel_keys())}",
+                f"   有効なキー: {', '.join(toplevel_keys)}",
                 file=sys.stderr,
             )
             return 2
@@ -558,16 +590,11 @@ def cmd_add(args) -> int:
         item = _parse_value(args.item)
     target.append(item)
     print(f"✅ {args.to} に 1 件追加しました（計 {len(target)} 件）", file=sys.stderr)
-    return _save_and_postprocess(
-        path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
-    )
+    return _save(path, yml, data, args)
 
 
 def cmd_remove(args) -> int:
-    yml = _require_ruamel()
-    path = Path(args.file)
-    with path.open("r", encoding="utf-8") as f:
-        data = yml.load(f)
+    yml, path, data = _load_doc(args.file)
     if data is None:
         print(f"⚠ {args.file} は空です", file=sys.stderr)
         return 0
@@ -612,27 +639,18 @@ def cmd_remove(args) -> int:
         else:
             del parent[last]
             print(f"✅ {args.path} を削除しました", file=sys.stderr)
-    return _save_and_postprocess(
-        path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
-    )
+    return _save(path, yml, data, args)
 
 
 def cmd_update(args) -> int:
-    yml = _require_ruamel()
-    path = Path(args.file)
-    with path.open("r", encoding="utf-8") as f:
-        data = yml.load(f)
+    yml, path, data = _load_doc(args.file)
     if data is None:
         print(f"❌ {args.file} は空です", file=sys.stderr)
         return 2
 
     target_list = _resolve_list(data, args.path)
     key, expected = _parse_where(args.where)
-    matched_indices = [
-        i
-        for i, elem in enumerate(target_list)
-        if isinstance(elem, dict) and elem.get(key) == expected
-    ]
+    matched_indices = _match_indices(target_list, key, expected)
     if not matched_indices:
         print(f"❌ {args.path} に {key}={expected!r} の要素が見つかりません", file=sys.stderr)
         return 2
@@ -663,9 +681,7 @@ def cmd_update(args) -> int:
         f"✅ {args.path}[{key}={expected!r}] を {len(matched_indices)} 件更新しました",
         file=sys.stderr,
     )
-    return _save_and_postprocess(
-        path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
-    )
+    return _save(path, yml, data, args)
 
 
 # ============================================================
@@ -696,10 +712,7 @@ def cmd_rename(args) -> int:
     if args.from_ == args.to:
         print("❌ --from と --to が同じです", file=sys.stderr)
         return 2
-    yml = _require_ruamel()
-    path = Path(args.file)
-    with path.open("r", encoding="utf-8") as f:
-        data = yml.load(f)
+    yml, path, data = _load_doc(args.file)
     if data is None:
         print("⚠ 空ファイルのためリネーム対象がありません", file=sys.stderr)
         return 2
@@ -728,9 +741,7 @@ def cmd_rename(args) -> int:
         print(f"❌ 識別子 '{args.from_}' の完全一致箇所が見つかりません{scope}", file=sys.stderr)
         return 2
 
-    rc = _save_and_postprocess(
-        path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
-    )
+    rc = _save(path, yml, data, args)
     prefix = "（dry-run）" if args.dry_run else ""
     print(f"✅ {prefix}'{args.from_}' → '{args.to}': {len(replaced)} 箇所を置換しました", file=sys.stderr)
     for p in replaced:
@@ -745,17 +756,13 @@ def cmd_rename(args) -> int:
     return rc
 
 
-SCHEMA_PATH = SCRIPT_DIR.parent / "references" / "dml.schema.yaml"
-
 # schema が読めない場合のフォールバック（真実源は dml.schema.yaml の session.phase enum）
 _PHASE_ENUM_FALLBACK = ["1", "2", "3", "4", "4.5", "4.6", "5", "6", "7"]
 
 
 def _phase_enum() -> list[str]:
     try:
-        with SCHEMA_PATH.open(encoding="utf-8") as f:
-            schema = yaml.safe_load(f)
-        enum = schema["$defs"]["session"]["properties"]["phase"]["enum"]
+        enum = _load_schema()["$defs"]["session"]["properties"]["phase"]["enum"]
         return [str(v) for v in enum]
     except Exception:
         return _PHASE_ENUM_FALLBACK
@@ -764,10 +771,7 @@ def _phase_enum() -> list[str]:
 def cmd_advance(args) -> int:
     """session.phase を安全に前進させる（enum 検証つき・クォート落とし穴の回避）。"""
     phases = _phase_enum()
-    yml = _require_ruamel()
-    path = Path(args.file)
-    with path.open("r", encoding="utf-8") as f:
-        data = yml.load(f)
+    yml, path, data = _load_doc(args.file)
     if data is None:
         data = {}
     session = data.get("session")
@@ -796,19 +800,14 @@ def cmd_advance(args) -> int:
     session["phase"] = target
     if args.status:
         session["status"] = args.status
-    rc = _save_and_postprocess(
-        path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
-    )
+    rc = _save(path, yml, data, args)
     print(f"✅ session.phase: {current or '(未設定)'} → {target}", file=sys.stderr)
     return rc
 
 
 def cmd_action(args) -> int:
     """actions[].done を id 指定でトグルする糖衣。"""
-    yml = _require_ruamel()
-    path = Path(args.file)
-    with path.open("r", encoding="utf-8") as f:
-        data = yml.load(f)
+    yml, path, data = _load_doc(args.file)
     if data is None:
         data = {}
     actions_list = data.get("actions") or []
@@ -827,9 +826,7 @@ def cmd_action(args) -> int:
         return 2
     done = not args.not_done
     target["done"] = done
-    rc = _save_and_postprocess(
-        path, yml, data, no_postprocess=args.no_postprocess, dry_run=args.dry_run
-    )
+    rc = _save(path, yml, data, args)
     state = "done" if done else "not done"
     print(f"✅ action '{args.id}' を {state} にしました: {target.get('text', '')[:60]}", file=sys.stderr)
     return rc
@@ -839,8 +836,7 @@ def cmd_hint(args) -> int:
     if not SCHEMA_PATH.exists():
         print(f"❌ schema が見つかりません: {SCHEMA_PATH}", file=sys.stderr)
         return 2
-    with SCHEMA_PATH.open(encoding="utf-8") as f:
-        schema = yaml.safe_load(f)
+    schema = _load_schema()
     result = resolve_hint(schema, args.path)
     if "error" in result:
         print(f"❌ {result['error']}", file=sys.stderr)
@@ -968,6 +964,16 @@ def cmd_list_checks(_args) -> int:
 # ============================================================
 
 
+def _add_write_flags(p) -> None:
+    """編集系サブコマンド共通の末尾フラグ（--no-postprocess / --dry-run）を付与する。
+
+    引数順を保つため各パーサの最後（set_defaults の直前）で呼ぶこと。dry-run の説明が
+    独自な rename と、--dry-run を持たない init はこのヘルパーの対象外。
+    """
+    p.add_argument("--no-postprocess", action="store_true")
+    p.add_argument("--dry-run", action="store_true", help="書かずに編集後 schema を検証")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dmlctl", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -995,8 +1001,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_set.add_argument("--path", required=True, help="例: session.status")
     p_set.add_argument("--value", help="YAML リテラル")
     p_set.add_argument("--value-file", help="長文値を含むファイル（生テキストとして埋め込む）")
-    p_set.add_argument("--no-postprocess", action="store_true")
-    p_set.add_argument("--dry-run", action="store_true", help="書かずに編集後 schema を検証")
+    _add_write_flags(p_set)
     p_set.set_defaults(func=cmd_set)
 
     p_add = sub.add_parser("add", help="リストに要素を追加する（ruamel.yaml）")
@@ -1004,8 +1009,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--to", required=True, help="例: questions")
     p_add.add_argument("--item", help="YAML リテラル")
     p_add.add_argument("--item-file", help="大型 YAML 要素を含むファイル")
-    p_add.add_argument("--no-postprocess", action="store_true")
-    p_add.add_argument("--dry-run", action="store_true", help="書かずに編集後 schema を検証")
+    _add_write_flags(p_add)
     p_add.set_defaults(func=cmd_add)
 
     p_update = sub.add_parser("update", help="リスト内の特定要素を find & update する（ruamel.yaml）")
@@ -1017,16 +1021,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument("--value-file", help="--set-key と組で使う長文ファイル")
     p_update.add_argument("--merge-yaml", help="dict を YAML リテラルで指定し対象要素に再帰マージする（nested dict は保持、リーフは置換）")
     p_update.add_argument("--allow-multiple", action="store_true", help="複数マッチを許容して全件更新")
-    p_update.add_argument("--no-postprocess", action="store_true")
-    p_update.add_argument("--dry-run", action="store_true", help="書かずに編集後 schema を検証")
+    _add_write_flags(p_update)
     p_update.set_defaults(func=cmd_update)
 
     p_remove = sub.add_parser("remove", help="フィールド/要素を削除する（ruamel.yaml）")
     p_remove.add_argument("file")
     p_remove.add_argument("--path", required=True)
     p_remove.add_argument("--where", help="リスト内検索 key=value")
-    p_remove.add_argument("--no-postprocess", action="store_true")
-    p_remove.add_argument("--dry-run", action="store_true", help="書かずに編集後 schema を検証")
+    _add_write_flags(p_remove)
     p_remove.set_defaults(func=cmd_remove)
 
     p_refs = sub.add_parser("refs", help="識別子の全出現箇所を列挙する（rename の事前調査）")
@@ -1048,16 +1050,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_advance.add_argument("file")
     p_advance.add_argument("--phase", help="任意の phase を明示指定（省略時は次へ進める）")
     p_advance.add_argument("--status", help="session.status も同時に更新する（任意）")
-    p_advance.add_argument("--no-postprocess", action="store_true")
-    p_advance.add_argument("--dry-run", action="store_true", help="書かずに編集後 schema を検証")
+    _add_write_flags(p_advance)
     p_advance.set_defaults(func=cmd_advance)
 
     p_action = sub.add_parser("action", help="actions[].done を id 指定でトグルする")
     p_action.add_argument("file")
     p_action.add_argument("--id", required=True, help="対象 action の id（例: A1）")
     p_action.add_argument("--not-done", action="store_true", help="done: false に戻す")
-    p_action.add_argument("--no-postprocess", action="store_true")
-    p_action.add_argument("--dry-run", action="store_true", help="書かずに編集後 schema を検証")
+    _add_write_flags(p_action)
     p_action.set_defaults(func=cmd_action)
 
     p_hint = sub.add_parser("hint", help="パスの期待型を schema から提示する（書き込み前の型確認）")

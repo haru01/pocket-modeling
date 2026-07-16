@@ -7,7 +7,13 @@
 
 from __future__ import annotations
 
+from collections import deque
 from typing import Any, Callable
+
+from .flow_walk import (
+    index_policies_by_trg as _index_policies_by_trg,
+    pick_active_branch as _pick_active_branch,
+)
 
 
 # ============================================================
@@ -93,40 +99,6 @@ def agg_detail(model: dict, *, name: str | None = None, **_) -> Any:
     return {"aggregates": aggregates}
 
 
-def _index_policies_by_trg(model: dict) -> dict[str, list[dict]]:
-    """evt 名 → その evt をトリガー（trg / trgs.evts）とする policy のリスト。"""
-    idx: dict[str, list[dict]] = {}
-    for p in model.get("policies") or []:
-        if not isinstance(p, dict):
-            continue
-        trg = p.get("trg")
-        if trg:
-            idx.setdefault(trg, []).append(p)
-        trgs = p.get("trgs") or {}
-        if isinstance(trgs, dict):
-            for ev in trgs.get("evts") or []:
-                idx.setdefault(ev, []).append(p)
-    return idx
-
-
-def _pick_active_branch(sc: dict, flow_id: str) -> dict | None:
-    """メインパスが辿る分岐を 1 つ選ぶ: terminal==flow_id > terminal 無し > brs[0]。
-
-    eventstorming_build.py の _pick_active_branch と同型（レーン描画の単線化と共通の規約）。
-    非選択分岐は flow_causality では sidetracks[] として別途展開される。
-    """
-    brs = sc.get("brs") or []
-    if not brs:
-        return None
-    for br in brs:
-        if isinstance(br, dict) and br.get("terminal") == flow_id:
-            return br
-    for br in brs:
-        if isinstance(br, dict) and not br.get("terminal"):
-            return br
-    return brs[0] if isinstance(brs[0], dict) else None
-
-
 def _emit_policy_chain(
     evt: str | None, steps: list, visited_pol: set, policies_by_trg: dict[str, list[dict]]
 ) -> None:
@@ -173,7 +145,7 @@ def _walk(
     sc_idx: dict[str, dict],
     policies_by_trg: dict[str, list[dict]],
     visited_sc: set[str],
-    queue: list,
+    queue: deque,
     lead_evt: str | None = None,
 ) -> list[dict]:
     """start から next 連鎖を辿って step 列を返す（メインパス・sidetrack 共用）。
@@ -282,7 +254,7 @@ def flow_causality(model: dict, *, id: str | None = None, **_) -> Any:
             continue
         flow_id = n.get("id") or ""
         visited_sc: set[str] = set()
-        queue: list = []
+        queue: deque = deque()
         steps = _walk(
             entry,
             flow_id,
@@ -293,7 +265,7 @@ def flow_causality(model: dict, *, id: str | None = None, **_) -> Any:
         )
         sidetracks: list = []
         while queue:
-            from_name, br = queue.pop(0)
+            from_name, br = queue.popleft()
             st_steps = _walk(
                 br.get("next"),
                 flow_id,
