@@ -9,9 +9,9 @@
   - フェーズ未到達のセクションは <div class="todo-placeholder">...</div> のままにする
 
   生成タイミング:
-  - フェーズ2完了で Write 新規作成 → Bash `open` で初回起動
-  - 以降のフェーズ完了で Edit で該当セクション更新
-  - 詳細は references/html-render-spec.md を参照
+  - フェーズ2完了の dmlctl init/set 後に生成 → Bash `open` で初回起動
+  - 以降は dmlctl 書き込みのたびにビルダーが自動再生成
+  - 詳細は scripts/RENDER_SPEC.md を参照
 -->
 <html lang="ja">
 <head>

@@ -1,8 +1,12 @@
-# Event Flow HTML レンダリング仕様
+# Event Flow HTML レンダリング仕様（ビルドスクリプト改修者向け）
 
-EventStorming セッションの全情報を **CSS 付箋風 HTML** として書き出してブラウザでリッチに表示するための仕様。
+`eventstorming_build.py` / `templates/event-flow.html` を改修するときに読む実装仕様。
+**AI ファシリテーターが通常セッションで読む必要はない**（セッション中に必要な DML→HTML の
+対応は「DML フィールドが §N を駆動する」レベルで SKILL.md に要約済み）。
 
-**重要：AI は HTML を直接編集しない。** Python ビルダー（`.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py`）が **`.dml.yaml` 1 ファイル** を解析して HTML を自動生成する（v5 で `.md` パース廃止、v8 で `story:` を `narratives[]` に統合）。AI が編集するソース・オブ・トゥルースは `.dml.yaml`（モデル本体＋散文系フィールド `narratives`/`actions`/`questions`/`queries`/`contexts[].description` の唯一の真実源）。
+**重要：AI は HTML を直接編集しない。** Python ビルダー（`eventstorming_build.py`）が
+**`.dml.yaml` 1 ファイル** を解析して HTML を自動生成する。編集対象のソース・オブ・トゥルースは
+常に `.dml.yaml`。
 
 Claude Code の CLI/PC/スマホアプリではチャット本文の生 `<svg>` も Mermaid フェンスも描画されないため、別ファイル（HTML）として書き出してブラウザに任せる方針。
 
@@ -12,49 +16,18 @@ Claude Code の CLI/PC/スマホアプリではチャット本文の生 `<svg>` 
 
 | ファイル | 役割 |
 |---|---|
-| `docs/eventstorming/eventstorming-YYYYMMDD-HHMM.dml.yaml` | **DML（モデル本体）の唯一の真実源**。純 YAML 直書き（フェンス不要）。散文系（`narratives` / `actions` / `questions` / `queries` / `contexts[].description`）も全てここに統合（v5 で `.md` 廃止）。AI と人間がここを編集 |
-| `dist/eventstorming/eventstorming-YYYYMMDD-HHMM.html` | Python ビルダーが `.dml.yaml` 単独から自動生成する派生ファイル。AI も人間も直接編集しない |
-| `.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py` | DML → HTML 変換スクリプト（Python 3 標準ライブラリ + PyYAML） |
-| `.claude/skills/eventstorming-facilitator/templates/event-flow.html` | テンプレート HTML（CSS とプレースホルダー入り） |
+| `docs/eventstorming/<session>.dml.yaml` | **DML（モデル本体＋散文系）の唯一の真実源**。AI と人間がここを編集 |
+| `dist/eventstorming/<session>.html` | ビルダーが `.dml.yaml` 単独から自動生成する派生ファイル。誰も直接編集しない |
+| `scripts/eventstorming_build.py` | DML → HTML 変換スクリプト（Python 3 標準ライブラリ + PyYAML） |
+| `templates/event-flow.html` | テンプレート HTML（CSS とプレースホルダー入り） |
 
 ---
 
 ## 2. 自動再生成のフロー
 
-```
-.dml.yaml を Write/Edit (AI または人間)
-  ↓
-PostToolUse hook 起動 (.claude/settings.json)
-  ↓
-python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <path>
-  + python3 .claude/skills/eventstorming-facilitator/scripts/validate_dml.py <path>
-  ↓
-dist/eventstorming/<session>.html 再生成 (+ JSON Schema 検証)
-  ↓
-ブラウザの meta-refresh (3秒) で自動再表示
-```
-
-PostToolUse hook の設定: `.claude/settings.json`
-
-```json
-{
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -c '...' "
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-hook 内で `tool_input.file_path` を判定し、`docs/eventstorming/*.dml.yaml` の場合のみビルド＋検証を実行する。
+dmlctl 経由の書き込みは dmlctl 自身が build + validate を実行する。直接 Write/Edit が
+すり抜けた場合の安全網として PostToolUse hook（`.claude/settings.json`）が同じ build + validate を
+起動する。hook 設定の実体は `.claude/settings.json` が真実源（ここには再掲しない）。
 
 ---
 
@@ -62,7 +35,7 @@ hook 内で `tool_input.file_path` を判定し、`docs/eventstorming/*.dml.yaml
 
 ```bash
 # 個別ビルド
-python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py docs/eventstorming/eventstorming-20260529-1254.dml.yaml
+python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py docs/eventstorming/<session>.dml.yaml
 
 # 全件ビルド (docs/eventstorming/*.dml.yaml すべて → dist/eventstorming/*.html)
 python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py --all
@@ -81,12 +54,12 @@ python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py 
 
 ## 4. HTML が含むセクション
 
-§0 進捗バー（ヘッダ）＋ §1〜§9 の **9 セクション** で構成される。v8 で旧 §1 ハッピーパスストーリーと §2 代替シナリオが §1 ストーリーに統合された。
+§0 進捗バー（ヘッダ）＋ §1〜§9 の **9 セクション** で構成される。
 
 | # | セクション | 駆動データ | HTML 表現 |
 |---|---|---|---|
 | 0 | 進捗バー（ヘッダ） | DML `session.phase` / `session.status` | `フェーズN完了` を自動パースして `done`/`current` クラスを設定 |
-| 1 | ストーリー | DML `narratives[]`（v8 で `story:` 廃止して統合） | `kind:happy` を先頭に `.story` 黄背景、`kind:alt` を後続に `.scenario-card` カードで描画 |
+| 1 | ストーリー | DML `narratives[]` | `kind:happy` を先頭に `.story` 黄背景、`kind:alt` を後続に `.scenario-card` カードで描画 |
 | 2 | Event Walkthrough | **DML** `narratives[].entry` + `scenarios[]`（next/brs.terminal） + `policies[]` | `.flow > .grid` Big Picture 形式（§5 参照） |
 | 3 | 次のアクション | DML `actions[]` | `.next-actions` 緑カード。**読者の次の動きを最上部近くに置く** |
 | 4 | オープンクエスチョン / ホットスポット | DML `questions[]` | `.question`（青）`.hotspot`（赤）、`[CLOSED]` は緑背景 |
@@ -102,36 +75,26 @@ python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py 
 
 ## 5. Event Flow グリッド（Big Picture 形式）
 
-### 5-0. DML から HTML を組み立てるアルゴリズム（v6）
+### 5-0. DML から HTML を組み立てる流れ（概要）
 
-ビルダー `build_flows_from_dml(model, glossary_index)` が `.dml.yaml` の `narratives[].entry` を起点に `scenarios[].next` を辿り、`policies[]` を `scenarios[].evt → policies[].trg` のマッチで自動挿入して Lane / Note 構造を組み立てる。
+実装の真実源は `build_flows_from_dml()`（`eventstorming_build.py`）。概要のみ：
 
-1. `narratives[]` の各エントリで `entry` が指定されたものを 1 グリッド図として描画
-2. フロー連鎖の解釈：
-   - 開始: `narratives[].entry` の scenario.name から
-   - 継続: scenarios[].next（string → 全フロー共通／dict → `narratives[].id` キーで分岐）
-   - 終端: `next` 無し、または `brs[].terminal` が当該 `narratives[].id` と一致した時
-3. 各 scenario ステップの描画：
-   - actor / qry / cmd / evt から `Note` 群を生成（`ctx` は `scenarios[].ctx`）
-   - `brs[]` がある場合は **「このフローでアクティブな brs」を 1 つだけ選ぶ**：`terminal == flow_id` 一致 > `terminal` 無し > 先頭
-4. policy 自動挿入（scenarios[].evt → policies[].trg マッチ）：
-   - マッチした policy を新規 Lane として挿入。`policy.evt` が後続 policy.trg にマッチすれば再帰的に追加
-   - **policy ステップは常に EVENTUAL-TX 境界**として、前 Lane 末尾 Note を `is_async=True` にマーク
-5. レーン併合：
-   - 同一 `ctx` の連続 sync ステップ → 既存 Lane に Note を連結
-   - `ctx` が変化、または policy ステップ → **新規 Lane を作成**し、前 Lane 末尾の Note を `is_async=True` でマーク（非同期遷移矢印 `⚡` を描画）
-6. 特殊描画：
-   - POLICY が `trgs`（複数トリガー join）を持つ → 前 Lane の `joins_into_next=True` を立て、レーン遷移時に **BPMN シンクバー（`.sync-bar` + Σ N）** を描画
-   - POLICY の `bulk: true` → 該当 Note を `.note.fanout` クラスで描画し、右上 `× N` バッジ + 3 枚スタック
-   - `scenarios[].pivotal: true` の EVT（evt / brs[].evt。policy.evt が同名の場合も含む） → 該当 Note を **`.note.pivotal`** クラスで描画し、左上 `⭐ 節目` バッジ + 強調枠（節目イベント）
-7. 同じ BC が複数回出現しても **同じ grid-row に統合**
-8. 横幅が画面を超える場合は **`overflow-x: auto`** で横スクロール
+1. `entry` を持つ `narratives[]` エントリごとに 1 グリッド図。開始は `entry` の scenario、
+   継続は `scenarios[].next`（string=共通 / dict=フロー別）、終端は `next` 無し or
+   `brs[].terminal` 一致
+2. `brs[]` があるフローでは「アクティブな brs」を 1 つ選ぶ：`terminal == flow_id` 一致 > `terminal` 無し > 先頭
+3. policy は `scenarios[].evt → policies[].trg` マッチで自動挿入（policy.evt から再帰追加）。
+   policy ステップは常に EVENTUAL-TX 境界として前 Lane 末尾を `is_async=True` にマーク
+4. 同一 `ctx` の連続 sync ステップは 1 レーンに併合、`ctx` 変化・policy 遷移で新規 Lane ＋非同期矢印 `⚡`
+5. 特殊描画：`trgs` join → `.sync-bar`（Σ N）／`bulk: true` → `.note.fanout`（× N）／
+   `pivotal: true` の EVT → `.note.pivotal`（⭐ 節目バッジ）
+6. 同じ BC が複数回出現しても同じ grid-row に統合。横幅超過は `overflow-x: auto`
 
 ### 5-1. レイアウト原則
 
 - **時系列 = 横軸（列）**、**BC = 縦軸（行）**
 - 矢印は **CSS 描画**（`<div>` の塗り + 三角形）で付箋同士を視覚的に繋ぐ
-- ラベル日本語化方針: ビルダーは DML の英語識別子を glossary_index で日本語ラベルに変換して表示する。glossary_index は **DML `contexts[].lang` を全 BC 走査して機械的に生成**（HTML §4 用語集セクションは廃止済み・MD 側にも辞書テーブルは持たない）。識別子は英語のまま DML/HTML に保持される
+- ラベル日本語化方針: ビルダーは DML の英語識別子を glossary_index で日本語ラベルに変換して表示する。glossary_index は **DML `contexts[].lang` を全 BC 走査して機械的に生成**する。識別子は英語のまま DML/HTML に保持される
 
 ### 5-2. 付箋ラベル
 
@@ -300,57 +263,19 @@ BULK POLICY 由来の Note に付くクラス。
 
 ---
 
-## 7. 自動オープン
+## 7. ブラウザ表示と更新
 
-### 7-1. フェーズ2完了時のみ初回オープン
-
-DML（`.dml.yaml`）を Write した直後、PostToolUse hook が HTML を生成するので、AI は続けて `Bash open dist/eventstorming/<session>.html` を実行して外部ブラウザを起動する。
-
-### 7-2. 自動リロード（2 系統）
-
-| 機構 | 対象 | 動作 |
-|---|---|---|
-| **`<meta http-equiv="refresh" content="3">`** | 外部ブラウザ | 3 秒ごとに自身を再読み込み |
-| **`reload_browser_tab()` (osascript)** | macOS Chrome / Safari | ビルダーが HTML 生成後に該当タブを即座に reload |
-
-両方が併用されることで、外部ブラウザは常に最新版を表示する。
-
-### 7-3. Claude Code Launch preview panel
-
-Claude Code（CLI/PC/スマホアプリ）の preview panel は **JavaScript / `<meta http-equiv="refresh">` を実行しない** スナップショット表示。AI が `Read dist/eventstorming/<session>.html` を呼んだ瞬間に最新版が表示される。
-
-→ **フェーズ完了テンプレの末尾で必ず `Read` を呼ぶこと**（`chat-output-format.md` §3 参照）。
-
-### 7-4. スマホ環境
-
-スマホアプリでは Files / Safari で `dist/eventstorming/*.html` を開く。`Bash open` も `osascript` も効かないので、AI は「HTMLファイルを開いてください」と案内する。meta-refresh は機能する。
+- **初回オープン**: フェーズ2完了時のみ、AI が `Bash open dist/eventstorming/<session>.html` で外部ブラウザを起動する
+- **自動リロードは無い**: 生成 HTML に meta-refresh は含まれず、ビルダーもブラウザ操作をしない。外部ブラウザは必要に応じて手動リロード
+- **Claude Code preview panel**: JavaScript を実行しないスナップショット表示。AI が `Read dist/eventstorming/<session>.html` を呼んだ瞬間に最新版が表示される → **フェーズ完了テンプレの末尾で必ず `Read` を呼ぶ**（`references/chat-output-format.md` §6 参照）
+- **スマホ環境**: Files / Safari で `dist/eventstorming/*.html` を開く。`Bash open` が効かないので AI は「HTML ファイルを開いてください」と案内する
 
 ---
 
 ## 8. ビルダーの内部構造
 
-`.claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py` は単一ファイル、Python 3 標準ライブラリ + PyYAML で実装。主要関数：
-
-```
-_load_dml_model(dml_text) → dict|None  # .dml.yaml を yaml.safe_load
-_validate_dml_warn(dml, path) → list   # JSON Schema 検証で警告一覧（HTML §9 バナーに反映）
-build_flows_from_dml(model, gloss)     # narratives[].entry + scenarios[].next/brs.terminal + policies の自動連鎖 → Flow / Lane / Note
-render_flows(flows) → HTML             # Flow 群 → Big Picture グリッド HTML
-render_flow(flow) → HTML               # 単一 Flow の描画
-aggregates_from_dml(model) → list      # 集約 1 件あたり attrs/events/inv/err 等を集計
-render_agg_cards_from_dml(model, gl)   # AGG カード（属性表 / payload 表 / inv / err）
-render_decisions(model, gloss) → HTML  # decisions[] → .decision-card 群
-render_progress(status) → HTML         # session.phase / status から進捗バー
-render_context_map(bc_cards) → SVG     # UPSTREAM/DOWNSTREAM から関係図 SVG
-highlight_dml(dml) → HTML              # DML（YAML）役割ベース意味色ハイライト
-render_html(sections) → HTML 全文      # テンプレに埋め込んで完成版を返す
-build(yaml_path, out_dir) → Path       # 1 ファイルビルド → reload_browser_tab() 込み
-reload_browser_tab(html_path)          # macOS Chrome/Safari の該当タブを osascript で reload
-build_all(in_dir, out_dir)             # 全件ビルド
-watch(in_dir, out_dir)                 # 監視モード
-```
-
-依存: `re`, `pathlib`, `argparse`, `dataclasses`, `time`, `sys`, `subprocess`（hook 内のみ）、`yaml`（PyYAML）。
+**コードが真実源**。関数一覧・シグネチャは `eventstorming_build.py` 本体を読むこと
+（ここに写しを持つとドリフトするため再掲しない）。単一ファイル、Python 3 標準ライブラリ + PyYAML。
 
 ---
 
@@ -360,7 +285,7 @@ watch(in_dir, out_dir)                 # 監視モード
 
 - PyYAML 不在 / DML 解析失敗時は、§2・§5・§7 は `.todo-placeholder` で縮退表示し、**例外で停止せず HTML 生成は最後まで継続**
 - 手動再実行: `python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py <yaml>`
-- 解決不可ならチャット本文に **構造化テーブル** で代替表示（`chat-output-format.md` §9 参照）
+- 解決不可ならチャット本文に **構造化テーブル** で代替表示（`references/chat-output-format.md` §9 参照）
 
 ---
 

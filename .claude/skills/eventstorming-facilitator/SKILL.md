@@ -166,7 +166,7 @@ HTML 更新・DML 抜粋は出さない。本文末尾は問い 1 つで終わ�
 - **フェーズ2完了時のみ** `Bash open dist/eventstorming/<session>.html`。自動リロードはしない
 - **Claude Code preview panel への反映** — フェーズ完了テンプレ末尾で `Read dist/eventstorming/<session>.html` を必ず呼ぶ。HTML は数千行になるため **`limit` 付き（例: 冒頭 数十行）で可**。全文をコンテキストに載せる必要はなく、preview panel への反映がトリガーできれば十分
 - **スマホアプリ案内** — HTML 新規/再生成のフェーズ完了テンプレに「📱 HTML をダウンロードしてブラウザで」を必ず添える
-- **描画仕様詳細**: `references/html-render-spec.md`、テンプレ: `templates/event-flow.html`
+- **描画仕様詳細**（ビルド改修時のみ）: `scripts/RENDER_SPEC.md`、テンプレ: `templates/event-flow.html`
 
 ### ④ DML ファイル管理（YAML-only）
 
@@ -227,7 +227,7 @@ scenarios:
 - **scenarios[].brs[].terminal**: `<narratives[].id>` を指定すると「この brs 分岐が発火したらそのフローはここで終わる」と宣言
 - 同一 `ctx` の連続ステップはビルダー側で **1 レーンに併合**され、`ctx` 変化やポリシー遷移は非同期矢印で描画
 - POLICY が `trgs`（複数トリガー join）を持てば **BPMN シンクバー（Σ N）** で表現、`bulk: true` であれば **fanout（× N）** で描画
-- 図の HTML 表現詳細は `references/html-render-spec.md` §5
+- 図の HTML 表現詳細は `scripts/RENDER_SPEC.md` §5（ビルド改修時のみ）
 
 ---
 
@@ -302,8 +302,8 @@ DML は **`docs/eventstorming/<session>.dml.yaml`** 1 ファイルに **YAML 直
 | `policies[]` | AI/人間 | Policy / EVENTUAL-TX（name/ctx/trg/cmd/evt/agg） |
 | `decisions[]` | AI/人間 | 意思決定ログ（id/topic/chosen/options/affects） |
 
-HTML の 9 セクション（v8 で §1/§2 統合）は上記フィールドから機械的に組み立てられる。レンダリング詳細は
-`references/html-render-spec.md` 参照。
+HTML の 9 セクションは上記フィールドから機械的に組み立てられる（レンダリング詳細は
+`scripts/RENDER_SPEC.md`。ビルド改修時のみ参照）。
 
 **`contexts[].description`（BC 散文）**: 境界の理由 / 含むシナリオ / 目的 / 背景 / 制約 を
 Markdown 風の散文として書く。bullet (`- foo`) と `**強調**` は HTML 化で解釈される。
@@ -344,7 +344,7 @@ Markdown 風の散文として書く。bullet (`- foo`) と `**強調**` は HTM
 |---|---|
 | `references/dml.schema.yaml` | DML 構文の機械検証スキーマ（JSON Schema Draft 2020-12）。v5 で session/narratives/questions/actions/queries と contexts[].description を追加、v8 で旧 `story:` を `narratives[]` に統合 |
 | `references/dml-spec.md` | DML 設計ガイドライン（インフラ系判定・SCENARIO 哲学・POLICY 運用・AGG v3・flows/decisions の哲学・付箋色・最小実例） |
-| `references/html-render-spec.md` | HTML レンダリング仕様（DML → HTML マッピング、フロー Big Picture グリッド、属性表、意思決定ログ） |
+| `scripts/RENDER_SPEC.md` | HTML レンダリング実装仕様（**ビルドスクリプト改修時のみ**。通常セッションでは読まない） |
 | `references/session-guide.md` | ファシリテーション質問パターン（フェーズ別） |
 | `references/domain-starters.md` | よくあるドメインの候補イベントリスト |
 | `references/template.dml.yaml` | 新規セッション用 DML スケルトン（旧 template.md を置き換え） |
