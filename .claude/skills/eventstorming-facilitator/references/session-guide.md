@@ -1,9 +1,7 @@
 # 90分ファシリテーションガイド
 
-> **v5（YAML-only / dmlctl 運用）**: 各フェーズの「書き戻し先」は `.dml.yaml` の
-> トップレベルフィールド。本文書中の「`.md` を書く」記述は対応する DML フィールド
-> （`narratives` / `actions` / `questions` / `queries` / `contexts[].description` 等）
-> への書き込みと読み替える。
+> **YAML-only / dmlctl 運用**: 各フェーズの「書き戻し先」は `.dml.yaml` の
+> トップレベルフィールド（書き込みは `dmlctl` 経由のみ）。
 >
 > **本書と SKILL.md ワークフローの対応**: 本書は SKILL.md の 9 フェーズワークフローを
 > 90 分セッション用に短縮したファシリテーション質問集。区切りと SKILL.md フェーズの対応：
@@ -155,7 +153,7 @@ BC 候補が出揃ったら、依存方向を決める前に **どこに投資�
 - 列挙値は `type: string` + `note: "DRAFT / PUBLISHED / CANCELLED のいずれか"` のように補足する（`states[]` と一致させる）
 - 不変条件は `scenarios[].rules[]`、エラーは `scenarios[].errs[]`、AGG が emit するイベントペイロードは `aggregates[].events[].params[]` に書く（`params[]` の構造は `attrs[]` と同じ）
 
-属性を書くことで **抜け漏れ**（例: `format`・`startsAt`・`endsAt` などの基本フィールド欠落）を防ぐ。Zod ブロックを `.md` 側に書く慣習は廃止された（属性表は HTML §7 が `aggregates[].attrs[]` から自動描画する）。
+属性を書くことで **抜け漏れ**（例: `format`・`startsAt`・`endsAt` などの基本フィールド欠落）を防ぐ（属性表は HTML §7 が `aggregates[].attrs[]` から自動描画する）。
 
 ## 80〜85分：集約の目的・背景・制約を言語化する（フェーズ 4.6）
 
@@ -173,9 +171,9 @@ BC 候補が出揃ったら、依存方向を決める前に **どこに投資�
 - 「目的」は CMD で表現済みの **what** を書かない（「コミュニティを作成・削除する」は NG）。**why / どんな単位の責任か** を書く（「コミュニティの所有権と公開設定を管理する単一の責任主体」が OK）
 - 「制約」は検証可能な形で。「セキュアに保管」より「個人情報保護法に基づきメールアドレスは AES-256 で暗号化保管」のほうが実装判断の材料になる
 
-**BC レベルは任意：** `.md` §7 コンテキスト候補カードの `#### 目的` / `#### 背景` / `#### 制約` は任意。「BC 共通の戦略的判断」を 1 文で書ける場合のみ追加する。AGG レベルと重複する内容なら BC レベルは省略してよい。
+**BC レベルは任意：** `contexts[].description`（BC 散文）への目的・背景・制約の記述は任意。「BC 共通の戦略的判断」を 1 文で書ける場合のみ追加する。AGG レベルと重複する内容なら BC レベルは省略してよい。
 
-**不足検知：** 全 AGG の `aggregates[].purpose` が 30 字以上書かれているか確認。空・短すぎる項目はホットスポット `H-WHY` 候補としてマークし、`references/quality-check.md` の S8 で再走時に検出される。
+**不足検知：** 全 AGG の `aggregates[].purpose` が 30 字以上書かれているか確認。空・短すぎる項目はホットスポット `H-WHY` 候補としてマークする（`agg_purpose_minlength` 構造チェックが再走時に検出）。
 
 **DML への反映（必須）：** §5 で確定した AGG メタを `.dml.yaml` のトップレベル `aggregates[]` に追加する。各エントリは `name`（必須・PascalCase）・`ctx`（必須・所属 BC の `contexts[].name`）・`purpose`（必須）・`background`（推奨）・`constraints[]`（推奨）・`states`（推奨・upper-snake 配列）。AGG は所有 BC は 1 つ。同時に、所属 BC の `contexts[].aggs` には AGG 名（PascalCase 文字列）を**軽量名簿**として追加する（詳細を持たない）。**さらに `contexts[].lang.aggs` にも英→日ラベルを同時登録する**（`aggs` 名簿とは別の辞書。同様に policies を足したら `lang.pols` へ。漏れは `dmlctl check --check=language_coverage` が検出する）。
 

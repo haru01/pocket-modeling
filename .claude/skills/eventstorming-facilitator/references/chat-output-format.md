@@ -1,9 +1,7 @@
 # チャット出力フォーマット仕様
 
-> **v5（YAML-only / dmlctl 運用）**: `.md` は廃止。すべての書き込み対象は `.dml.yaml` の
-> トップレベルフィールド。本文書中の「`.md` を Write/Edit」「§N に書く」記述は
-> 「対応する DML フィールドを `dmlctl set/add/remove` で更新」と読み替える。
-> 旧 MD セクション ↔ DML フィールドの対応は SKILL.md「DML トップレベル構成（v5）」を参照。
+> **YAML-only / dmlctl 運用**: 書き込み対象はすべて `.dml.yaml` のトップレベルフィールドで、
+> I/O は `dmlctl` 経由のみ（直接 Read/Edit/Write は PreToolUse フックでブロック）。HTML は派生物。
 
 EventStorming セッション中の各ターンで、チャット本文に何をどの順で出すかを定義する。
 
@@ -69,7 +67,7 @@ Claude Code（CLI/PCアプリ/スマホアプリ）はインライン `<svg>` / 
 
 ⚡ = 次レーンへの非同期遷移
 
-> 詳細描画: [eventstorming-YYYYMMDD-HHMM.html](dist/eventstorming/eventstorming-YYYYMMDD-HHMM.html) （ブラウザで自動更新）
+> 詳細描画: [eventstorming-YYYYMMDD-HHMM.html](dist/eventstorming/eventstorming-YYYYMMDD-HHMM.html)
 
 ### 追加された DML
 
@@ -110,7 +108,7 @@ Claude Code（CLI/PCアプリ/スマホアプリ）はインライン `<svg>` / 
 ```
 
 ルール:
-- **HTML ファイルは Write/Edit で更新** し、チャット本文にはパスのみ案内
+- **HTML は dmlctl 書き込み時に自動再生成される**。チャット本文にはパスのみ案内
 - 代替シナリオがある場合は、テーブル形式のフローを **複数並べる** (ハッピーパス + 代替1 + 代替2)
 - DML 抜粋は §4 の粒度ルールに従う
 - 新規ラベル（`contexts[].lang` 追加分）は **新規追加分のみ**。既出の識別子は出さない
@@ -174,29 +172,29 @@ assistant が自己判断する。
 | **フェーズ4.6完了** | **トップレベル `aggregates[]` の新規エントリ（`name`/`ctx`/`purpose`/`background`/`constraints`/`states`）と `contexts[].aggs` 名簿の追加分のみ。加えて「### AGG 目的・背景・制約サマリ」テーブルで各 AGG の `purpose` 1 行と制約件数を 1 表で示す** |
 | フェーズ5完了 | 新規 rules/errs が追加された scenario 全文 + policies 要素 (新規分) + `aggregates[].transitions[]`/`attrs[]`/`events[].params[]` の追加分。`rules[].why`、`errs[].when` がある分は併記 |
 | **フェーズ6完了（意思決定ログ）** | **新規 `decisions[]` エントリ（id/topic/chosen/options[]）。各 option の `why`/`why_not` を 1〜2 行で簡潔に報告** |
-| フェーズ7完了 | **新規分の抜粋のみ + MD/HTML ファイルパスを案内**。DML 全文は別ファイル `<session>.dml.yaml` に保持、チャットには流さない |
+| フェーズ7完了 | **新規分の抜粋のみ + HTML パスを案内**。DML 全文は別ファイル `<session>.dml.yaml` に保持、チャットには流さない |
 
 DML 抜粋は ` ```dml ` コードブロックで囲む。
 
 ---
 
-## 6. HTML 更新粒度
+## 6. DML 書き込み粒度（HTML は自動再生成）
 
-| フェーズ | HTML 操作 |
+| フェーズ | DML 操作 |
 |---|---|
 | 1. スコープ | HTML はまだ作らない |
-| 2. ストーリー | `.dml.yaml` を **Write で新規作成**（`narratives[]` に `kind: happy`/`alt` を並べる）+ `Bash open` で初回起動。HTML §1 ストーリー + 進捗バー入り |
-| 3. イベント発見 | `.dml.yaml` を **Edit で `scenarios[]` の仮 entries ＋ `contexts[].lang` に新規識別子追加**。HTML §2 はビルダーが自動再生成（`entry` 付き narratives が無ければプレースホルダ） |
-| 4. CMD-EVT-POLICY | `.dml.yaml` を **Edit で `scenarios`（`next`/`brs[].terminal` を含む）/`policies`/`narratives[].entry`（happy + 代替 1〜2）追加 ＋ `contexts[].lang` 更新**（HTML 用語集セクションは廃止済み） |
-| 4.5. BC 境界 | `.dml.yaml` を **Edit で `lang` 追加**。HTML §6 はビルダーが自動再生成 |
-| 4.6. 目的・背景・制約 | `.dml.yaml` を **Edit で `aggregates[]` に `purpose`/`background`/`constraints` 追加** |
-| 5. RULE-ERR + 属性・イベントペイロード | `.dml.yaml` を **Edit で `scenarios[].rules`/`errs` + `aggregates[].attrs`/`events[].params` を追加**。HTML §7 はビルダーが自動再生成 |
-| 6. 意思決定ログ | `.dml.yaml` を **Edit で `decisions[]` 追加**。HTML §5 はビルダーが自動再生成 |
-| 7. 整合性チェック | HTML を **Edit で全セクション最終化**（実際の Edit は `.md`/`.dml.yaml` 側） |
+| 2. ストーリー | **`dmlctl init` で新規作成** → `narratives[]`（`kind: happy`/`alt`）を `set/add` + `Bash open` で初回起動。HTML §1 ストーリー + 進捗バー入り |
+| 3. イベント発見 | `dmlctl add/update` で **`scenarios[]` の仮 entries ＋ `contexts[].lang` に新規識別子追加**（`entry` 付き narratives が無ければ §2 はプレースホルダ） |
+| 4. CMD-EVT-POLICY | `dmlctl set/add/update` で **`scenarios`（`next`/`brs[].terminal` を含む）/`policies`/`narratives[].entry`（happy + 代替 1〜2）追加 ＋ `contexts[].lang` 更新** |
+| 4.5. BC 境界 | `dmlctl update --merge-yaml` で **`lang` 追加** |
+| 4.6. 目的・背景・制約 | `dmlctl add/update` で **`aggregates[]` に `purpose`/`background`/`constraints` 追加** |
+| 5. RULE-ERR + 属性・イベントペイロード | `dmlctl update` で **`scenarios[].rules`/`errs` + `aggregates[].attrs`/`events[].params` を追加** |
+| 6. 意思決定ログ | `dmlctl add` で **`decisions[]` 追加** |
+| 7. 整合性チェック | DML 書き込みなしなら HTML 操作もなし。`dmlctl check --all` → 観点別 LLM 評価 |
 
-HTML は MD と並行して常に最新状態を保つ。`open` で起動した外部ブラウザは `<meta http-equiv="refresh">` で 3 秒ごとに自動リロードして反映される。
+HTML は dmlctl 書き込みのたびに自動再生成されるが、**ブラウザの自動リロードは無い**（meta-refresh は出力されない）。外部ブラウザは必要に応じて手動リロード。
 
-**Claude Code preview panel は meta-refresh を実行しない** ため、フェーズ完了時にチャット応答の最後で `Read dist/eventstorming/<session>.html` を必ず呼び、preview panel に最新版を表示する。これで内蔵プレビュー・外部ブラウザの両方で最新状態が見られる。HTML は数千行になるので、この `Read` は `limit` 付き（冒頭 数十行）で可 — 目的は preview 反映のトリガーであり、全文をコンテキストに載せる必要はない。
+**Claude Code preview panel への反映**は、フェーズ完了時にチャット応答の最後で `Read dist/eventstorming/<session>.html` を必ず呼ぶ。HTML は数千行になるので、この `Read` は `limit` 付き（冒頭 数十行）で可 — 目的は preview 反映のトリガーであり、全文をコンテキストに載せる必要はない。
 
 ---
 
@@ -211,7 +209,7 @@ HTML は MD と並行して常に最新状態を保つ。`open` で起動した�
 
 ## 8. 編集インタラクション
 
-ユーザーが自然言語で図を編集できる。assistant は指示を解釈して MD ファイルと HTML に反映する。
+ユーザーが自然言語で図を編集できる。assistant は指示を解釈して DML に反映する（HTML はビルダーが自動再生成）。
 
 ### 8-1. ユーザーの指示パターン
 
@@ -229,14 +227,14 @@ HTML は MD と並行して常に最新状態を保つ。`open` で起動した�
 
 1. ユーザー指示を **対象アイテム** (A1/C2/E3 や日本語ラベル) と **操作** (追加/削除/変更/移動/リネーム) に分解
 2. **テキストで確認**: 「`E3 = 参加申し込みが完了した` を `招待送信済` に変更し、DML の `evt: ParticipationApplied` を `evt: InvitationSent` にリネームします。OK?」
-3. ユーザー OK → `.dml.yaml`（DML）を `Edit`（`contexts[].lang` 含む）で一貫して更新
+3. ユーザー OK → `dmlctl set/add/update/rename` で `.dml.yaml`（`contexts[].lang` 含む）を一貫して更新
 4. HTML は触らない（ビルダーが自動再生成）
-5. 品質チェックサブエージェント (`quality-check-agent.md`) を起動（`.md` ＋ 兄弟 `.dml.yaml` を対象。HTML は対象外）
+5. 品質チェックサブエージェントを起動（`references/quality-check.md`。対象は `.dml.yaml` のみ、HTML は対象外）
 6. **フェーズ完了相当の変更なら** チャット本文に構造化テーブル付き完了メッセージ。**細かい変更なら** テキスト確認のみ
 
 ### 8-3. 複数同時指示
 
-「3つ変えたい」と言われたら、全部リストアップして 1 回の `Edit` で MD を書き換え、HTML も 1 回の Edit で更新、品質チェックは 1 回起動。
+「3つ変えたい」と言われたら、全部リストアップして dmlctl で一括更新（`--no-postprocess` で連ね最後だけ postprocess でも可）、品質チェックは 1 回起動。
 
 ---
 
@@ -254,7 +252,7 @@ HTML ファイルが生成できないため、以降は構造化テーブルの
 
 ## 10A. WHY 補完モード（H-WHY ホットスポット）
 
-quality-check で **S8 違反**（AGG `#### 目的` 未記入 / 30 字未満）または **W1/W2 違反**（RULE の `WHY` 不足 / ERR の `WHEN` 不足）が検出されたら、ファシリテーター本体が次ターンの応答末尾に **`### WHY 補完が必要`** セクションを置き、優先度（目的 > 制約 > WHY > WHEN）で **1 件ずつ** ユーザーに問う。
+quality-check で **`agg_purpose_minlength` 違反**（AGG `purpose` 未記入 / 30 字未満）または **意味チェック `scenario-rules-quality` の補強推奨**（RULE の `why` 不足 / ERR の `when` 不足）が検出されたら、ファシリテーター本体が次ターンの応答末尾に **`### WHY 補完が必要`** セクションを置き、優先度（目的 > 制約 > why > when）で **1 件ずつ** ユーザーに問う。
 
 ### テンプレート
 
@@ -267,7 +265,7 @@ quality-check で **S8 違反**（AGG `#### 目的` 未記入 / 30 字未満）�
 「何をするか（CMD で表現済み）」ではなく「なぜこの単位で切るか」を書いてください。
 ```
 
-ユーザー回答 → 該当 MD/DML を `Edit` → quality-check を再走 → クローズ。複数の `H-WHY` が同時にある場合は **1 ターン 1 件** に絞る（質問は 1 回に 1 つの原則を維持）。ユーザーが `？` を返したら判断軸（例: 「責任の核 / 業務的価値 / 実装が直接守る制約」）を 2〜3 点提示する。
+ユーザー回答 → `dmlctl set/update` で DML に反映 → quality-check を再走 → クローズ。複数の `H-WHY` が同時にある場合は **1 ターン 1 件** に絞る（質問は 1 回に 1 つの原則を維持）。ユーザーが `？` を返したら判断軸（例: 「責任の核 / 業務的価値 / 実装が直接守る制約」）を 2〜3 点提示する。
 
 ### `H-WHY` の表記
 

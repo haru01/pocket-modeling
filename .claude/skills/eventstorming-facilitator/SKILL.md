@@ -131,7 +131,7 @@ HTML 更新・DML 抜粋は出さない。本文末尾は問い 1 つで終わ�
 
 ### 追加された DML
 ```dml
-<該当フェーズで確定した contexts/aggregates/scenarios/policies/flows/decisions のみ（YAML）>
+<該当フェーズで確定した contexts/aggregates/scenarios/policies/decisions のみ（YAML）>
 ```
 
 ### 新規ラベルの追加（DML `contexts[].lang`）
