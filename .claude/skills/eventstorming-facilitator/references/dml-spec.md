@@ -2,25 +2,12 @@
 
 DDD モデリングのための情報圧縮言語。**構文 validity（形が正しいか）は [`./dml.schema.yaml`](./dml.schema.yaml)（JSON Schema Draft 2020-12）で機械検証**する。本書は schema では表現できない**設計判断・記法哲学・慣習**を扱う。
 
-- スキーマ通過は必要条件であって十分条件ではない。「形が正しい」ことを schema が、「意味が正しい」ことを causal-check / quality-check が担保する（§7）
+- スキーマ通過は必要条件であって十分条件ではない。「形が正しい」ことを schema が、「意味が正しい」ことを品質チェック（構造＋意味、`references/quality-check.md`）が担保する（§7）
 - 検証: `python3 .claude/skills/eventstorming-facilitator/scripts/validate_dml.py docs/eventstorming/<session>.dml.yaml`
-- フル例: [`../examples/sample.dml.yaml`](../examples/sample.dml.yaml)（コミュニティイベント参加ドメイン・`narratives[]`（entry 付き）/ `decisions[]` を含む v6 参照例）
+- フル例: [`../examples/sample.dml.yaml`](../examples/sample.dml.yaml)（コミュニティイベント参加ドメイン・`narratives[]`（entry 付き）/ `decisions[]` を含む参照例）
 
-## v5: 散文系トップレベルフィールド
-
-`.md` 廃止に伴い、旧 `.md` セクションが担っていた散文情報を DML 内部に統合した：
-
-| 旧 .md セクション | v5 で追加された DML フィールド |
-|---|---|
-| ヘッダー（Session/Domain/Status/Goal） | `session: { id, domain, goal, status, started_at, html_link }` |
-| §1 Happy Path Story + §2 代替シナリオ散文＋フロー定義 | `narratives[]`（v8 で統合）: `id` 必須・`kind` 必須 (`happy` \| `alt`) ・`prose` 必須・`title`/`entry` 任意。`kind:happy` が HTML §1 ストーリー先頭に、`kind:alt` が後続に並ぶ。`entry` 指定で §2 フロー図 1 行を駆動 |
-| §4 次のアクション | `actions[]: { id, text, owner?, done? }` |
-| §5 オープンクエスチョン | `questions[]: { id, topic, why, status: open\|closed, decision_id? }` |
-| §7 BC 散文 | `contexts[].description: \|` Markdown 風散文 |
-| §9 リードモデル候補 | `queries[]: { name, ctx, purpose, users, sources, formula }` |
-
-> **v8 注記**: 旧トップレベル `story: |` キーは廃止。ハッピーパスは `narratives[]` に `kind: happy` のエントリとして書く。HTML も §1 ハッピーパスストーリー / §2 代替シナリオ の 2 セクションが §1 ストーリー 1 つに統合された。
-
+散文情報（`session` / `narratives[]` / `actions[]` / `questions[]` / `queries[]` /
+`contexts[].description`）もすべて DML 内のトップレベルフィールドとして保持する（別の `.md` は無い）。
 各フィールドはすべて optional（進行中セッション中は欠落 OK）。AI からの編集は
 `scripts/dmlctl.py` の `set/add/remove` を使うと round-trip でコメント・引用形式を維持できる。
 
@@ -28,8 +15,8 @@ DDD モデリングのための情報圧縮言語。**構文 validity（形が�
 
 ## 0. 記法の原則
 
-- **YAML 直書き・`.md` と兄弟ファイル**: `docs/eventstorming/<session>.dml.yaml` に純 YAML（フェンス不要）。`.md` の §10 はこの `.dml.yaml` へのリンク参照のみ。ビルダーは `.md` + 兄弟 `.dml.yaml` から HTML を生成する
-- **トップレベルは 4 モデル本体 + 任意散文系**: モデル本体 `contexts` / `aggregates` / `scenarios` / `policies` ＋意思決定ログ `decisions`、加えて散文系 `session` / `narratives` / `actions` / `questions` / `queries` / `domains`。全フィールドが optional（空 `{}` も valid）。**v6 で旧トップレベル `flows[]` は廃止**（連鎖は `narratives[].entry` ＋ `scenarios[].next` / `brs[].terminal` で表現）。コメントによるセクション区切りは使わない（リスト構造で自然に分離される）
+- **YAML 直書き**: `docs/eventstorming/<session>.dml.yaml` に純 YAML（フェンス不要）で書く。ビルダーはこの 1 ファイルだけから HTML を生成する
+- **トップレベルは 4 モデル本体 + 任意散文系**: モデル本体 `contexts` / `aggregates` / `scenarios` / `policies` ＋意思決定ログ `decisions`、加えて散文系 `session` / `narratives` / `actions` / `questions` / `queries` / `domains`。全フィールドが optional（空 `{}` も valid）。トップレベル `flows[]` は存在しない（連鎖は `narratives[].entry` ＋ `scenarios[].next` / `brs[].terminal` で表現）。コメントによるセクション区切りは使わない（リスト構造で自然に分離される）
 - **識別子は英語 PascalCase**（`cmd` / `evt` / `agg` / `trg` / `qry` の値、`aggregates[].name` 等）。`()` や `<<>>` は付けない
 - **`scenarios[].name` のみ日本語**で「アクター＋行為」を書く（例: `主催者がコミュニティを作成する`）
 - **`rules[].rule` の不変条件は英語**。日本語の補足は `why` / `when` / `note` の**構造化フィールド**へ書く（`#` 行コメントによる補足慣習は廃止）
@@ -60,7 +47,7 @@ DDD モデリングのための情報圧縮言語。**構文 validity（形が�
 - SLA・再送ポリシー・失敗時のフォールバックが業務要件
 - 他 BC から「どの通知を送ったか」を参照される（監査ログ兼用など）
 
-→ `contexts` に新規 BC を宣言し、`up` / `dn` で他 BC との関係を明示する。**`contexts[].lang` / `up` / `dn` は HTML §6 の LANGUAGE / 依存方向、および glossary_index（語彙の英→日変換）の唯一の真実源**（`.md` §7 や別の用語集セクションには書かない）。`.md` §7 は散文（境界の理由・含むシナリオ・目的・背景・制約）のみを担い、ビルダーが merge して描画する。
+→ `contexts` に新規 BC を宣言し、`up` / `dn` で他 BC との関係を明示する。**`contexts[].lang` / `up` / `dn` は HTML §6 の LANGUAGE / 依存方向、および glossary_index（語彙の英→日変換）の唯一の真実源**（別の用語集は持たない）。境界の理由・含むシナリオ・目的・背景・制約の散文は `contexts[].description` に書き、ビルダーが merge して描画する。
 
 **`contexts[].lang` はカテゴリ別 dict-of-dicts**: 本 BC で扱う語彙を種別ごとに分類して英→日ラベル（短い表記）を与える。HTML §6 では制約の下にタイプ別表で描画される。
 
@@ -68,13 +55,13 @@ DDD モデリングのための情報圧縮言語。**構文 validity（形が�
 contexts:
   - name: store-front
     lang:
-      aggregates:    { Order: "注文", Quote: "概算見積" }
+      aggs:    { Order: "注文", Quote: "概算見積" }
       vos:     { HoldAmount: "与信額" }
       actors:  { Member: "会員", System: "システム" }
       cmds:    { PlaceOrder: "注文を確定する" }
       evts:    { OrderPlaced: "注文された" }
-      policies:    { AuthorizeOnOrderPlaced: "注文確定時に差額与信" }
-      queries:    { GetEstimateAmount: "概算買取額" }
+      pols:    { AuthorizeOnOrderPlaced: "注文確定時に差額与信" }
+      qrys:    { GetEstimateAmount: "概算買取額" }
 ```
 
 同じ識別子が複数 BC で出る場合は **最初の登録を優先**（後勝ちにすると flow 描画ラベルが BC 順序依存になり不安定）。値は **短い日本語ラベル**（フロー図の付箋ラベルに直接使う）。長い説明文は `purpose` / `background` / `note` 側に書く。
@@ -106,7 +93,7 @@ contexts:
 
 AI 実装エージェントが Issue から実装するときに意図を読み解きやすくするため、`rules[].why` / `errs[].when` は強く推奨（schema 上は optional）。
 
-### `errs[]` には `why` フィールドが無い（v8 時点）
+### `errs[]` には `why` フィールドが無い
 
 `rules[]` には `why` があるが `errs[]` には無く、フィールド名が非対称。`errs[]` の業務的理由（なぜそのエラーが起こり得るか／なぜ業務的に問題か）は **`when` フィールドに自然文で書く**。
 
@@ -141,7 +128,7 @@ Big Picture EventStorming の **Pivotal Event**（タイムラインを大きく
 
 ### 内部 CMD（時刻駆動・コールバック・副作用）の書き方
 
-業務アクター（会員・スタッフ）が直接発行しない CMD でも、AGG の状態を変える限り **scenario として書く** か **policy.cmd として実体化する** 必要がある。`dangling_cmd` チェック（v7）は両方を参照する。
+業務アクター（会員・スタッフ）が直接発行しない CMD でも、AGG の状態を変える限り **scenario として書く** か **policy.cmd として実体化する** 必要がある。`dangling_cmd` チェックは両方を参照する。
 
 | 類型 | 書き方 | 例 |
 |----|-------|----|
@@ -216,7 +203,7 @@ OR の意味論（1 つ揃えば発火してよいか、経路ごとに重複記
 
 ### POLICY のガード条件は呼び出される SCENARIO の `rules[]` に書く
 
-policy schema には `rules[]` が無い（v8 時点）。「この POLICY を skip するべき業務条件」は、policy の `note` に簡潔に書きつつ、**policy が起動する CMD を実行する SCENARIO の `rules[]` / `errs[]` にガードを書く**。これにより scenario 側の構造化チェック（dangling_cmd・state_reachability 等）でガード抜けが検出されやすくなる。
+policy schema には `rules[]` が無い。「この POLICY を skip するべき業務条件」は、policy の `note` に簡潔に書きつつ、**policy が起動する CMD を実行する SCENARIO の `rules[]` / `errs[]` にガードを書く**。これにより scenario 側の構造化チェック（dangling_cmd・state_reachability 等）でガード抜けが検出されやすくなる。
 
 例: `NotifyParticipantsOnEventCancelled` が `bulk: CancelParticipation` を発行すると `ParticipationCancelled` evt が連鎖し、`PromoteOnCancelled` policy が暴発するリスクがある。これを防ぐには `システムが繰上を実行する` scenario の `rules[]` に次を入れる：
 
@@ -227,37 +214,35 @@ policy schema には `rules[]` が無い（v8 時点）。「この POLICY を s
 
 合わせて `policies[NotifyParticipantsOnEventCancelled].note` に「PromoteOnCancelled の連鎖発火を `EventAlreadyCancelled` ガードで防いでいる」と明記すると、後でレビューする人が relation を辿りやすい。
 
-### v7 追加: `policies[].agg`
+### `policies[].agg`
 
-POL の `cmd` が AGG を変更するなら `agg` を併記する（scenarios と対称化）。`dangling_cmd` 構造チェックは v7 以降、`scenarios[].cmd` と `policies[].cmd` の両方を declared として扱う。
+POL の `cmd` が AGG を変更するなら `agg` を併記する（scenarios と対称化）。`dangling_cmd` 構造チェックは `scenarios[].cmd` と `policies[].cmd` の両方を declared として扱う。
 
 ---
 
-## 4. AGG（v3 トップレベル化）の設計意図
+## 4. AGG（トップレベル）の設計意図
 
-v2 までは `contexts[].aggs[]` 内に集約宣言を持っていたが、**v3 で AGG をトップレベル `aggregates[]` に切り出した**。`contexts[].aggs` は AGG 名（PascalCase 文字列）の**軽量名簿**として残る。
+AGG 詳細はトップレベル `aggregates[]` に置き、`contexts[].aggs` は AGG 名（PascalCase 文字列）の**軽量名簿**とする。
 
-### なぜトップレベル化したか
+### なぜトップレベルか（contexts 内に埋めない理由）
 
-- AGG は BC をまたいで参照される（quality-check / causal-check のグラフ起点）
+- AGG は BC をまたいで参照される（品質チェックのグラフ起点）
 - `transitions[].via`（CMD 名）と `scenarios[].cmd` を機械的に突合できる
 - AGG の責務（`purpose` / `background` / `constraints` / `states` / `transitions` / `attrs` / `events`）を 1 ブロックで読める
 
-### `aggregates[]` のフィールド構成（v4）
+### `aggregates[]` のフィールドの役割（型・必須は schema 参照）
 
-| フィールド | 型 | 役割 |
-|---|---|---|
-| `name` | PascalCase | AGG 識別子（必須） |
-| `ctx` | lowercase-with-hyphen | 所属 BC（必須・所有者は 1 つ） |
-| `purpose` | string | 「単一の責任主体として何のソース・オブ・トゥルースか」を 1 文で（必須・30 字以上推奨） |
-| `background` | string | 「なぜ今この AGG を切り出すか・既存運用の何が痛いか」（任意・1〜3 文） |
-| `constraints[]` | string list | 業務／法令／プラットフォーム由来の制約（任意・複数可） |
-| `states` | upper_snake list | 状態名（DRAFT / PUBLISHED 等） |
-| `transitions[]` | `{from,to,via,when?}` | 状態遷移。`via` は scenarios[].cmd と突合 |
-| `attrs[]` | `{name,type,required?,note?}` | AGG ペイロード属性。HTML §7 で属性表として描画 |
-| `events[]` | `{name, params[]?}` | この AGG が emit する EVT 宣言。`params[]` は `attrs[]` と同じ attribute 構造。HTML §7 でイベントペイロード表として描画 |
+| フィールド | 役割 |
+|---|---|
+| `name` / `ctx` | AGG 識別子と所属 BC（所有者は 1 つ） |
+| `purpose` | 「単一の責任主体として何のソース・オブ・トゥルースか」を 1 文で（30 字以上推奨） |
+| `background` | 「なぜ今この AGG を切り出すか・既存運用の何が痛いか」（1〜3 文） |
+| `constraints[]` | 業務／法令／プラットフォーム由来の制約（複数可） |
+| `states` / `transitions[]` | 状態名（UPPER_SNAKE）と遷移。`via` は scenarios[].cmd と突合 |
+| `attrs[]` | AGG ペイロード属性。HTML §7 で属性表として描画 |
+| `events[]` | この AGG が emit する EVT 宣言。`params[]` は `attrs[]` と同じ構造。HTML §7 でペイロード表として描画 |
 
-### 意味整合（quality-check が担保）
+### 意味整合（品質チェックが担保）
 
 | 観点 | 突合 |
 |---|---|
@@ -266,13 +251,13 @@ v2 までは `contexts[].aggs[]` 内に集約宣言を持っていたが、**v3 
 | EVT が AGG の宣言済み発火イベントか | `scenarios[].evt` ⇔ `aggregates[].events[].name` |
 | BC 所有 AGG の双方向参照 | `contexts[].aggs`（名簿） ⇔ `aggregates[].ctx` |
 
-スキーマは「`aggregates[].name` が PascalCase か」「`states` が UPPER_SNAKE か」までしか保証しない。**意味整合は quality-check / causal-check の責務**。
+スキーマは「`aggregates[].name` が PascalCase か」「`states` が UPPER_SNAKE か」までしか保証しない。**意味整合は品質チェックの責務**（`references/quality-check.md`）。
 
 ### AGG は所有 BC が 1 つ
 
 複数 BC で参照される AGG でも `aggregates[].ctx` は 1 つに決める（所有者は 1 つ）。参照側 BC は up/dn の依存関係として表現する。
 
-### transitions[] の初期化規約（v6・明示）
+### transitions[] の初期化規約
 
 **AGG 生成（creation）は `transitions[]` に書かない**。schema の `from` は `^[A-Z][A-Z0-9_]*$`（実在の状態名のみ）に制約されているため、`(initial)` や `_INITIAL_` のような疑似状態は使えない。
 
@@ -289,23 +274,12 @@ v2 までは `contexts[].aggs[]` 内に集約宣言を持っていたが、**v3 
 
 ---
 
-## 5. 付箋色との対応（DML 値のロール）
+## 5. HTML 描画との関係
 
-DML（YAML）の値は HTML レンダリング時に**役割ベースの意味色**でハイライトされる（付箋フロー図と同じパレット）。
+DML の値は HTML レンダリング時に付箋フロー図と同じ**役割ベースの意味色**でハイライトされる
+（フィールド→色の対応はレンダリング仕様を参照。AI が色を意識して DML を書く必要はない）。
 
-| フィールド | 意味 | 付箋色 |
-|------|------|--------|
-| `evt` / `emits` / `brs[].evt` / `aggregates[].events[].name` | ドメインイベント（発生した事実・過去形） | 橙 |
-| `trg` / `trgs.evts` | POL が購読するトリガ参照（発生 evt と区別） | Amber |
-| `cmd` / `via` | コマンド（操作・意図） | 青 |
-| `agg` / `actor` / `aggregates[].name` | 集約 / アクター | 黄 |
-| `qry` | Read Model（CMD 発行前に参照するビュー） | 緑 |
-| `pol` / POLICY の `name` | ポリシー | 紫 |
-| `errs[].err` | エラー型（不変条件違反） | 赤 |
-| `states` / `from` / `to` | 状態名（UPPER_SNAKE） | 黄（淡） |
-| キー名 | YAML キー | 淡い灰緑 |
-
-> **フロー図は DML から自動生成される**（手書きの記号 DSL は無い）。`narratives[].entry` を起点にビルダーが `scenarios[].next` を辿り、`scenarios[].evt → policies[].trg` のマッチで policy を自動挿入して Big Picture グリッドに描画する。詳細は [`./html-render-spec.md`](./html-render-spec.md) §5 参照。
+> **フロー図は DML から自動生成される**（手書きの記号 DSL は無い）。`narratives[].entry` を起点にビルダーが `scenarios[].next` を辿り、`scenarios[].evt → policies[].trg` のマッチで policy を自動挿入して Big Picture グリッドに描画する。
 
 ---
 
@@ -333,8 +307,8 @@ scenarios:
 
 | レイヤ | 担保するもの | 例 |
 |------|------|------|
-| **JSON Schema**（機械・決定論的） | 構文 validity。モデル本体 `contexts`/`aggregates`/`scenarios`/`policies`＋`decisions`＋散文系 `session`/`narratives`/`actions`/`questions`/`queries`/`domains`（全て optional）、各要素の必須フィールド、型、enum、識別子の PascalCase・lowercase-with-hyphen・UPPER_SNAKE（状態名）・camelCase（属性名）、`evt`↔`brs` 排他、`trg`↔`trgs` 排他、`bulk:true`→`qry` 必須、`branch.next`↔`branch.terminal` 排他、未知フィールド禁止 | `cmd` が PascalCase か、`sub.type` が enum 値か、`aggregates[].states` が UPPER_SNAKE か |
-| **causal-check / quality-check**（LLM・文脈依存） | 意味 validity。参照の実在・因果整合・モデル品質 | `trg` が実在 EVT を指すか、`pol` が実在 POLICY か、up↔dn の双方向一致、`scenarios[].cmd` ↔ `aggregates[].transitions[].via` 整合、`scenarios[].evt` ↔ `aggregates[].events[].name` 整合、`narratives[].entry` / `scenarios[].next` / `brs[].terminal` の解決（→ `flow_chain_resolution` チェック）、`decisions[].affects[]` が実在要素を指すか、分岐の MECE 性、`evt` の過去形・`cmd` の命令形 |
+| **JSON Schema**（機械・決定論的） | 構文 validity。型・必須フィールド・enum・命名 pattern・排他制約・未知フィールド禁止は schema が機械検証する（制約の全量は [`./dml.schema.yaml`](./dml.schema.yaml)） | `cmd` が PascalCase か、`bulk:true` に `qry` があるか |
+| **品質チェック**（構造チェック＋LLM 意味チェック） | 意味 validity。参照の実在・因果整合・モデル品質（観点一覧は `references/quality-check.md`） | `trg` が実在 EVT を指すか、`scenarios[].cmd` ↔ `transitions[].via` 整合、分岐の MECE 性、`evt` の過去形・`cmd` の命令形 |
 
 **スキーマ通過は必要条件であって十分条件ではない。** ビルダー（`eventstorming_build.py`）は `.dml.yaml` 読込時に schema 検証し、HTML §9 にバナー（✅ / ⚠ 違反一覧）を描画する。**検証は非ブロッキング**で、違反があっても HTML は生成される。全行コメントのみ（YAML→`None`）や空ファイルは「未記述」として検証対象外（進行中セッション許容）。
 
@@ -342,45 +316,10 @@ scenarios:
 
 ## 8. 最小実例
 
+scenario 1 件 + policy 1 件の最小形。**ドメイン全体のフル例**（contexts / aggregates / narratives /
+decisions / queries を含む）は [`../examples/sample.dml.yaml`](../examples/sample.dml.yaml) が正典。
+
 ```yaml
-contexts:
-  - name: community-events
-    lang:
-      aggregates:
-        Event: "イベント"
-      actors:
-        Organizer: "主催者"
-      cmds:
-        PublishEvent: "イベントを公開する"
-      evts:
-        EventPublished: "イベントが公開された"
-    mod: community-events
-    up: []
-    dn: []
-    aggregates: [Event]
-
-aggregates:
-  - name: Event
-    ctx: community-events
-    purpose: "イベントのライフサイクルとキャパシティの単一の真実源"
-    background: "現状はスプレッドシート手動運用で公開ステータスの曖昧さが申込導線の混乱を生んでいる"
-    constraints:
-      - "定員は 1 以上必須（個人情報保護法対象外データ）"
-    states: [DRAFT, PUBLISHED, CANCELLED]
-    transitions:
-      - { from: DRAFT,     to: PUBLISHED, via: PublishEvent, when: "必須項目が揃いキャパシティ > 0" }
-      - { from: PUBLISHED, to: CANCELLED, via: CancelEvent }
-    attrs:
-      - { name: eventId,  type: EventId, required: true }
-      - { name: title,    type: string,  required: true }
-      - { name: capacity, type: int,     required: true, note: "1 以上" }
-    events:
-      - name: EventPublished
-        params:
-          - { name: eventId, type: EventId }
-          - { name: title,   type: string }
-      - name: EventCancelled
-
 scenarios:
   - name: 主催者がイベントを公開する
     ctx: community-events
@@ -404,92 +343,29 @@ policies:
     bulk: true
     evt: CancellationNotificationSent
     note: "副作用専用 POLICY（メール送信のみ・cmd 省略）"
-
-narratives:
-  - id: happy
-    title: ハッピーパス — イベントを公開する
-    kind: happy
-    entry: 主催者がイベントを公開する        # フロー開始 scenarios[].name
-    prose: |
-      主催者は DRAFT で必要事項を埋めた後、公開操作を行う。コミュニティに通知され、申込が始まる。
-  - id: alt-cancel
-    title: 代替シナリオ — イベントをキャンセルする
-    kind: alt
-    prose: |
-      会場・登壇者都合で開催不可となった場合、主催者はキャンセル操作を行う。
-      NotifyEventCancelled policy が確定参加者へ一括通知する。
-
-decisions:
-  - id: D1
-    topic: 定員（capacity）はどの AGG が所有するか
-    chosen: Event 集約に持たせる
-    options:
-      - name: Event 集約に持たせる
-        adopted: true
-        why: "公開時点で確定する属性で、Participation と独立に変更されるため Event のライフサイクルと同居が自然"
-      - name: Participation 集約に持たせる
-        why_not: "個別申込ごとに上限を計算し直す必要があり、整合性管理コストが高い"
-    affects: [Event]
 ```
-
-**コミュニティイベント参加ドメイン全体のフル例**: [`../examples/sample.dml.yaml`](../examples/sample.dml.yaml)。
 
 ---
 
-## 9. フロー連鎖（v6）と `decisions[]` の哲学
+## 9. フロー連鎖と `decisions[]` の哲学
 
 ### なぜフロー連鎖が必要か
 
 ドメインモデルには **ハッピーパス** に加えて **複数の代替シナリオ**（キャンセル・繰上待ち・エラー復旧 等）が存在する。それぞれが「どの scenarios/policies をどの順で辿るか」を明示的に残さないと、後で別パスを思い出して書き起こすときに必ず情報が落ちる。
 
-v6 ではフロー定義を **3 つのフィールドに分散** して保持する：
+フロー定義は **3 つのフィールドに分散** して保持する：
 - **`narratives[]`**: フロー識別子（`id`）・見出し（`title`）・種別（`kind`）・散文（`prose`）・開始 scenario（`entry`）
 - **`scenarios[].next`**: フロー連鎖の継続先（string = 全フロー共通 / dict = フロー別）
 - **`scenarios[].brs[].terminal`**: 「この brs 分岐が発火したら指定フローはここで終わる」宣言
 
 policy ステップはビルダーが **`scenarios[].evt → policies[].trg` マッチで自動挿入**するため、各 scenario の業務記述に集中できる。
-
-```yaml
-narratives:
-  - id: happy
-    title: ハッピーパス — 申込から決済確定まで
-    kind: happy
-    entry: 主催者がイベントを下書きする        # フロー開始 scenarios[].name
-    prose: |
-      <ハッピーパス散文>
-  - id: alt-waitlist
-    title: 代替シナリオ — 残席ゼロで繰上待ち
-    kind: alt
-    entry: 参加者がイベントに参加申込する    # 任意。指定なし → §2 描画は省略
-    prose: |
-      <代替シナリオ散文>
-
-scenarios:
-  - name: 主催者がイベントを下書きする
-    cmd: DraftEvent
-    evt: EventDrafted
-    next: 参加者がイベントに参加申込する     # 全フロー共通
-
-  - name: 参加者がイベントに参加申込する
-    cmd: ApplyForEvent
-    next: システムが申込を確定し監査記録する  # happy 系の継続先
-    brs:
-      - { cond: "...", evt: ParticipationApplied }
-      - { cond: "...", evt: ParticipationWaitlisted, terminal: alt-waitlist }  # alt-waitlist 終端
-
-  - name: 注文確定（分岐点の例）
-    cmd: PlaceOrder
-    evt: OrderPlaced
-    next:                                    # フロー別に異なる時は dict
-      happy: 旧機種発送
-      alt-timeout: タイムアウト検知
-```
+記法例は SKILL.md「Event Flow」節と [`../examples/sample.dml.yaml`](../examples/sample.dml.yaml) を参照。
 
 ### 参照規則
 
 - **`narratives[].entry`** は `scenarios[].name` を指す（typo は `flow_chain_resolution` チェックで検出）
 - **`scenarios[].next`** 値が dict のとき、キーは `narratives[].id` の集合のサブセットでなければならない
-- **`scenarios[].brs[].next`** — branch ごとに連鎖を変える時はここに書く。**`sc.next` より優先される**（v7：両方のスクリプトが branch.next を最初に確認する）
+- **`scenarios[].brs[].next`** — branch ごとに連鎖を変える時はここに書く。**`sc.next` より優先される**
 - **`scenarios[].brs[].terminal`** 値は `narratives[].id` のいずれか。`brs[].next` と同時指定は禁止（schema で not 制約）
 - 順序は因果連鎖と整合させる（前 scenario の `evt` が後続 scenario の `cmd` まで policy 連鎖で繋がる）
 - 同一 `ctx` の連続 sync ステップはビルダー側で 1 レーンに併合される。`ctx` 変化・policy ステップ・`trgs` join はそれぞれ HTML §2 の非同期矢印・sync-bar として描画される
@@ -508,39 +384,21 @@ scenarios:
 ### `decisions[]` の書き方
 
 `decisions[]` は **「採用したもの + なぜ採用したか + 不採用にしたもの + なぜ採用しなかったか」を構造化して残す**。設計判断の歴史を引き継ぐためのログで、`[?]` の保留メモを「選択肢が揃ったら」昇格させる。
+実例は [`../examples/sample.dml.yaml`](../examples/sample.dml.yaml) の `decisions:` を参照。
 
-```yaml
-decisions:
-  - id: D2
-    topic: WAITLIST（繰上待ち）の管理単位
-    chosen: Participation 集約の状態として持つ
-    options:
-      - name: Participation 集約の状態として持つ
-        adopted: true
-        why: "Event 集約に WAITLIST を持たせると申込キャンセルのたびに Event を更新する必要があり、Event の責務（ライフサイクル管理）から外れる"
-      - name: 独立した Waitlist 集約を切り出す
-        why_not: "繰上ロジックが Participation の状態遷移と密結合で、別 AGG にすると整合性管理のコストが高い"
-      - name: 別 BC（waitlisting）に切り出す
-        why_not: "通知 / 繰上 / キャンセル等の参加ライフサイクル管理は participation BC の責務内で十分。複雑性に見合う独立性が無い"
-    affects: [Participation]
-    note: "繰上の通知タイミング（CancellationDetected 直後 / 翌日バッチ）は別途要検討（H7 にて）"
-```
+### 各フィールドの書き方のコツ（必須/型は schema 参照）
 
-### `decisions[]` の必須/推奨フィールド
-
-| フィールド | 必須/推奨 | 書き方のコツ |
-|---|---|---|
-| `id` | 必須 | `D1` / `D2` のような連番、または `capacity-owner` のような slug |
-| `topic` | 必須 | 「何を決めたか」を 1 行で（CMD 名ではなく業務概念で） |
-| `chosen` | 必須 | `options[].name` のいずれかと完全一致（未確定なら `chosen: 未確定`） |
-| `options[]` | 必須・1 件以上 | 検討した全選択肢。1 件しか書かないと「比較していない」シグナル |
-| `options[].name` | 必須 | 追跡用の識別子。`chosen` との突合や履歴参照のため **英語 slug（例: `10-days`, `hold-difference`）** を推奨 |
-| `options[].label` | 推奨 | HTML 表示用の日本語ラベル（例: `10 日`, `差額のみ仮押え`）。あれば「label (name)」形式で並び、識別子だけだと意味が取りにくい選択肢でも読み下せる |
-| `options[].why` / `why_not` | 推奨 | `rules[].why` と同様に **業務文脈** で書く。「実装が楽」だけでなく「業務的に何が違うか」を |
-| `options[].adopted` | 任意 | `chosen` との照合で自動判定されるが、明示すると意図がはっきりする |
-| `affects[]` | 推奨 | 影響を受ける AGG / BC / 要素名（PascalCase or lowercase-with-hyphen）。causal-check C13 で実在突合 |
-| `note` | 任意 | 「決まったが後で見直す可能性のある条件」「関連する未決問題」等 |
+| フィールド | 書き方のコツ |
+|---|---|
+| `topic` | 「何を決めたか」を 1 行で（CMD 名ではなく業務概念で） |
+| `chosen` | `options[].name` のいずれかと完全一致（未確定なら `chosen: 未確定`） |
+| `options[]` | 検討した全選択肢を書く。1 件しか書かないと「比較していない」シグナル |
+| `options[].name` | 追跡用の識別子。`chosen` との突合や履歴参照のため **英語 slug（例: `10-days`, `hold-difference`）** を推奨 |
+| `options[].label` | HTML 表示用の日本語ラベル（例: `10 日`）。あれば「label (name)」形式で並び読み下しやすい |
+| `options[].why` / `why_not` | `rules[].why` と同様に **業務文脈** で書く。「実装が楽」だけでなく「業務的に何が違うか」を |
+| `affects[]` | 影響を受ける AGG / BC / 要素名。実在突合は意味チェック（decision-rationale-clarity）が担う |
+| `note` | 「決まったが後で見直す可能性のある条件」「関連する未決問題」等 |
 
 ### 「決められないとき」の扱い
 
-意思決定が早すぎて確証が無い場合は **`chosen: 未確定`** で保留する。`options[]` だけ書いて理由を埋めておけば、後続セッションで再評価できる。これは `[?]` よりも一段構造化されており、quality-check が「未確定 decision が長期残存」を検出する余地もある。
+意思決定が早すぎて確証が無い場合は **`chosen: 未確定`** で保留する。`options[]` だけ書いて理由を埋めておけば、後続セッションで再評価できる。これは `[?]` よりも一段構造化されており、品質チェックが「未確定 decision が長期残存」を検出する余地もある。
