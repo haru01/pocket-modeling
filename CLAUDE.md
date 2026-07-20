@@ -9,7 +9,7 @@ EventStorming／DDD ドメインモデリングのファシリテータースキ
 - `docs/eventstorming/<session>.dml.yaml` — DML（Domain Modeling Language、YAML）で書かれたドメインモデルのソース・オブ・トゥルース
 - `dist/eventstorming/<session>.html` — DML から機械生成される閲覧用 HTML（`dist/` は gitignore 済み）
 
-中身のスキルは `.claude/skills/eventstorming-facilitator/` に集約。詳細仕様は `.claude/skills/eventstorming-facilitator/SKILL.md` と `references/*`、特に `dml-spec.md` と `dml.schema.yaml` を参照。
+中身のスキルは `.claude/skills/eventstorming-facilitator/` に集約。詳細仕様は `.claude/skills/eventstorming-facilitator/SKILL.md` と `references/*`、特に **`ddd-playbook.md`（DDD モデリングルールの正典）** と `dml.schema.yaml`（構文の真実源）を参照。
 
 ## 最重要の運用原則
 
@@ -89,7 +89,7 @@ docs/eventstorming/*.dml.yaml  ──┐
 
 ## DML の構造（要点）
 
-JSON Schema は `.claude/skills/eventstorming-facilitator/references/dml.schema.yaml`、設計判断・哲学は `dml-spec.md` を真実源として参照すること。要点だけ：
+構文の真実源は `.claude/skills/eventstorming-facilitator/references/dml.schema.yaml`、**設計判断・モデリングルールの正典は `references/ddd-playbook.md`**（DDD 概念軸）。以下は repo オリエンテーション用の構造早見（ルールの詳細・根拠は playbook 各 § が持つ）：
 
 - トップレベルは object、必須キー無し（空 `{}` も valid）
 - モデル本体: `contexts[]` / `aggregates[]` / `scenarios[]` / `policies[]` / `decisions[]`（v6 で `flows[]` 廃止）

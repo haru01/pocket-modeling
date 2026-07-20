@@ -2,6 +2,9 @@
 
 意思決定ログの `options[].why` / `why_not` が **判断根拠として明瞭か** を LLM で評価する観点。
 
+> 根拠となるルール（decisions フィールドの書き方・chosen/adopted・affects 粒度・業務文脈・ストローマン回避）の
+> 正典は [`../ddd-playbook.md`](../ddd-playbook.md) §11 意思決定。
+
 ## 抽出条件
 
 ```bash

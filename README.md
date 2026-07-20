@@ -45,8 +45,8 @@ docs/eventstorming/*.dml.yaml ──┬──→ eventstorming_build.py ──�
 └── .claude/skills/eventstorming-facilitator/
     ├── SKILL.md                  # ファシリテーション ワークフロー（9 フェーズ）
     ├── references/
+    │   ├── ddd-playbook.md       # DDD モデリングルールの正典（概念軸で横断集約）
     │   ├── dml.schema.yaml       # DML の JSON Schema（Draft 2020-12）
-    │   ├── dml-spec.md           # DML の設計判断・哲学
     │   ├── checks/*.md           # 意味チェック 6 観点（LLM ベース）
     │   └── ...                   # quality-check / causal-check / session-guide ほか
     ├── scripts/
@@ -115,4 +115,5 @@ python3 $SKILL/eventstorming_build.py --watch                    # 監視モー�
 
 - 運用原則・命名規約・アーキテクチャ詳細 → [CLAUDE.md](./CLAUDE.md)
 - ファシリテーションの進め方 → `.claude/skills/eventstorming-facilitator/SKILL.md`
-- DML の構造と設計思想 → `references/dml-spec.md` ＋ `references/dml.schema.yaml`
+- DDD モデリングルール（定義・命名・設計判断・検証観点）→ `references/ddd-playbook.md`
+- DML の構文（型・enum・命名 pattern）→ `references/dml.schema.yaml`

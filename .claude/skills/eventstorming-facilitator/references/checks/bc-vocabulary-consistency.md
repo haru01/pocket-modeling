@@ -3,6 +3,9 @@
 複数の BC で **同じ業務概念に異なる名前** が当てられていないか、または **異なる概念に同じ名前** が
 当てられていないかを LLM で評価する観点。
 
+> 根拠となるルール（Ubiquitous Language・`lang` 辞書・Conformist/ACL・CRUD 命名）の正典は
+> [`../ddd-playbook.md`](../ddd-playbook.md) §9 境界づけられたコンテキスト／§4 コマンド。
+
 ## 抽出条件
 
 ```bash

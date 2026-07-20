@@ -2,6 +2,9 @@
 
 AGG の `purpose` が **単一責任で 30 字以上の業務言語** で書かれているかを LLM で評価する観点。
 
+> 根拠となるルール（AGG フィールドの役割・purpose の書き方・単一責任・所有 BC 1 つ）の正典は
+> [`../ddd-playbook.md`](../ddd-playbook.md) §8 集約。
+
 ## 抽出条件
 
 ```bash
