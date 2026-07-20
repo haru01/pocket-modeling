@@ -93,7 +93,7 @@
 ### インフラ系ドメインの BC 昇格判定（通知・スケジューラ・決済・メール等）
 
 通知・バッチ・外部 API 連携が登場したら、**その場で「BC 昇格 vs POLICY 留置」を判定する**。
-判定サインは `references/dml-spec.md` §1「インフラ系ドメインの扱い」を参照
+判定サインは `references/ddd-playbook.md` §9「インフラ系ドメインの BC 昇格 vs POLICY 留置」を参照
 （1 種類・無状態 → POLICY 留置／複数種類・状態あり・監査兼用 → BC 昇格）。
 
 判定を保留する場合は `[?]` でホットスポットに残す。
@@ -135,7 +135,7 @@ BC 候補が出揃ったら、依存方向を決める前に **どこに投資�
    - `Shared-Kernel`: 両 BC で共有するモデル部分
    - `ACL`（Anti-Corruption Layer）: 下流が上流を変換レイヤで隔離
 
-決定結果を DML（YAML）の `contexts[].up` / `dn` に反映する（`rel` に関係タイプを併記。`references/dml-spec.md` 参照）。
+決定結果を DML（YAML）の `contexts[].up` / `dn` に反映する（`rel` に関係タイプを併記。`references/ddd-playbook.md` §9 参照）。
 
 ### 集約候補の見つけ方
 - 「一緒に変わるもの」をひとつの集約にする

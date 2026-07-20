@@ -51,30 +51,13 @@ python3 scripts/dmlctl.py view <session>.dml.yaml --view=scenarios [--ctx <bc-na
   - `err.err: ERR_001`（業務用語でない）
 - 補強推奨: `why` 不在の rule、`when` 不在の err
 
-## 業務エラーと実装エラーの区別
+## 根拠となるルール（正典は playbook §3）
 
-`errs[]` には **業務的に発生し得る違反のみ** を書く。以下は `errs[]` に書かず、scenario.note や
-別の運用ドキュメントで扱う：
-
-| カテゴリ | 例 | 理由 |
-|---|---|---|
-| スケジューラ／cron 誤発火 | `TooEarlyForNoShow`（スケジューラ誤発火） | 業務違反ではなく実装／インフラ問題。修正は業務ルールではなくジョブ設定 |
-| null pointer / 型不一致 | `NullParticipationId` | スキーマ／実装で防ぐべき問題 |
-| API タイムアウト / ネットワーク | `PaymentGatewayTimeout` | infrastructure 層で再試行・補償。業務 cond ではない |
-| 並行制御の衝突 | `OptimisticLockFailure` | リトライ / トランザクション境界の話 |
-
-判別のコツ:
-1. その err は「**業務関係者（PO / 主催者 / 法務）が想定するエラー**」か？ → YES なら errs[] に書く
-2. その err は「**実装エンジニアがコードレビューで指摘するエラー**」か？ → YES なら errs[] には書かない
-3. 同じ事象でも書き換えで業務語彙に寄せられる場合は寄せる：
-   - NG: `cond: 開始 30 分前にジョブ起動, err: TooEarlyForNoShow, when: スケジューラ誤発火`
-   - OK: `cond: 判定時刻 < scheduledAt + 30min, err: NoShowDetectionTooEarly, when: 早期判定試行（遅刻者の余裕未確保）`
-
-## 関連スキーマ制限（errs に `why` は無い）
-
-`rules[]` には `why` フィールドがあるが、`errs[]` には無い。errs の業務的理由は
-`when` フィールドに自然文で書く。`why` を書くと PostToolUse hook の schema 検証で
-`Additional properties are not allowed ('why' was unexpected)` で弾かれる。
+rule=不変条件か・err=業務エラーか（実装エラー除外）・`errs[]` に `why` は無く `when` に書く、
+の各ルールの**正典は [`../ddd-playbook.md`](../ddd-playbook.md) §3 不変条件・エラー**。
+業務エラー vs 実装エラーの判別表（スケジューラ誤発火・null pointer・API タイムアウト・並行制御の衝突を
+除外する基準）と NG/OK の書き換え例も playbook §3 にある。本観点の LLM は、その基準に照らして
+実際の rules/errs が業務語彙になっているかを評価する。
 
 ## 連携する構造チェック
 

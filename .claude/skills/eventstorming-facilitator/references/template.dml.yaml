@@ -9,7 +9,7 @@
 #
 # 各フィールドの書き方の正典：
 #   - 型・必須・enum      → references/dml.schema.yaml（書く前に `dmlctl hint --path=<a.b.c>`）
-#   - 設計判断・記法哲学  → references/dml-spec.md
+#   - 設計判断・モデリングルール → references/ddd-playbook.md（DDD 概念軸の正典）
 #   - 記入済みのフル例    → examples/sample.dml.yaml
 # =============================================================================
 #
@@ -28,7 +28,7 @@
 #
 #   aggregates:   # AGG 詳細。name / ctx / purpose / background / constraints /
 #                 # states / transitions / attrs / events
-#                 # 生成 CMD は transitions に書かない（dml-spec「transitions[] の初期化規約」）
+#                 # 生成 CMD は transitions に書かない（ddd-playbook §8「transitions[] の初期化規約」）
 #
 #   scenarios:    # CMD 実行ユースケース。name（日本語・アクター＋行為）/ ctx / actor /
 #                 # cmd / evt|brs / agg / rules / errs / next（フロー連鎖）

@@ -168,23 +168,25 @@ scenarios:
 
 ## DML 記述ルール（要点）
 
-DML は **`docs/eventstorming/<session>.dml.yaml`** 1 ファイルに **YAML 直書き**（フェンス不要）で書く。構文は `references/dml.schema.yaml`（JSON Schema）で機械検証。設計判断・哲学は `references/dml-spec.md`。
+DML は **`docs/eventstorming/<session>.dml.yaml`** 1 ファイルに **YAML 直書き**（フェンス不要）で書く。構文は `references/dml.schema.yaml`（JSON Schema）で機械検証。**設計判断・モデリングルールの正典は `references/ddd-playbook.md`**（DDD 概念軸で定義・命名・設計判断・検証観点を横断集約）。
+
+> 本節は playbook の**要点要約**（インコンテキストの早見用）。各項の詳細・根拠・NG/OK 例は playbook の該当 § を参照。要約と正典が食い違ったら playbook が優先。
 
 - **トップレベル**: 下表「DML トップレベル構成」の 11 フィールド。`scenarios`/`policies`/`aggregates` の各要素は `ctx:` で所属 BC を参照。**フロー連鎖は `narratives[].entry` ＋ `scenarios[].next` / `brs[].terminal` で表現**（`flows[]` は存在しない）
-- **AGG 詳細はトップレベル `aggregates[]` に集約**：`name`（必須）／`ctx`（必須）／`purpose`／`background`／`constraints[]`／`states`／`transitions[]`（`from`/`to`/`via`/`when`）／`attrs[]`（`name`/`type`/`required`/`note`）／`events[]`（`name`/`params[]`）。`contexts[].aggs` は AGG 名（PascalCase 文字列）の軽量名簿
-- **`scenarios[].name` は日本語**でアクター＋行為。`actor` 必須（典型値: `Organizer` `Member` `System`）
+- **AGG 詳細はトップレベル `aggregates[]` に集約**（詳細: playbook §8）：`name`（必須）／`ctx`（必須）／`purpose`／`background`／`constraints[]`／`states`／`transitions[]`（`from`/`to`/`via`/`when`）／`attrs[]`（`name`/`type`/`required`/`note`）／`events[]`（`name`/`params[]`）。`contexts[].aggs` は AGG 名（PascalCase 文字列）の軽量名簿
+- **`scenarios[].name` は日本語**でアクター＋行為。`actor` 必須（典型値: `Organizer` `Member` `System`）（詳細: playbook §2）
 - **キー順 `name → ctx → actor → qry → cmd → evt|brs → agg → rules → errs → pol`** を推奨
 - **`cmd/evt/agg/trg/emits/qry` の値は英語識別子**。日本語補足は `rules[].why` / `errs[].when` / `note` へ
 - **`errs` は `cond` + `err`（ErrorType）+ 任意 `when`**、**`rules` は `rule`（英語の不変条件）+ 任意の `why`**
-- **`contexts[]` の `up`/`dn` は推奨**（schema 上は optional だが、依存方向を明示すると BC マップが立体化する）。**依存なしは空リスト `[]`** を書いて「考慮済み」と示す。`rel` を併記すれば CML リレーション語彙が HTML §6 に描画される。BC 名は `lowercase-with-hyphen`
-- **節目イベントは `scenarios[].pivotal: true`** で宣言（1 モデルに 2〜4 個が目安）。タイムラインを大きく区切り BC 境界候補の手がかりになる EVT の発火元 scenario に付ける。HTML §3 で ⭐ バッジ＋強調枠で描画
-- **サブドメイン分類は `domains[].subs[]` ＋ `contexts[].sub`**。`type` は `CORE_SUBDOMAIN` / `SUPPORTING_SUBDOMAIN` / `GENERIC_SUBDOMAIN`。未分類・CORE 不在・全件 CORE は `subdomain_classification` チェックが検出
-- **`policies` は EVENTUAL-TX 専用**。SAME-TX 分岐は発行元 scenario の `brs` で書く
+- **`contexts[]` の `up`/`dn` は推奨**（schema 上は optional だが、依存方向を明示すると BC マップが立体化する）。**依存なしは空リスト `[]`** を書いて「考慮済み」と示す。`rel` を併記すれば CML リレーション語彙が HTML §6 に描画される。BC 名は `lowercase-with-hyphen`（詳細: playbook §9）
+- **節目イベントは `scenarios[].pivotal: true`** で宣言（1 モデルに 2〜4 個が目安。詳細: playbook §5）。タイムラインを大きく区切り BC 境界候補の手がかりになる EVT の発火元 scenario に付ける。HTML §3 で ⭐ バッジ＋強調枠で描画
+- **サブドメイン分類は `domains[].subs[]` ＋ `contexts[].sub`**（詳細: playbook §10）。`type` は `CORE_SUBDOMAIN` / `SUPPORTING_SUBDOMAIN` / `GENERIC_SUBDOMAIN`。未分類・CORE 不在・全件 CORE は `subdomain_classification` チェックが検出
+- **`policies` は EVENTUAL-TX 専用**。SAME-TX 分岐は発行元 scenario の `brs` で書く（詳細: playbook §6）
 - **副作用専用 POLICY**（通知・メール送信など）は `cmd` 省略可（`trg`/`qry`/`bulk`/`evt` のみ）
 - **POLICY の `cmd` が AGG を変更するなら `agg` を併記する**（scenarios と対称化）。dangling_cmd チェックは `policies[].cmd` も declared として扱う
 - **`qry` は判断材料のみ**（コマンド実装内部のデータは含めない）
 - **`scenarios[].next` / `brs[].terminal` の参照は `dmlctl check --check=flow_chain_resolution` で検証**（typo・存在しない narrative ID を検出）
-- **`decisions[]` は「採用/不採用理由つきの選択肢ログ」**。`chosen` は `options[].name` のいずれかと一致。各 option に `why`（採用なら）または `why_not`（不採用なら）を書く
+- **`decisions[]` は「採用/不採用理由つきの選択肢ログ」**（詳細: playbook §11）。`chosen` は `options[].name` のいずれかと一致し、**採用 option には `adopted: true` を対で付ける**（`chosen` だけで `adopted` を落とすと `decision_chosen_adopted` チェックが弾く）。各 option に `why`（採用なら）または `why_not`（不採用なら）を書く
 
 ---
 
@@ -192,9 +194,9 @@ DML は **`docs/eventstorming/<session>.dml.yaml`** 1 ファイルに **YAML 直
 
 出力タイミングと対象フィールドは冒頭「ワークフロー（9フェーズ）」の表を参照。加えて：
 
-- **フェーズ 3 の `ctx` は仮置きで良い**（⑩）: `scenarios[].ctx` は schema 必須だが、BC 境界はフェーズ 4.5 で確定するので、フェーズ 3 では暫定 slug（例 `ordering` `payment`）で仮置きしてよい。4.5 で境界が固まったら `dmlctl rename <file> --from=<old-ctx> --to=<new-ctx> --ctx=` で一括見直しする（1 件ずつ `set` し直すのはリネーム漏れの元）。
-- **フェーズ 5 の `rules`/`errs` は全 scenario 義務ではない**（⑪）: goal に直結し、不変条件・業務エラーが業務価値を持つ scenario に絞る。単純な CRUD・導線 scenario は空でよい。`dmlctl view --view=coverage` に出る残欠は「意図的に許容した箇所」と「未着手」を区別して読む（残欠＝バグではない）。
-- **`aggregates[]`/`policies[]` を足したら lang にも同時登録**（⑬）: 所属 BC の `contexts[].lang.aggs`／`lang.pols` にも英→日ラベルを同時登録する（`contexts[].aggs` の軽量名簿とは別物）。漏れは `dmlctl check --check=language_coverage` が検出する。
+- **フェーズ 3 の `ctx` は仮置きで良い**: `scenarios[].ctx` は schema 必須だが、BC 境界はフェーズ 4.5 で確定するので、フェーズ 3 では暫定 slug（例 `ordering` `payment`）で仮置きしてよい。4.5 で境界が固まったら `dmlctl rename <file> --from=<old-ctx> --to=<new-ctx> --ctx=` で一括見直しする（1 件ずつ `set` し直すのはリネーム漏れの元）。
+- **フェーズ 5 の `rules`/`errs` は全 scenario 義務ではない**: goal に直結し、不変条件・業務エラーが業務価値を持つ scenario に絞る。単純な CRUD・導線 scenario は空でよい。`dmlctl view --view=coverage` に出る残欠は「意図的に許容した箇所」と「未着手」を区別して読む（残欠＝バグではない）。詳細: playbook §3。
+- **`aggregates[]`/`policies[]` を足したら lang にも同時登録**: 所属 BC の `contexts[].lang.aggs`／`lang.pols` にも英→日ラベルを同時登録する（`contexts[].aggs` の軽量名簿とは別物）。漏れは `dmlctl check --check=language_coverage` が検出する。
 
 **書き出し後の品質チェック（必須）**: 詳細は `references/quality-check.md`。
 
@@ -262,8 +264,9 @@ Markdown 風の散文として書く。bullet (`- foo`) と `**強調**` は HTM
 
 | ファイル | 用途 |
 |---|---|
+| `references/ddd-playbook.md` | **DDD モデリングルールの正典**（DDD 概念軸で定義・命名・設計判断・検証観点を横断集約）。設計判断に迷ったらまずここ |
 | `references/dml.schema.yaml` | DML 構文の機械検証スキーマ（JSON Schema Draft 2020-12）。型・必須・enum・命名 pattern の真実源 |
-| `references/dml-spec.md` | DML 設計ガイドライン（インフラ系判定・SCENARIO 哲学・POLICY 運用・AGG 設計・フロー連鎖/decisions の哲学） |
+| `references/dml-spec.md` | （→ `ddd-playbook.md` に統合。旧 § の対応表のみ残置） |
 | `scripts/RENDER_SPEC.md` | HTML レンダリング実装仕様（**ビルドスクリプト改修時のみ**。通常セッションでは読まない） |
 | `references/session-guide.md` | ファシリテーション質問パターン（フェーズ別） |
 | `references/domain-starters.md` | よくあるドメインの候補イベントリスト |
