@@ -1,0 +1,321 @@
+# DimML (Dimensional Modeling Language) JSON Schema — Draft 2020-12
+#
+# DimML は YAML 形式のディメンショナル・モデル（Kimball 流のデータウェアハウス設計）。
+# トップレベルはモデル本体（processes / facts / dimensions）＋ 散文・追跡系
+# （session / narratives / questions / actions / decisions）。
+#
+# 中核概念（Kimball 4 ステップ）:
+#   1. 業務プロセスを選ぶ    → processes[]（＝バスマトリクスの行）
+#   2. グレインを宣言する    → facts[].grain（ファクト 1 行が表す実体を自然文 1 行で）
+#   3. ディメンションを同定  → dimensions[]（conformed dimension / 階層 / SCD）
+#   4. ファクト（測定値）同定 → facts[].msrs[]（加法性）
+#   バスマトリクス（processes × dimensions）は facts[].dims の使用関係から build 側で派生生成する。
+#
+# grill 規律（grillme 流儀の継承）:
+#   - モデル要素（process / fact / dimension / narrative）は `status: verified | unverified` を持つ。
+#   - 未検証が既定（status 省略 = unverified 扱い）。根拠が言語化された要素だけ verified へ昇格する。
+#   - 推測を「検証済の事実」として通さないための機械可読フラグ。build は verified/unverified 件数を集計する。
+#
+# このスキーマは「構文 validity（形が正しいか）」のみを機械検証する。
+# 「意味 validity（グレインの明確さ・conformed dimension の整合・加法性の妥当性・モデル品質）」は
+# dimensional-playbook.md の検証観点＋ LLM レビューが担う。スキーマ通過は必要条件であって十分条件ではない。
+#
+# 検証例:
+#   import yaml; from jsonschema import Draft202012Validator
+#   schema = yaml.safe_load(open(".../references/dimml.schema.yaml"))
+#   doc = yaml.safe_load(open("docs/dimensional/<session>.dimml.yaml"))  # None も許容
+#   list(Draft202012Validator(schema).iter_errors(doc))
+#
+# 命名方針（EventStorming DML と統一）:
+#   - トップレベルキーは略語禁止（processes / facts / dimensions / narratives /
+#     questions / actions / decisions / session）
+#   - ネストの短いキーは略語維持（dims / msrs / degen / attrs / scd / grain 等）
+#   - 識別子:
+#       * process の name = lowercase-with-hyphen（バスマトリクス行の slug。例 retail-sales）
+#       * fact / dimension の name = PascalCase 単数（例 Sales / Date / Product）
+#       * 列名（attribute / measure / degenerate）= lower camelCase または snake_case を許す
+#         （DWH の物理列名に寄せられるよう緩め。例 salesAmount / product_key）
+#   - 表示用の日本語ラベルは label / note に置く（識別子は英語）。
+# 型の方針:
+#   - 「単数を表すキー＝文字列／複数を表すキー＝配列」が基本（例: fact.grain=文字列、fact.dims/msrs=配列）。
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://pocket-modeling/schemas/dimml.schema.yaml"
+title: DimML Document
+
+# トップレベルは object。必須キーは無い（空 {} も valid・進行中セッション許容）。
+# 全行コメントのみの .dimml.yaml は yaml.safe_load で None になるが、これは検証ツール層
+# （validate_dimml.py / dimml_build.py）が「未記述」として検証前にスキップする。
+type: object
+additionalProperties: false
+properties:
+  session:
+    $ref: "#/$defs/session"
+  processes:                                   # 業務プロセス＝バスマトリクスの行
+    type: array
+    items: { $ref: "#/$defs/process" }
+  facts:                                       # ファクト表（スター中心）
+    type: array
+    items: { $ref: "#/$defs/fact" }
+  dimensions:                                  # conformed ディメンション目録
+    type: array
+    items: { $ref: "#/$defs/dimension" }
+  narratives:                                  # 分析シナリオ散文（答えたい問い・KPI）
+    type: array
+    items: { $ref: "#/$defs/narrative" }
+  questions:                                   # オープンクエスチョン（未検証の昇格待ち）
+    type: array
+    items: { $ref: "#/$defs/question" }
+  actions:                                     # 次のアクション
+    type: array
+    items: { $ref: "#/$defs/action" }
+  decisions:                                   # 意思決定ログ（グレイン粒度・SCD 選択などの採否理由）
+    type: array
+    items: { $ref: "#/$defs/decision" }
+
+$defs:
+
+  # ---------- 識別子パターン ----------
+  slug:
+    type: string
+    pattern: "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"     # lowercase-with-hyphen（process 名・各種 id）
+  pascalCase:
+    type: string
+    pattern: "^[A-Z][A-Za-z0-9]*$"               # fact / dimension 名（PascalCase 単数）
+  columnName:
+    type: string
+    pattern: "^[a-z][A-Za-z0-9_]*$"              # 物理列名（camelCase または snake_case 許容）
+
+  # ---------- enum 群 ----------
+  statusValue:
+    # grill 規律の中核。省略時は unverified 扱い（ツール層で既定化）。
+    type: string
+    enum: [verified, unverified]
+  grainType:
+    # Kimball の 3 ファクト種別。
+    #   transaction          = 業務トランザクション 1 件 1 行（例: 販売明細）
+    #   periodic-snapshot    = 一定周期のスナップショット 1 行（例: 日次残高）
+    #   accumulating-snapshot= パイプラインの 1 インスタンス 1 行・複数日付を更新（例: 注文履行）
+    type: string
+    enum: [transaction, periodic-snapshot, accumulating-snapshot]
+  additivity:
+    # measure の加法性。
+    #   additive     = すべてのディメンションで合算可能
+    #   semi-additive= 一部（通常は時間）で合算不可。semiAdditiveAcross にその軸を書く
+    #   non-additive = 比率・単価など合算不可（分子分母で持つのが定石）
+    type: string
+    enum: [additive, semi-additive, non-additive]
+  scdType:
+    # Slowly Changing Dimension の型（v1 は none / TYPE_1 / TYPE_2 に限定。
+    # TYPE_0/3/4/6/7 は今後の拡張。playbook §ディメンション参照）。
+    type: string
+    enum: [none, TYPE_1, TYPE_2]
+  keyRole:
+    # ディメンション属性のキー種別。
+    type: string
+    enum: [surrogate, natural]
+
+  # ---------- Session（セッションメタ） ----------
+  session:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }                       # セッション ID（例: 20260723-1400）
+      domain: { type: string }                   # 対象ドメイン名
+      phase:                                     # 直近完了フェーズ（SKILL.md 6 フェーズに対応）
+        type: string
+        enum: ["1", "2", "3", "4", "5", "6"]
+      status: { type: string }                   # 補足説明（自由文字列）
+      goal: { type: string }                     # このセッションで答えたい分析ゴール
+      started_at: { type: string }               # 開始日時（ISO 8601 推奨）
+      html_link: { type: string }                # 生成 HTML の相対パス（任意）
+      note: { type: string }
+
+  # ---------- Process（業務プロセス＝バスマトリクス行） ----------
+  process:
+    type: object
+    additionalProperties: false
+    required: [name]
+    properties:
+      name: { $ref: "#/$defs/slug" }             # バスマトリクス行の slug（例: retail-sales）
+      label: { type: string }                    # 日本語表示名（例: 店頭販売）
+      description: { type: string }              # このプロセスで何が測定されるか
+      status: { $ref: "#/$defs/statusValue" }
+      note: { type: string }
+
+  # ---------- Dimension 属性（列） ----------
+  dimAttribute:
+    type: object
+    additionalProperties: false
+    required: [name]
+    properties:
+      name: { $ref: "#/$defs/columnName" }
+      type: { type: string }                     # string / int / date / <Dim>Key 等（自由文字列）
+      key: { $ref: "#/$defs/keyRole" }           # surrogate / natural（任意）
+      note: { type: string }
+
+  # ---------- Hierarchy（ドリルダウン階層） ----------
+  hierarchy:
+    type: object
+    additionalProperties: false
+    required: [name, levels]
+    properties:
+      name: { type: string }                     # 階層名（例: 商品分類）
+      levels:                                     # 粗→細 or 細→粗の順にレベル名を列挙
+        type: array
+        minItems: 1
+        items: { type: string }
+      note: { type: string }
+
+  # ---------- Dimension（conformed ディメンション） ----------
+  dimension:
+    type: object
+    additionalProperties: false
+    required: [name]
+    properties:
+      name: { $ref: "#/$defs/pascalCase" }       # PascalCase 単数（例: Product）
+      label: { type: string }                    # 日本語表示名（任意）
+      grain: { type: string }                    # 「1 行 = 何か」（例: 1 行 = 1 商品 SKU）
+      scd: { $ref: "#/$defs/scdType" }           # 変化の追跡方式（none/TYPE_1/TYPE_2）
+      conformed: { type: boolean }               # 複数プロセスで共有する conformed dimension か（任意・build で使用有無を派生）
+      attrs:
+        type: array
+        items: { $ref: "#/$defs/dimAttribute" }
+      hierarchies:
+        type: array
+        items: { $ref: "#/$defs/hierarchy" }
+      status: { $ref: "#/$defs/statusValue" }
+      note: { type: string }
+
+  # ---------- Fact が参照するディメンション（role-playing 対応） ----------
+  factDim:
+    type: object
+    additionalProperties: false
+    required: [dimension]
+    properties:
+      dimension: { $ref: "#/$defs/pascalCase" }  # dimensions[].name への参照
+      role: { type: string }                     # role-playing 名（例: Date を OrderDate / ShipDate として使う）
+      note: { type: string }
+
+  # ---------- Degenerate Dimension（ファクトに直接持つ業務伝票番号など） ----------
+  degenerate:
+    type: object
+    additionalProperties: false
+    required: [name]
+    properties:
+      name: { $ref: "#/$defs/columnName" }       # 例: order_number / ticket_number
+      note: { type: string }
+
+  # ---------- Measure（測定値・ファクトの数値列） ----------
+  measure:
+    type: object
+    additionalProperties: false
+    required: [name]
+    properties:
+      name: { $ref: "#/$defs/columnName" }       # 例: salesAmount / salesQuantity
+      label: { type: string }                    # 日本語表示名（任意）
+      additivity: { $ref: "#/$defs/additivity" } # additive / semi-additive / non-additive
+      semiAdditiveAcross: { type: string }       # semi-additive のとき合算不可の軸（通常は時間。例: Date）
+      unit: { type: string }                     # 単位（円 / 個 / % 等）
+      formula: { type: string }                  # 派生測定値の算出式（自然文。非加法比率は分子/分母を推奨）
+      note: { type: string }
+
+  # ---------- Fact（ファクト表＝スター中心） ----------
+  fact:
+    type: object
+    additionalProperties: false
+    required: [name]
+    properties:
+      name: { $ref: "#/$defs/pascalCase" }       # PascalCase（例: Sales）
+      label: { type: string }                    # 日本語表示名（任意）
+      process: { $ref: "#/$defs/slug" }          # processes[].name への参照（どの業務プロセスのファクトか）
+      grain: { type: string }                    # ★最重要: ファクト 1 行が表す実体を自然文 1 行で
+      grainType: { $ref: "#/$defs/grainType" }   # transaction / periodic-snapshot / accumulating-snapshot
+      dims:
+        type: array
+        items: { $ref: "#/$defs/factDim" }
+      msrs:
+        type: array
+        items: { $ref: "#/$defs/measure" }
+      degen:                                      # degenerate dimension（伝票番号など）
+        type: array
+        items: { $ref: "#/$defs/degenerate" }
+      status: { $ref: "#/$defs/statusValue" }
+      note: { type: string }
+
+  # ---------- Narrative（分析シナリオ散文：答えたい問い・KPI） ----------
+  narrative:
+    type: object
+    additionalProperties: false
+    required: [id, prose]
+    properties:
+      id: { $ref: "#/$defs/slug" }               # 散文識別子（例: revenue-by-region）
+      title: { type: string }                    # 表示用見出し
+      kind:                                       # 問いの種別（任意）
+        type: string
+        enum: [question, kpi, story]
+      prose: { type: string }                    # 散文本文（このモデルで答えたい分析の問い）
+      status: { $ref: "#/$defs/statusValue" }
+      note: { type: string }
+
+  # ---------- Question（オープンクエスチョン） ----------
+  question:
+    type: object
+    additionalProperties: false
+    required: [id, topic]
+    properties:
+      id:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$"    # 例: Q1 / grain-of-returns
+      topic: { type: string }                     # 確認したい事項（1 行）
+      why: { type: string }                       # なぜ確認したいか（任意）
+      status:
+        type: string
+        enum: [open, closed]                      # closed のときは decision_id で D{n} を指す
+      decision_id: { type: string }
+      note: { type: string }
+
+  # ---------- Action（次のアクション） ----------
+  action:
+    type: object
+    additionalProperties: false
+    required: [id, text]
+    properties:
+      id:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$"    # 例: A1 / confirm-grain
+      text: { type: string }
+      owner: { type: string }
+      done: { type: boolean }
+      note: { type: string }
+
+  # ---------- Decision / Option（意思決定ログ） ----------
+  decisionOption:
+    type: object
+    additionalProperties: false
+    required: [name]
+    properties:
+      name: { type: string }                      # 選択肢の識別ラベル（英語 slug 推奨）
+      label: { type: string }                     # 日本語表示ラベル（任意）
+      adopted: { type: boolean }                  # true なら採用（chosen と整合）
+      why: { type: string }                       # 採用理由
+      why_not: { type: string }                   # 不採用理由
+      note: { type: string }
+  decision:
+    type: object
+    additionalProperties: false
+    required: [id, topic, chosen, options]
+    properties:
+      id:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$"    # 例: D1 / grain-choice
+      topic: { type: string }                     # 意思決定のテーマ（1 行）
+      chosen: { type: string }                    # 採用した options[].name のいずれか
+      options:
+        type: array
+        minItems: 1
+        items: { $ref: "#/$defs/decisionOption" }
+      affects:                                    # 影響する DimML 要素名（任意・fact/dimension 名など）
+        type: array
+        items: { type: string }
+      note: { type: string }

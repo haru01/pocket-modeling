@@ -11,6 +11,23 @@ EventStorming／DDD ドメインモデリングのファシリテータースキ
 
 中身のスキルは `.claude/skills/eventstorming-facilitator/` に集約。詳細仕様は `.claude/skills/eventstorming-facilitator/SKILL.md` と `references/*`、特に **`ddd-playbook.md`（DDD モデリングルールの正典）** と `dml.schema.yaml`（構文の真実源）を参照。
 
+### もう一つのモデリング軸：ディメンショナル・モデリング
+
+DDD（EventStorming）に加え、**Kimball 流のディメンショナル・モデリング（データウェアハウス／BI 設計）**のファシリテータースキルを `.claude/skills/dimensional-modeling-facilitator/` に持つ。DDD が「業務が正しく動くための運用モデル」なら、こちらは「業務を測るための分析モデル」。両者は独立した別成果物で、互いに干渉しない。
+
+- `docs/dimensional/<session>.dimml.yaml` — DimML（Dimensional Modeling Language、YAML）で書かれた分析モデルのソース・オブ・トゥルース
+- `dist/dimensional/<session>.html` — DimML から機械生成されるバスマトリクス＋スタースキーマ HTML（`dist/` は gitignore 済み）
+
+詳細は `.claude/skills/dimensional-modeling-facilitator/SKILL.md` と `references/*`、特に **`dimensional-playbook.md`（Kimball モデリングルールの正典）** と `dimml.schema.yaml`（構文の真実源）を参照。EventStorming と違い **DimML は AI が直接 `Read`/`Write`/`Edit` してよい**（専用 CLI・ブロックフックは持たない中量パイプライン）。書き込み後に validate → build を手で回す：
+
+```sh
+# DimML 検証（構文＋参照整合。違反で exit 1）
+python3 .claude/skills/dimensional-modeling-facilitator/scripts/validate_dimml.py docs/dimensional/<session>.dimml.yaml
+# DimML → HTML ビルド（バスマトリクス＋スタースキーマ Mermaid ER）
+python3 .claude/skills/dimensional-modeling-facilitator/scripts/dimml_build.py docs/dimensional/<session>.dimml.yaml
+python3 .claude/skills/dimensional-modeling-facilitator/scripts/dimml_build.py --all   # 全件
+```
+
 ## 最重要の運用原則
 
 - **DML が唯一の真実源**。HTML は派生物なので絶対に手で編集しない。`.md` 入力サポートは v5 で廃止済み（YAML-only）
