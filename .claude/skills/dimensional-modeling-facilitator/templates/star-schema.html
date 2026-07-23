@@ -61,6 +61,20 @@
     .banner { border-radius: 8px; padding: .6rem 1rem; margin: .6rem 0; font-size: .9rem; }
     .banner.ok { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
     .banner.err { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .explain { background: #eff6ff; border-left: 4px solid var(--accent); border-radius: 6px;
+      padding: .6rem .9rem; margin: .3rem 0 .9rem; font-size: .88rem; }
+    .explain .lead { font-weight: 700; display: block; margin-bottom: .2rem; }
+    .explain .lead::before { content: "▶ "; color: var(--accent); }
+    .explain .howto { color: var(--ink); display: block; margin-top: .15rem; }
+    .explain .howto b { color: var(--accent); }
+    .explain .read { color: var(--muted); font-style: italic; display: block; margin-top: .15rem; }
+    .explain .hint { display: block; margin-top: .35rem; padding-top: .3rem;
+      border-top: 1px dashed #bfdbfe; color: #1d4ed8; }
+    .explain .hint::before { content: "💡 "; }
+    .legend { display: flex; flex-wrap: wrap; gap: .4rem .8rem; margin-top: .35rem;
+      font-size: .82rem; }
+    .legend span { white-space: nowrap; }
+    .legend .k { font-weight: 700; }
     pre.src { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 8px;
       overflow-x: auto; font-size: .8rem; line-height: 1.5; }
     ul { margin: .3rem 0; padding-left: 1.3rem; }

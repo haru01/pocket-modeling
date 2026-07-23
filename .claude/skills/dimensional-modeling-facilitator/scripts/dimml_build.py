@@ -74,6 +74,124 @@ def status_badge(status) -> str:
     return f'<span class="badge b-{s}">{label}</span>'
 
 
+# ---------- 解説ブロック（図解の意図・読み方・データ連動の気づき） ----------
+
+def render_explain(lead: str, howto: str = "", read: str = "",
+                   legend: str = "", hint: str = "") -> str:
+    """各セクションの h2 直下に差し込む解説カードを生成する。
+
+    lead   = このセクションが何を示すか（意図・1 文。プレーンテキスト → エスケープ）
+    howto  = どう読むか（凡例の言葉・任意）※安全な HTML を渡す（<b>/<code> 可）
+    read   = 読み下し例（任意）※安全な HTML を渡す
+    legend = 記号/バッジ凡例（.legend の中身・任意）
+    hint   = モデルに即した気づき（データ連動・空なら省略）※安全な HTML を渡す
+    """
+    parts = [f'<span class="lead">{esc(lead)}</span>']
+    if howto:
+        parts.append(f'<span class="howto">{howto}</span>')
+    if read:
+        parts.append(f'<span class="read">{read}</span>')
+    if legend:
+        parts.append(f'<div class="legend">{legend}</div>')
+    if hint:
+        parts.append(f'<span class="hint">{hint}</span>')
+    return '<div class="explain">' + "".join(parts) + "</div>"
+
+
+def badge_legend() -> str:
+    """冒頭オリエンテーション用の全バッジ凡例。"""
+    g = lambda t, c, gloss: f'<span>{badge(t, c)} {esc(gloss)}</span>'
+    return "".join([
+        '<span class="k">grainType:</span>',
+        g("transaction", "transaction", "出来事1件=1行"),
+        g("periodic-snapshot", "periodic-snapshot", "定期の残高"),
+        g("accumulating-snapshot", "accumulating-snapshot", "工程を更新"),
+        '<span class="k">加法性:</span>',
+        g("additive", "additive", "全軸で合計可"),
+        g("semi-additive", "semi-additive", "一部で合計不可"),
+        g("non-additive", "non-additive", "合計不可"),
+        '<span class="k">SCD:</span>',
+        g("none", "none", "不変"),
+        g("TYPE_1", "TYPE_1", "上書き"),
+        g("TYPE_2", "TYPE_2", "履歴保持"),
+        '<span class="k">検証:</span>',
+        g("検証済", "verified", "裏取り済み"),
+        g("未検証", "unverified", "推測・要確認"),
+    ])
+
+
+# ---------- データ連動の気づきを計算するヘルパー ----------
+
+def _facts(model: dict) -> list[dict]:
+    return [f for f in (model.get("facts") or []) if isinstance(f, dict)]
+
+
+def _dims(model: dict) -> list[dict]:
+    return [d for d in (model.get("dimensions") or []) if isinstance(d, dict)]
+
+
+def _conformed_names(model: dict) -> list[str]:
+    """2 ファクト以上で使われる or conformed: true の dimension 名。"""
+    usage: dict[str, int] = {}
+    for f in _facts(model):
+        for d in _fact_dims(f):
+            dn = d.get("dimension")
+            if dn:
+                usage[dn] = usage.get(dn, 0) + 1
+    conf = {d.get("name") for d in _dims(model) if d.get("conformed")}
+    names = {dn for dn, c in usage.items() if c >= 2} | conf
+    # dimensions[] の並び順を保つ
+    return [d.get("name") for d in _dims(model) if d.get("name") in names]
+
+
+def _roleplaying(model: dict) -> list[str]:
+    """role-playing しているファクトと役割の説明文リスト。"""
+    out = []
+    for f in _facts(model):
+        roles: dict[str, list[str]] = {}
+        for d in _fact_dims(f):
+            if d.get("role"):
+                roles.setdefault(d.get("dimension"), []).append(d.get("role"))
+        for dim, rs in roles.items():
+            if len(rs) >= 2:
+                out.append(f"{f.get('name')} は {dim} を {'/'.join(rs)} の{len(rs)}役で参照")
+            elif rs:
+                out.append(f"{f.get('name')} は {dim} を {rs[0]} として参照")
+    return out
+
+
+def _grain_type_dist(model: dict) -> dict[str, int]:
+    dist: dict[str, int] = {}
+    for f in _facts(model):
+        gt = f.get("grainType")
+        if gt:
+            dist[gt] = dist.get(gt, 0) + 1
+    return dist
+
+
+def _semi_additive_facts(model: dict) -> list[str]:
+    out = []
+    for f in _facts(model):
+        for m in f.get("msrs") or []:
+            if isinstance(m, dict) and m.get("additivity") == "semi-additive":
+                out.append(f.get("name"))
+                break
+    return out
+
+
+def _type2_dims(model: dict) -> list[str]:
+    return [d.get("name") for d in _dims(model) if d.get("scd") == "TYPE_2"]
+
+
+def _unverified_total(model: dict) -> int:
+    n = 0
+    for key in ("processes", "facts", "dimensions", "narratives"):
+        for x in (model.get(key) or []):
+            if isinstance(x, dict) and x.get("status") != "verified":
+                n += 1
+    return n
+
+
 # ---------- section renderers ----------
 
 def render_header(session: dict) -> str:
@@ -407,25 +525,134 @@ def render_source(dml_text: str) -> str:
 
 def build_body(model: dict, dml_text: str, errors: list[str]) -> str:
     session = model.get("session") or {}
+
+    # --- データ連動の気づきを事前計算 ---
+    unv = _unverified_total(model)
+    unv_narr = sum(
+        1 for n in (model.get("narratives") or [])
+        if isinstance(n, dict) and n.get("status") != "verified"
+    )
+    conformed = _conformed_names(model)
+    roleplay = _roleplaying(model)
+    gtd = _grain_type_dist(model)
+    semi = _semi_additive_facts(model)
+    type2 = _type2_dims(model)
+
+    orient_hint = f"未検証は {unv} 件（推測のまま＝要裏取り）。上のサマリで検証進捗を確認できます。"
+    narr_hint = (
+        f"未検証の分析シナリオが {unv_narr} 件（問いの定義がまだ固まっていない）。"
+        if unv_narr else ""
+    )
+    matrix_hint = (
+        "◆ conformed: " + esc("・".join(conformed)) + " — この軸で複数プロセスを横断比較(drill-across)できます。"
+        if conformed else "共有(conformed)ディメンションはまだありません。"
+    )
+    star_hint = (
+        "role-playing: " + esc("；".join(roleplay)) + "（同じ軸を役割違いで複数回使用）。"
+        if roleplay else ""
+    )
+    fact_hint = ""
+    if gtd:
+        dist_str = "・".join(f"{k}×{v}" for k, v in gtd.items())
+        fact_hint = f"ファクト種別: {esc(dist_str)}。"
+        if semi:
+            fact_hint += f" semi-additive を含む: {esc('・'.join(semi))}（時間軸で合計しないよう注意）。"
+    dim_hint = ""
+    if type2 or conformed:
+        bits = []
+        if type2:
+            bits.append("履歴保持(TYPE_2): " + esc("・".join(type2)))
+        if conformed:
+            bits.append(f"conformed: {len(conformed)} 軸")
+        dim_hint = "。".join(bits) + "。"
+
+    er_legend = (
+        '<span><span class="k">FK</span>=軸への外部キー</span>'
+        '<span><span class="k">measure</span>=測定値</span>'
+        '<span><span class="k">degenerate</span>=表を持たない伝票番号</span>'
+        '<span><span class="k">PK</span>=主キー(サロゲート)</span>'
+        '<span><span class="k">scd</span>=履歴方式</span>'
+        '<span><span class="k">||--o{</span>=1対多</span>'
+    )
+
     return "\n".join([
         render_header(session),
         render_banner(errors),
         render_summary(model),
+        render_explain(
+            "このページは 1 つの分析モデルを複数の視点で見せます。上から「何を知りたい(§1)"
+            "→どの粒度で(§4 グレイン)→どの軸で(§2/§5)→どの数値で(§4 測定値)」と具体化します。",
+            howto="下のバッジの色で種別が一目で分かります。各章の ▶ が「何を示すか・どう読むか」です。",
+            legend=badge_legend(),
+            hint=orient_hint,
+        ),
         "<h2>1. 分析シナリオ（答えたい問い・KPI）</h2>",
+        render_explain(
+            "このモデルで最終的に答えたい業務の問い・KPI。全設計の出発点で、以降のファクト/"
+            "ディメンションはこの問いに答えるために選ばれます。",
+            howto="<b>question</b>=まだ確定していない問い / <b>kpi</b>=定義済みの指標 / "
+                  "<b>story</b>=背景。各カードの検証バッジで裏取り済みか分かります。",
+            hint=narr_hint,
+        ),
         render_narratives(model.get("narratives") or []),
         "<h2>2. バスマトリクス</h2>",
+        render_explain(
+            "「どの業務プロセス(行)が、どの共有ディメンション(列)を使うか」の全体地図。"
+            "データウェアハウス全体の設計図です。",
+            howto="<b>●</b>=そのファクトがその軸を使う / <b>·</b>=使わない / "
+                  "<b>◆</b>=conformed(複数ファクトで共有) / 紫字=role-playing の役割名。"
+                  "同じ列に ● が縦に並ぶほど、その軸で複数プロセスを突き合わせできます。",
+            hint=matrix_hint,
+        ),
         render_bus_matrix(model),
         "<h2>3. スタースキーマ</h2>",
+        render_explain(
+            "ファクト 1 つを中心に、それを取り囲むディメンションを星形で示します(1 ファクト=1 スター)。",
+            howto="箱=表。線 <code>||--o{</code> は「1 対多」(ディメンション 1 件にファクトが多数"
+                  "ぶら下がる)、線のラベルは結合の役割です。",
+            read="読み下し例: <code>Date ||--o{ Sales : has</code> = 「1 つの日付に販売明細が"
+                 "多数ぶら下がる」。同じ軸への線が複数あれば role-playing。",
+            legend=er_legend,
+            hint=star_hint,
+        ),
         render_stars(model),
         "<h2>4. ファクト詳細（グレイン・測定値）</h2>",
+        render_explain(
+            "各ファクトのグレイン(1 行が表す実体)と測定値の一覧。グレインが全設計の土台です。",
+            howto="黄枠=グレイン宣言。加法性: <b>additive</b>=どの軸でも合計可 / "
+                  "<b>semi-additive</b>=一部(通常は時間)で合計不可(残高など) / "
+                  "<b>non-additive</b>=そもそも合計不可(比率・単価。分子分母で持つ)。",
+            hint=fact_hint,
+        ),
         render_fact_details(model),
         "<h2>5. ディメンション詳細（SCD・階層・属性）</h2>",
+        render_explain(
+            "各軸(ディメンション)の属性・階層・変化の扱い(SCD)。",
+            howto="SCD: <b>none</b>=不変 / <b>TYPE_1</b>=上書き(履歴なし) / "
+                  "<b>TYPE_2</b>=変更時に履歴行を追加(過去を「当時の姿」で残せる)。"
+                  "属性の <b>[surrogate]</b>=内部連番キー / <b>[natural]</b>=業務キー。"
+                  "階層=ドリルダウン経路(粗→細)。",
+            hint=dim_hint,
+        ),
         render_dimension_details(model),
         "<h2>6. オープンクエスチョン</h2>",
+        render_explain(
+            "まだ裏取りできていない・決めきれていない論点。未検証(推測)を潰すための宿題リストです。",
+            howto="各行の id で追跡し、決着したら意思決定ログ(§7)に紐付けてクローズします。",
+        ),
         render_questions(model),
         "<h2>7. 意思決定ログ</h2>",
+        render_explain(
+            "後から効く設計判断(グレイン粒度・SCD 選択など)の「採用/不採用の理由」の記録。",
+            howto="<b>✅</b>=採用した選択肢 / <b>▫️</b>=見送った選択肢。各行に業務語で理由が付きます。",
+        ),
         render_decisions(model),
         "<h2>8. DimML ソース</h2>",
+        render_explain(
+            "この HTML の生成元＝唯一の真実源(source of truth)。HTML は派生物です。",
+            howto="内容を変えるときは <code>.dimml.yaml</code> を編集して再ビルドします。"
+                  "HTML を直接編集しないでください。",
+        ),
         render_source(dml_text),
     ])
 
