@@ -1,0 +1,33 @@
+# DimML セッション スケルトン（Dimensional Modeling Language）
+# 構文の真実源: references/dimml.schema.yaml
+# 設計判断の正典: references/dimensional-playbook.md
+#
+# このファイルをコピーして docs/dimensional/dimensional-YYYYMMDD-HHMM.dimml.yaml として使う。
+# 各要素の status は省略時 unverified 扱い。根拠が言語化された要素だけ verified へ昇格する。
+# 書き込み後に validate と build を回す:
+#   python3 .claude/skills/dimensional-modeling-facilitator/scripts/validate_dimml.py <file>
+#   python3 .claude/skills/dimensional-modeling-facilitator/scripts/dimml_build.py   <file>
+
+session:
+  id: ""                      # 例: 20260723-1400
+  domain: ""                  # 対象ドメイン名
+  phase: "1"                  # 直近完了フェーズ（"1".."6"）
+  goal: ""                    # このセッションで答えたい分析ゴール
+  started_at: ""              # ISO 8601 推奨
+
+# フェーズ1: 業務プロセス選定（バスマトリクスの行）
+processes: []
+
+# フェーズ2-4: ファクト（グレイン宣言 → 測定値）
+facts: []
+
+# フェーズ3: conformed ディメンション
+dimensions: []
+
+# 分析シナリオ（このモデルで答えたい問い・KPI）
+narratives: []
+
+# 追跡系
+questions: []
+actions: []
+decisions: []

@@ -1,0 +1,265 @@
+# DimML 参照例 — 小売販売（Kimball 定番のスタースキーマ）
+#
+# このファイルは「完成済みの参照例」であり、スキルの使い方を示すサンプル。
+# 3 種のファクト（transaction / periodic-snapshot / accumulating-snapshot）、
+# conformed dimension（Date/Product/Store を複数ファクトで共有）、SCD Type 1 & 2、
+# role-playing dimension（Date を OrderDate/ShipDate/DeliveryDate として使用）、
+# degenerate dimension、加法性（additive/semi-additive/non-additive）、
+# そして grill 規律（未検証要素＋オープンクエスチョン）を一通り含む。
+#
+# 検証:  python3 .claude/skills/dimensional-modeling-facilitator/scripts/validate_dimml.py .claude/skills/dimensional-modeling-facilitator/examples/retail-sales.dimml.yaml
+# ビルド: python3 .claude/skills/dimensional-modeling-facilitator/scripts/dimml_build.py   .claude/skills/dimensional-modeling-facilitator/examples/retail-sales.dimml.yaml
+
+session:
+  id: retail-sales-example
+  domain: omnichannel-retail
+  phase: "6"
+  goal: 店頭・在庫・オンライン注文を横断し、粗利・欠品・リードタイムを分析できるスタースキーマ群を設計する
+  started_at: "2026-07-23T14:00:00+09:00"
+  status: 参照例（完成版）。返品ファクトのグレインと注文パイプラインのグレインは未確定（Q1/Q2）
+
+# ===== フェーズ1: 業務プロセス（バスマトリクスの行） =====
+processes:
+  - name: retail-sales
+    label: 店頭販売
+    description: POS で 1 明細ずつ発生する販売トランザクション。粗利分析の中心。
+    status: verified
+  - name: inventory
+    label: 在庫スナップショット
+    description: 日末に店舗×SKU の在庫残高を撮る。欠品・滞留の分析。
+    status: verified
+  - name: order-fulfillment
+    label: オンライン注文履行
+    description: 受注から出荷・配達までのパイプライン。リードタイム分析。
+    status: unverified
+
+# ===== フェーズ3: conformed ディメンション =====
+dimensions:
+  - name: Date
+    label: 日付
+    grain: 1 行 = 1 暦日
+    scd: none                     # 暦日は不変
+    conformed: true
+    attrs:
+      - { name: dateKey, type: int, key: surrogate }
+      - { name: fullDate, type: date, key: natural }
+      - { name: dayOfWeek, type: string }
+      - { name: calendarMonth, type: string }
+      - { name: calendarQuarter, type: string }
+      - { name: calendarYear, type: int }
+      - { name: fiscalPeriod, type: string, note: 会計期間（4 月開始） }
+      - { name: isWeekend, type: bool }
+      - { name: isHoliday, type: bool }
+    hierarchies:
+      - { name: 暦カレンダー, levels: [年, 四半期, 月, 日] }
+      - { name: 会計カレンダー, levels: [会計年度, 会計四半期, 会計月] }
+    status: verified
+
+  - name: Product
+    label: 商品
+    grain: 1 行 = 1 商品 SKU の 1 バージョン（属性変化は履歴として別行）
+    scd: TYPE_2                   # ブランド移管・カテゴリ再編を履歴保持
+    conformed: true
+    attrs:
+      - { name: productKey, type: int, key: surrogate }
+      - { name: sku, type: string, key: natural }
+      - { name: productName, type: string }
+      - { name: brand, type: string }
+      - { name: category, type: string }
+      - { name: department, type: string }
+      - { name: standardCost, type: decimal, note: 標準原価 }
+      - { name: effectiveDate, type: date, note: SCD2 有効開始 }
+      - { name: expiryDate, type: date, note: SCD2 有効終了 }
+      - { name: isCurrent, type: bool, note: SCD2 現行行フラグ }
+    hierarchies:
+      - { name: 商品分類, levels: [部門, カテゴリ, ブランド, SKU] }
+    status: verified
+
+  - name: Store
+    label: 店舗
+    grain: 1 行 = 1 店舗
+    scd: TYPE_1                   # 店舗属性は最新で上書き（履歴不要と判断）
+    conformed: true
+    attrs:
+      - { name: storeKey, type: int, key: surrogate }
+      - { name: storeCode, type: string, key: natural }
+      - { name: storeName, type: string }
+      - { name: storeType, type: string, note: 直営/FC/オンライン倉庫 }
+      - { name: district, type: string }
+      - { name: region, type: string }
+      - { name: floorAreaSqm, type: decimal }
+    hierarchies:
+      - { name: 店舗地理, levels: [リージョン, 地区, 店舗] }
+    status: verified
+
+  - name: Customer
+    label: 顧客
+    grain: 1 行 = 1 会員顧客の 1 バージョン（住所・会員ランク変化は履歴保持）
+    scd: TYPE_2
+    conformed: true
+    attrs:
+      - { name: customerKey, type: int, key: surrogate }
+      - { name: customerId, type: string, key: natural }
+      - { name: ageBand, type: string }
+      - { name: gender, type: string }
+      - { name: prefecture, type: string }
+      - { name: membershipTier, type: string, note: ブロンズ/シルバー/ゴールド }
+      - { name: effectiveDate, type: date }
+      - { name: expiryDate, type: date }
+      - { name: isCurrent, type: bool }
+    hierarchies:
+      - { name: 会員地理, levels: [地方, 都道府県, 市区町村] }
+    status: verified
+
+  - name: Promotion
+    label: 販促
+    grain: 1 行 = 1 販促キャンペーン
+    scd: TYPE_1
+    conformed: false             # 現状は販売ファクトのみで使用
+    attrs:
+      - { name: promotionKey, type: int, key: surrogate }
+      - { name: promotionCode, type: string, key: natural }
+      - { name: promotionName, type: string }
+      - { name: promotionType, type: string, note: 値引/ポイント/バンドル }
+      - { name: mediaChannel, type: string }
+    status: verified
+    note: 「販促なし」を表す既定行を 1 件持ち、ファクトの NULL 外部キーを避ける
+
+# ===== フェーズ2&4: ファクト（グレイン宣言 → 測定値） =====
+facts:
+  # --- transaction fact ---
+  - name: Sales
+    label: 販売
+    process: retail-sales
+    grain: 1 行 = POS レシート 1 明細（1 レシート × 1 SKU）
+    grainType: transaction
+    dims:
+      - { dimension: Date }
+      - { dimension: Product }
+      - { dimension: Store }
+      - { dimension: Customer, note: 非会員は「不明会員」の既定行に紐付け }
+      - { dimension: Promotion }
+    msrs:
+      - { name: salesQuantity, label: 販売数量, additivity: additive, unit: 個 }
+      - { name: salesAmount, label: 税抜売上, additivity: additive, unit: 円 }
+      - { name: discountAmount, label: 値引額, additivity: additive, unit: 円 }
+      - { name: costAmount, label: 売上原価, additivity: additive, unit: 円 }
+      - { name: grossProfit, label: 粗利, additivity: additive, unit: 円, formula: salesAmount - costAmount }
+      - { name: unitPrice, label: 単価, additivity: non-additive, unit: 円, note: 合算不可。salesAmount / salesQuantity で再計算する }
+    degen:
+      - { name: pos_transaction_number, note: レシート番号（レシート内明細の束ね直しに使う degenerate dimension） }
+      - { name: line_number, note: レシート内の明細行番号 }
+    status: verified
+
+  # --- periodic snapshot fact ---
+  - name: InventorySnapshot
+    label: 在庫スナップショット
+    process: inventory
+    grain: 1 行 = 1 営業日末 × 1 店舗 × 1 SKU の在庫状態
+    grainType: periodic-snapshot
+    dims:
+      - { dimension: Date }
+      - { dimension: Product }
+      - { dimension: Store }
+    msrs:
+      - { name: quantityOnHand, label: 在庫数量, additivity: semi-additive, semiAdditiveAcross: Date, unit: 個, note: 時間軸で合算不可（残高）。期末は最終日、期間平均は平均を取る }
+      - { name: inventoryValueAtCost, label: 在庫評価額, additivity: semi-additive, semiAdditiveAcross: Date, unit: 円 }
+      - { name: quantitySoldToday, label: 当日販売数, additivity: additive, unit: 個 }
+    status: verified
+
+  # --- accumulating snapshot fact（未検証・グレイン未確定） ---
+  - name: CustomerOrderPipeline
+    label: オンライン注文パイプライン
+    process: order-fulfillment
+    grain: 1 行 = オンライン注文 1 件（受注〜配達のライフサイクルを 1 行で更新）
+    grainType: accumulating-snapshot
+    dims:
+      - { dimension: Date, role: OrderDate, note: 受注日（role-playing） }
+      - { dimension: Date, role: ShipDate, note: 出荷日（role-playing） }
+      - { dimension: Date, role: DeliveryDate, note: 配達日（role-playing） }
+      - { dimension: Customer }
+      - { dimension: Store, role: FulfillingStore, note: 出荷元店舗/倉庫 }
+    msrs:
+      - { name: orderAmount, label: 注文金額, additivity: additive, unit: 円 }
+      - { name: orderToShipDays, label: 受注→出荷リードタイム, additivity: non-additive, unit: 日, note: 平均で見る lag。合算不可 }
+      - { name: shipToDeliveryDays, label: 出荷→配達リードタイム, additivity: non-additive, unit: 日 }
+    degen:
+      - { name: order_number, note: 注文番号（degenerate dimension） }
+    status: unverified
+    note: グレインを注文単位にするか明細単位にするか未確定（Q2）。業務確認待ち
+
+# ===== 分析シナリオ（このモデルで答えたい問い・KPI） =====
+narratives:
+  - id: gross-profit-trend
+    title: 月次×リージョン×ブランドの粗利トレンド
+    kind: kpi
+    prose: |
+      経営会議で、当月の粗利をリージョン別・ブランド別に前年同月と比較したい。
+      Sales ファクトを Date（会計カレンダー）× Store（リージョン）× Product（ブランド）で
+      集計し、grossProfit を合算する。SCD Type 2 の Product により「移管当時のブランド」で
+      正しく遡及集計できる。
+    status: verified
+  - id: promotion-lift
+    title: 販促別の売上リフト
+    kind: question
+    prose: |
+      各キャンペーンが売上をどれだけ押し上げたかを測りたい。Promotion ディメンションで
+      スライスするが、「販促なし」のベースライン売上との比較方法が未確定。
+    status: unverified
+  - id: stockout-loss
+    title: 欠品率と機会損失
+    kind: kpi
+    prose: |
+      InventorySnapshot の quantityOnHand がゼロの店舗×SKU×日を数え、同期間の
+      Sales の平均日販から機会損失額を推定する。
+    status: unverified
+
+# ===== オープンクエスチョン =====
+questions:
+  - id: Q1
+    topic: 返品は Sales に負の明細として入れるか、別ファクトに分けるか
+    why: 返品理由や返品リードタイムを分析したいなら別ファクトが必要になる
+    status: open
+  - id: Q2
+    topic: CustomerOrderPipeline のグレインは注文単位か注文明細単位か
+    why: 明細単位なら Product を次元に持てるが、パイプライン更新が複雑になる
+    status: open
+
+# ===== 次のアクション =====
+actions:
+  - id: A1
+    text: 返品ファクトの要否を業務（店舗運営部）に確認する
+    done: false
+  - id: A2
+    text: オンライン注文パイプラインのグレインを EC 事業部と確定する
+    done: false
+
+# ===== 意思決定ログ =====
+decisions:
+  - id: D1
+    topic: Sales ファクトのグレイン
+    chosen: line-item
+    options:
+      - name: line-item
+        label: レシート明細単位
+        adopted: true
+        why: SKU 別・販促別の粗利を分析できる最も細かい実用グレイン。上位集計は後から常に可能
+      - name: receipt-level
+        label: レシート単位
+        why_not: SKU 別分析ができず、粗利の主要用途を満たさない
+      - name: daily-product-store
+        label: 日次×商品×店舗集計
+        why_not: レシート番号（degenerate）や販促の明細別紐付けが失われる
+    affects: [Sales]
+  - id: D2
+    topic: Product ディメンションの SCD タイプ
+    chosen: type-2
+    options:
+      - name: type-2
+        label: SCD Type 2（履歴保持）
+        adopted: true
+        why: ブランド移管前後で粗利を「当時のブランド」に正しく帰属できる。遡及分析の要
+      - name: type-1
+        label: SCD Type 1（上書き）
+        why_not: 過去の販売が現在のブランドに付け替わり、移管前後の比較が壊れる
+    affects: [Product]

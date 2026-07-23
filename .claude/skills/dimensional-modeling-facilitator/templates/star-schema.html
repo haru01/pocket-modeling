@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<!-- このファイルは dimml_build.py がタイトルと本文のプレースホルダーを差し替えて
+     dist/dimensional/<session>.html を生成するテンプレート。手で編集しない。 -->
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DimML — {{TITLE}}</title>
+  <style>
+    :root {
+      --bg: #f7f8fa; --card: #ffffff; --ink: #1f2933; --muted: #6b7280;
+      --line: #e5e7eb; --accent: #2563eb;
+      --green: #059669; --amber: #d97706; --red: #dc2626; --purple: #7c3aed; --teal: #0d9488;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 0 0 4rem; background: var(--bg); color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN",
+      Meiryo, sans-serif; line-height: 1.6; font-size: 15px; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 1.5rem; }
+    h1 { font-size: 1.6rem; margin: 0 0 .3rem; }
+    h2 { font-size: 1.2rem; margin: 2.2rem 0 .8rem; padding-bottom: .3rem;
+      border-bottom: 2px solid var(--line); }
+    h3 { font-size: 1.02rem; margin: 1.2rem 0 .4rem; }
+    .meta { color: var(--muted); font-size: .9rem; margin-bottom: .5rem; }
+    code { background: #eef2f7; padding: .1rem .35rem; border-radius: 4px; font-size: .85em; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+      padding: 1rem 1.2rem; margin: .8rem 0; }
+    table { border-collapse: collapse; width: 100%; margin: .5rem 0; font-size: .9rem;
+      display: block; overflow-x: auto; }
+    th, td { border: 1px solid var(--line); padding: .4rem .6rem; text-align: left; vertical-align: top; }
+    th { background: #f1f5f9; position: sticky; top: 0; }
+    .matrix td.cell { text-align: center; font-weight: 700; }
+    .matrix .used { color: var(--accent); }
+    .matrix .role { color: var(--purple); font-size: .8rem; }
+    .conformed { color: var(--purple); }
+    .badge { display: inline-block; padding: .05rem .5rem; border-radius: 999px;
+      font-size: .72rem; font-weight: 700; color: #fff; white-space: nowrap; }
+    .b-transaction { background: var(--accent); }
+    .b-periodic-snapshot { background: var(--teal); }
+    .b-accumulating-snapshot { background: var(--purple); }
+    .b-additive { background: var(--green); }
+    .b-semi-additive { background: var(--amber); }
+    .b-non-additive { background: var(--red); }
+    .b-TYPE_2 { background: var(--purple); }
+    .b-TYPE_1 { background: var(--accent); }
+    .b-none { background: #9ca3af; }
+    .b-verified { background: var(--green); }
+    .b-unverified { background: var(--amber); }
+    .b-question { background: #6366f1; }
+    .b-kpi { background: var(--teal); }
+    .b-story { background: #9ca3af; }
+    .grain { font-weight: 600; background: #fffbeb; border-left: 3px solid var(--amber);
+      padding: .4rem .7rem; border-radius: 4px; margin: .4rem 0; }
+    .summary { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .summary .stat { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+      padding: .6rem 1rem; min-width: 120px; }
+    .summary .num { font-size: 1.5rem; font-weight: 800; }
+    .muted { color: var(--muted); }
+    .mermaid { text-align: center; background: var(--card); border: 1px solid var(--line);
+      border-radius: 10px; padding: 1rem; margin: .6rem 0; overflow-x: auto; }
+    .banner { border-radius: 8px; padding: .6rem 1rem; margin: .6rem 0; font-size: .9rem; }
+    .banner.ok { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+    .banner.err { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .explain { background: #eff6ff; border-left: 4px solid var(--accent); border-radius: 6px;
+      padding: .6rem .9rem; margin: .3rem 0 .9rem; font-size: .88rem; }
+    .explain .lead { font-weight: 700; display: block; margin-bottom: .2rem; }
+    .explain .lead::before { content: "▶ "; color: var(--accent); }
+    .explain .howto { color: var(--ink); display: block; margin-top: .15rem; }
+    .explain .howto b { color: var(--accent); }
+    .explain .read { color: var(--muted); font-style: italic; display: block; margin-top: .15rem; }
+    .explain .hint { display: block; margin-top: .35rem; padding-top: .3rem;
+      border-top: 1px dashed #bfdbfe; color: #1d4ed8; }
+    .explain .hint::before { content: "💡 "; }
+    .legend { display: flex; flex-wrap: wrap; gap: .4rem .8rem; margin-top: .35rem;
+      font-size: .82rem; }
+    .legend span { white-space: nowrap; }
+    .legend .k { font-weight: 700; }
+    pre.src { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 8px;
+      overflow-x: auto; font-size: .8rem; line-height: 1.5; }
+    ul { margin: .3rem 0; padding-left: 1.3rem; }
+    .prose { white-space: pre-wrap; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    if (window.mermaid) {
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "strict" });
+    }
+  </script>
+</head>
+<body>
+  <div class="wrap">
+{{BODY}}
+  </div>
+</body>
+</html>
