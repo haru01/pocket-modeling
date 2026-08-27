@@ -60,7 +60,7 @@ python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py 
 |---|---|---|---|
 | 0 | 進捗バー（ヘッダ） | DML `session.phase` / `session.status` | `フェーズN完了` を自動パースして `done`/`current` クラスを設定 |
 | 1 | ストーリー | DML `narratives[]` | `kind:happy` を先頭に `.story` 黄背景、`kind:alt` を後続に `.scenario-card` カードで描画 |
-| 2 | Event Walkthrough | **DML** `narratives[].entry` + `scenarios[]`（next/brs.terminal） + `policies[]` | `.flow > .grid` Big Picture 形式（§5 参照） |
+| 2 | Event Walkthrough | **DML** `narratives[].entry` + `scenarios[]`（next/brs.terminal） + `policies[]` | `.flow > .grid` Big Picture 形式（§5 参照）＋「イベントのみ」ビュー切替トグル（§5-3 参照） |
 | 3 | 次のアクション | DML `actions[]` | `.next-actions` 緑カード。**読者の次の動きを最上部近くに置く** |
 | 4 | オープンクエスチョン / ホットスポット | DML `questions[]` | `.question`（青）`.hotspot`（赤）、`[CLOSED]` は緑背景 |
 | 5 | 意思決定ログ | **DML** `decisions[]` | `.decision-card`：採用（緑 `.opt.adopted`）／不採用（灰・取り消し線 `.opt.rejected`）の比較カード。`decisions[]` が空なら **見出しごと非表示** |
@@ -108,6 +108,35 @@ python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py 
 | `policies[].name` | `.note.policy` | Policy |
 | `scenarios[].qry`, `policies[].qry` | `.note.readmodel` | Read Model |
 
+### 5-3. 「イベントのみ」ビュー切替トグル
+
+§2 の凡例右端（`.flow-toolbar > .view-toggle`）にトグルスイッチを置き、付箋を **EVT だけ**に
+絞った時系列ビューへ切り替えられる。Actor / Command / Policy / Read Model のノイズを落として
+「業務で何が起きたか」の連鎖だけを俯瞰するための表示モード。
+
+**実装方針: 2 ビューを両方サーバサイドでレンダリングし、CSS で片方だけ見せる。**
+
+- `render_flow()` は 1 つの Flow から `.flow-body` を 2 つ出力する
+  - `.flow-view-full` … 従来どおり全付箋（既存 HTML と 1 バイト単位で同一）
+  - `.flow-view-events` … `_render_flow_body_events()` が組み立てる EVT のみ
+- 切替は JS が `body` に `events-only` class を付け外しするだけ（`display` の切替は CSS）。
+  トグル UI は checkbox 1 個 + `e` キーのショートカット（目次モーダルが開いている間は無効）
+- グリッド再配置を JS でやらないので、印刷・Artifact 化・JS 無効環境でも full ビューは壊れない
+
+EVT のみビューのレイアウト規則（`_events_only_steps()` / `_render_flow_body_events()`）:
+
+| 規則 | 挙動 |
+|---|---|
+| 付箋 | `kind == "event"` のみ残す。`fanout`（×N）・`pivotal`（⭐ 節目）の修飾はそのまま維持 |
+| レーン | EVT が 1 枚も乗らない BC はレーンごと消える（grid-row を詰め直す） |
+| 繋ぎ（レーン跨ぎ） | `.arrow-v`（⚡ async）。間に Join 境界を挟むなら `.sync-bar`（Σ N） |
+| 繋ぎ（同レーン・非同期境界あり） | `.arrow-h.async`（紫の横矢印 + ⚡ ラベル） |
+| 繋ぎ（同レーン・同期） | `.arrow-h`（fanout 入口は `.arrow-h.fork`） |
+| EVT ゼロのフロー | `.flow-view-events.flow-view-empty` のプレースホルダ 1 行 |
+
+間に落ちた Actor / Command / Policy / Read Model の情報は捨てるが、**TX 境界（非同期 / Join）は
+必ず矢印に残す**。EVT だけを繋いだ図が「全部 SAME-TX の同期連鎖」に見えてしまうのを防ぐため。
+
 ---
 
 ## 6. 色とフォント
@@ -142,6 +171,7 @@ BC ごとに異なるグレートーン。最大 5 BC まで標準パレット�
 | 非同期 `⚡↓ / ⚡↑`（レーン跨ぎ） | `#7B1FA2` | 縦線 + 三角、`async-label` 表示 |
 | BULK Fanout（`bulk: true`） | `#7B1FA2` | 単線 → 3 本に分岐（`.arrow-h.fork`） |
 | Join シンクバー（`trgs` join） | `#263238` | 黒太線 + Σ N ラベル（BPMN sync bar） |
+| 非同期 `⚡→`（EVT のみビュー・同レーン） | `#7B1FA2` | 横線 + 三角、⚡ ラベル（`.arrow-h.async`） |
 
 ### 6-3.2. Fanout (`.note.fanout`) 視覚仕様
 

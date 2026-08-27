@@ -83,6 +83,58 @@
     .legend .note-mini.policy   { background: #CE93D8; border-color: #7B1FA2; color: #4A148C; }
     .legend .note-mini.readmodel{ background: #A5D6A7; border-color: #2E7D32; color: #1B5E20; }
 
+    /* === フローツールバー: 凡例 + ビュー切替トグル === */
+    .flow-toolbar {
+      display: flex; flex-wrap: wrap; align-items: center;
+      gap: 12px; margin: 12px 0 16px 0;
+    }
+    .flow-toolbar .legend { flex: 1 1 auto; margin: 0; }
+
+    /* 「イベントのみ」トグル: checkbox を隠して track/knob で iOS 風スイッチを描く */
+    .view-toggle {
+      flex: 0 0 auto;
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border-radius: 6px;
+      background: #ECEFF1; border: 1px solid #CFD8DC;
+      cursor: pointer; user-select: none;
+      font-size: 13px; font-weight: 700; color: #546E7A;
+    }
+    .view-toggle:hover { background: #E0E5E8; }
+    .view-toggle input {
+      position: absolute; opacity: 0;
+      width: 1px; height: 1px; margin: 0;
+    }
+    .view-toggle-track {
+      position: relative; flex: 0 0 auto;
+      width: 34px; height: 18px; border-radius: 9px;
+      background: #B0BEC5; transition: background 0.15s;
+    }
+    .view-toggle-knob {
+      position: absolute; top: 2px; left: 2px;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #FFF; box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+      transition: transform 0.15s;
+    }
+    .view-toggle input:checked + .view-toggle-track { background: #E65100; }
+    .view-toggle input:checked + .view-toggle-track .view-toggle-knob {
+      transform: translateX(16px);
+    }
+    /* キーボードフォーカスを見える化（checkbox 自体は視覚的に隠しているため） */
+    .view-toggle input:focus-visible + .view-toggle-track {
+      outline: 2px solid #E65100; outline-offset: 2px;
+    }
+    .view-toggle input:checked ~ .view-toggle-text { color: #E65100; }
+    .view-toggle kbd {
+      font-family: inherit; font-size: 11px;
+      padding: 1px 5px; border-radius: 3px;
+      background: #FFF; border: 1px solid #B0BEC5; color: #78909C;
+    }
+    /* EVT のみ表示時は Event 以外の凡例を減光（意味を失うため） */
+    body.events-only .legend .note-mini.actor,
+    body.events-only .legend .note-mini.command,
+    body.events-only .legend .note-mini.policy,
+    body.events-only .legend .note-mini.readmodel { opacity: 0.3; }
+
     /* === Flow コンテナ ===
        テーブルヘッダー風 2-カラム構造:
          .flow-body
@@ -145,6 +197,17 @@
     /* 右端スペーサー: スクロール末尾に確実に余白を残す */
     .end-spacer { width: 48px; height: 1px; }
 
+    /* === ビュー切替: .flow は full / events の 2 ボディを持ち、片方だけ表示する ===
+       ビルダー（render_flow）が同じ Flow を 2 通りレンダリングして DOM に残すため、
+       切替は display だけで済む（JS は body の class 付替えのみ）。 */
+    .flow-view-events { display: none; }
+    body.events-only .flow-view-full { display: none; }
+    body.events-only .flow-view-events { display: grid; }
+    body.events-only .flow-view-events.flow-view-empty {
+      display: block; padding: 16px; color: #90A4AE; font-size: 14px;
+    }
+
+
     .lane-name {
       padding: 12px 10px;
       color: #FFF; font-size: 13px; font-weight: 700;
@@ -192,6 +255,19 @@
       border-top: 4px solid transparent;
       border-bottom: 4px solid transparent;
     }
+    /* EVT のみビュー用: 同一レーン内で非同期境界を跨ぐ横矢印（⚡ ラベル付き） */
+    .arrow-h.async {
+      width: 34px; background: #7B1FA2; margin: 0 2px;
+    }
+    .arrow-h.async::after { border-left-color: #7B1FA2; }
+    .arrow-h.async .async-label {
+      position: absolute;
+      bottom: 7px; left: 50%; transform: translateX(-50%);
+      background: #F3E5F5; color: #7B1FA2;
+      font-size: 11px; line-height: 1.2;
+      padding: 1px 3px; border-radius: 2px;
+    }
+
     .arrow-v {
       align-self: stretch; justify-self: center;
       width: 4px; background: #7B1FA2;
@@ -766,6 +842,48 @@
       }
     })();
   </script>
+  <!-- 「イベントのみ」トグル: §2 Event Walkthrough の付箋を EVT だけに絞る。
+       .flow 内には full / events 両ビューが既にレンダリング済みなので、
+       ここでは body.events-only を付け外しするだけ（表示切替は CSS 側）。
+       キーボード: e -->
+  <script>
+    (function () {
+      function initEventsOnlyToggle() {
+        var boxes = Array.prototype.slice.call(
+          document.querySelectorAll('.view-toggle input[type="checkbox"]')
+        );
+        if (!boxes.length) return;
+
+        function apply(on) {
+          document.body.classList.toggle('events-only', on);
+          boxes.forEach(function (b) { b.checked = on; });
+        }
+
+        boxes.forEach(function (b) {
+          b.addEventListener('change', function () { apply(b.checked); });
+        });
+
+        document.addEventListener('keydown', function (e) {
+          var t = e.target;
+          var typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+          if (typing && t.type !== 'checkbox') return;
+          if (e.metaKey || e.ctrlKey || e.altKey) return;
+          // 目次モーダルが開いている間は e を奪わない
+          if (document.querySelector('.toc-overlay.open')) return;
+          if (e.key === 'e' || e.key === 'E') {
+            e.preventDefault();
+            apply(!document.body.classList.contains('events-only'));
+          }
+        });
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initEventsOnlyToggle);
+      } else {
+        initEventsOnlyToggle();
+      }
+    })();
+  </script>
 </head>
 <body>
 
@@ -816,12 +934,21 @@
        ===================== -->
   <h2>3. Event Walkthrough</h2>
 
-  <div class="legend">
-    <span class="note-mini actor">Actor</span>
-    <span class="note-mini command">Command</span>
-    <span class="note-mini event">Event</span>
-    <span class="note-mini policy">Policy</span>
-    <span class="note-mini readmodel">Read Model</span>
+  <!-- 凡例 + ビュー切替トグル。トグル ON（または e キー）で body.events-only が付き、
+       各 .flow は .flow-view-full を隠して .flow-view-events を表示する。 -->
+  <div class="flow-toolbar">
+    <div class="legend">
+      <span class="note-mini actor">Actor</span>
+      <span class="note-mini command">Command</span>
+      <span class="note-mini event">Event</span>
+      <span class="note-mini policy">Policy</span>
+      <span class="note-mini readmodel">Read Model</span>
+    </div>
+    <label class="view-toggle" title="イベント付箋だけに絞って時系列を俯瞰する（キーボード: e）">
+      <input type="checkbox" id="events-only-toggle">
+      <span class="view-toggle-track"><span class="view-toggle-knob"></span></span>
+      <span class="view-toggle-text">イベントのみ <kbd>e</kbd></span>
+    </label>
   </div>
 
   <!--
@@ -833,6 +960,8 @@
     - 同じ BC が複数回登場しても 同じ grid-row に統合
     - 付箋ラベルから DSL 記号 (@!$[]) を削除する
     - 非同期遷移は arrow-v down/up で 2 行を跨ぐ
+    - .flow は同じフローを 2 ボディ持つ: .flow-view-full（全付箋）と
+      .flow-view-events（EVT のみ。「イベントのみ」トグル用）
   -->
   <div class="flow">
     <div class="flow-title">{{フロータイトル}}</div>
