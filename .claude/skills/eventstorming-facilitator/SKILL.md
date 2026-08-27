@@ -45,7 +45,7 @@ PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/even
 | 4.5. BC 境界 | `contexts[].lang` 充実（文脈で意味が変わる言葉を記録）＋ **サブドメイン分類（`domains[].subs[]` の CORE/SUPPORTING/GENERIC ＋ `contexts[].sub` 割り当て）** |
 | **4.6. 目的・背景・制約** | **`aggregates[]` の `name`/`ctx`/`purpose`/`background`/`constraints[]`/`states` ＋ `contexts[].aggs` に AGG 名** |
 | **5. 不変条件・エラー＋属性・イベントペイロード** | **`scenarios[].rules[]`（rule/why）／`scenarios[].errs[]`（cond/err/when）／`aggregates[].transitions[]`／`aggregates[].attrs[]`／`aggregates[].events[].params[]` ＋ `queries[]`（リードモデル候補）** |
-| **6. 意思決定ログ** | **`decisions[]`**（id/topic/chosen/options/affects・options ごとに why/why_not）。`questions[].status` を closed にして `decision_id` を紐付け |
+| **6. 意思決定ログ（棚卸し）** | **`decisions[]` は随時記録が原則**（§毎ターンの行動）。このフェーズは*新規に書く*場ではなく、**書き溜めた `decisions[]` の棚卸し**をする場 — 記録漏れの補完、`why`/`why_not` が抽象用語だけになっている項目の書き直し、`questions[].status` を closed にして `decision_id` を紐付け |
 | 7. 整合性チェック → 出力 | `dmlctl check --all` で全構造観点を一括実行 → 観点別 LLM 評価 → `actions[].done` 更新 → 確定版 `.dml.yaml` |
 
 `.dml.yaml` の編集ごとに HTML は自動再生成されるが、**ブラウザの自動リロードはしない**（必要に応じて手動）。
@@ -60,6 +60,7 @@ PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/even
 - **疑問文・促し文は全角 `？`** — 半角 `?` は DML 記号や `[?]` マーカーなど機能的な用途のみ
 - **EVT 拾い** — 「〜された」「〜完了した」を `EventName` で仮追加
 - **`[?]` を残す** — 迷い・矛盾・未確認はすべてマーク。推測で埋めない。選択肢が見えてきたら `decisions[]` に昇格
+- **決まった瞬間に `decisions[]` へ記録** — **そのターンで選択肢を 2 つ以上提示し、1 つに決まった（ユーザーが選んだ／「おまかせ」で AI が選んだ）なら、同じターンのうちに `dmlctl add --to=decisions` する**。フェーズ 6 まで持ち越さない。理由：決めた直後は `why`/`why_not` を業務の言葉で書けるが、数フェーズ後には「なぜその案を捨てたか」が失われ、`chosen` だけが残った履歴になる。記録する内容は `id`（D1, D2, … の通し番号）／`topic`（決めた論点）／`chosen`／`options[]`（**採用案に `adopted: true` と `why`、不採用案に `why_not`**）／`affects`。未確認の前提の上に置いた暫定決定は `note` にその旨と再検討条件を書き、対応する `questions[]` を open のまま残す。決着済みの `[?]` ホットスポットも同様に昇格させる
 - **`？` シグナル（段階対応）** — ユーザーが `？` を送ったら**同一論点で連続する回数**に応じて対応を変える。①1 回目: 判断の軸を 2〜3 点提示（押しつけない） ②2 回目: 角度を変えて噛み砕く（比喩・対比・小さな表。`references/term-glossary.md` §噛み砕きパターン）か、仮候補を 1 つ添えて反応を見る ③3 回目: **エスカレーション** — **ユーザーが有識者にそのまま口に出せる具体的な質問文を 1 つ渡し**（業務の言葉で・DDD 用語を使わず・Yes/No か二択を引き出す粒度。「確認してください」という抽象指示で終わらせない）、論点を `questions[]` に open で記録し（`note` 冒頭に `[有識者相談推奨]`＋質問文）、仮置きのリコメンドで進めるかをユーザーに確認する。詳細な出力テンプレと記録コマンドは `references/chat-output-format.md` §`？` シグナルの段階対応。**カウントは論点が解決するか別の論点に移ったらリセット**（セッション通算ではない）
 - **「おまかせ」シグナル** — 合理的なデフォルトを判断理由1行付きで選んで進める
 - **ポイント解説原則** — DDD／EventStorming の専門用語（EVT / CMD / POLICY / AGG / BC / SAME-TX / EVENTUAL-TX / ACL など）が**初出のとき**は、`references/term-glossary.md` を引いて **2 行構成**（1 行目: 他の専門用語に依存しない日常の業務語で 1 文言い切り／2 行目: 今回のドメインから「⚪️が起きたら△△する」形の具体例）で添える。**1 ターンに 1〜2 用語まで**（3 つ以上は問いがぼやけるので絞る）。既出は繰り返さない。NG/OK の例文と噛み砕きパターン（比喩・対比・小さな表での再説明）は `term-glossary.md` §ポイント解説の書き方・§噛み砕きパターンを参照。意思決定の議論では `why`/`why_not` を**業務文脈の言葉**で引き出し、抽象用語（「責務違反」「DDD 的に正しい」等）だけで終わらせない
@@ -196,6 +197,7 @@ DML は **`docs/eventstorming/<session>.dml.yaml`** 1 ファイルに **YAML 直
 
 - **フェーズ 3 の `ctx` は仮置きで良い**: `scenarios[].ctx` は schema 必須だが、BC 境界はフェーズ 4.5 で確定するので、フェーズ 3 では暫定 slug（例 `ordering` `payment`）で仮置きしてよい。4.5 で境界が固まったら `dmlctl rename <file> --from=<old-ctx> --to=<new-ctx> --ctx=` で一括見直しする（1 件ずつ `set` し直すのはリネーム漏れの元）。
 - **フェーズ 5 の `rules`/`errs` は全 scenario 義務ではない**: goal に直結し、不変条件・業務エラーが業務価値を持つ scenario に絞る。単純な CRUD・導線 scenario は空でよい。`dmlctl view --view=coverage` に出る残欠は「意図的に許容した箇所」と「未着手」を区別して読む（残欠＝バグではない）。詳細: playbook §3。
+- **`decisions[]` はフェーズを問わず随時 add する**: フェーズ 1〜5 の途中で決まった選択（イベントを畳む／分ける、境界の引き方、精算の形など）はその場で記録する。フェーズ 6 は棚卸し専用。
 - **`aggregates[]`/`policies[]` を足したら lang にも同時登録**: 所属 BC の `contexts[].lang.aggs`／`lang.pols` にも英→日ラベルを同時登録する（`contexts[].aggs` の軽量名簿とは別物）。漏れは `dmlctl check --check=language_coverage` が検出する。
 
 **書き出し後の品質チェック（必須）**: 詳細は `references/quality-check.md`。
