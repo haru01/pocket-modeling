@@ -662,17 +662,26 @@ def render_flows(flows: list[Flow]) -> str:
     if not flows:
         return '<div class="todo-placeholder">フロー未定義</div>'
 
+    # 凡例 + ビュー切替トグル。トグルは checkbox 1 個で、JS が body に
+    # `events-only` class を付け外しするだけ（描画自体は CSS が担当）。
     legend = (
-        '<div class="legend">\n'
-        '    <span class="note-mini actor">Actor</span>\n'
-        '    <span class="note-mini command">Command</span>\n'
-        '    <span class="note-mini event">Event</span>\n'
-        '    <span class="note-mini policy">Policy</span>\n'
-        '    <span class="note-mini readmodel">Read Model</span>\n'
-        '    <span class="legend-divider"></span>\n'
-        '    <span class="note-mini event fanout-mini">×N (BULK)</span>\n'
-        '    <span class="legend-sync">Σ N (Join)</span>\n'
-        '    <span class="note-mini event pivotal-mini">⭐ Pivotal (節目)</span>\n'
+        '<div class="flow-toolbar">\n'
+        '    <div class="legend">\n'
+        '      <span class="note-mini actor">Actor</span>\n'
+        '      <span class="note-mini command">Command</span>\n'
+        '      <span class="note-mini event">Event</span>\n'
+        '      <span class="note-mini policy">Policy</span>\n'
+        '      <span class="note-mini readmodel">Read Model</span>\n'
+        '      <span class="legend-divider"></span>\n'
+        '      <span class="note-mini event fanout-mini">×N (BULK)</span>\n'
+        '      <span class="legend-sync">Σ N (Join)</span>\n'
+        '      <span class="note-mini event pivotal-mini">⭐ Pivotal (節目)</span>\n'
+        "    </div>\n"
+        '    <label class="view-toggle" title="イベント付箋だけに絞って時系列を俯瞰する（キーボード: e）">\n'
+        '      <input type="checkbox" id="events-only-toggle">\n'
+        '      <span class="view-toggle-track"><span class="view-toggle-knob"></span></span>\n'
+        '      <span class="view-toggle-text">イベントのみ <kbd>e</kbd></span>\n'
+        "    </label>\n"
         "  </div>"
     )
 
@@ -683,53 +692,96 @@ def render_flows(flows: list[Flow]) -> str:
 
 
 def render_flow(flow: Flow) -> str:
-    """1 つの Flow を Big Picture グリッド HTML に変換"""
-    # 同じ BC を統合して unique 行を作る
+    """1 つの Flow を Big Picture グリッド HTML に変換。
+
+    同じ Flow を 2 ビュー分レンダリングして DOM に両方残す:
+      - `.flow-view-full`   … 全付箋（Actor / Command / Event / Policy / Read Model）
+      - `.flow-view-events` … EVT 付箋のみ（§2 の「イベントのみ」トグル用）
+    表示切替は CSS（`body.events-only`）だけで行うため、JS は body の class 付替えのみ。
+    """
+    unique_bcs, bc_to_row, bc_to_color = _flow_lane_rows(
+        [lane.bc_name for lane in flow.lanes]
+    )
+    full_body = _render_flow_body(
+        unique_bcs, bc_to_row, bc_to_color,
+        _flow_notes_full(flow, bc_to_row),
+        "flow-view-full",
+    )
+    events_body = _render_flow_body_events(flow)
+    return (
+        f'<div class="flow">\n'
+        f'    <div class="flow-title">{esc(flow.title)}</div>\n'
+        f"{full_body}\n"
+        f"{events_body}\n"
+        f"  </div>"
+    )
+
+
+def _flow_lane_rows(
+    bc_names: list[str],
+) -> tuple[list[str], dict[str, int], dict[str, str]]:
+    """レーン BC 名列 → (unique BC 列, BC→grid-row, BC→カラー class)。
+
+    同じ BC が複数回出現しても同じ grid-row / 同じ色に統合する。
+    """
     unique_bcs: list[str] = []
     bc_to_row: dict[str, int] = {}
-    for lane in flow.lanes:
-        if lane.bc_name not in bc_to_row:
-            bc_to_row[lane.bc_name] = len(unique_bcs) + 1
-            unique_bcs.append(lane.bc_name)
+    for bc in bc_names:
+        if bc not in bc_to_row:
+            bc_to_row[bc] = len(unique_bcs) + 1
+            unique_bcs.append(bc)
+    bc_to_color = {
+        bc: LANE_COLOR_CLASSES[i % len(LANE_COLOR_CLASSES)]
+        for i, bc in enumerate(unique_bcs)
+    }
+    return unique_bcs, bc_to_row, bc_to_color
 
-    # BC 名 → カラー class
-    bc_to_color: dict[str, str] = {}
-    for i, bc in enumerate(unique_bcs):
-        bc_to_color[bc] = LANE_COLOR_CLASSES[i % len(LANE_COLOR_CLASSES)]
 
-    # === 左カラム: レーンヘッダ(横スクロール対象外) ===
-    lane_header_items: list[str] = []
-    for bc in unique_bcs:
-        row = bc_to_row[bc]
-        color = bc_to_color[bc]
-        lane_header_items.append(
-            f'<div class="lane-name {color}" style="grid-row: {row};">'
-            f"{esc(bc)}</div>"
-        )
-    lane_header_html = "\n        ".join(lane_header_items)
+def _render_note(note: Note, row: int, col: int) -> str:
+    """1 枚の付箋 div。fanout / pivotal の修飾 class を付ける。"""
+    kind_label = KIND_LABEL[note.kind]
+    label_html = esc(note.label).replace("\n", "<br>")
+    note_cls = f"note {note.kind}"
+    if note.is_fanout:
+        note_cls += " fanout"
+    if note.is_pivotal:
+        note_cls += " pivotal"
+    return (
+        f'<div class="{note_cls}" style="grid-row: {row}; grid-column: {col};">'
+        f'<span class="kind">{kind_label}</span>{label_html}</div>'
+    )
 
-    # === 右カラム: notes と矢印のみ。grid-column は 1 から開始 ===
+
+def _render_v_transition(
+    prev_row: int, row: int, col: int, *, join: bool = False, label: bool = True
+) -> str:
+    """レーンを跨ぐ縦遷移（非同期矢印 or BPMN シンクバー）の div。"""
+    arrow_dir = "down" if row > prev_row else "up"
+    r1, r2 = (prev_row, row) if row > prev_row else (row, prev_row)
+    cls = f"sync-bar {arrow_dir}" if join else f"arrow-v {arrow_dir}"
+    text = ("Σ N" if join else "⚡ async") if label else ""
+    inner = f'<span class="async-label">{text}</span>' if text else ""
+    return (
+        f'<div class="{cls}" style="grid-row: {r1} / {r2 + 1}; grid-column: {col};">'
+        f"{inner}</div>"
+    )
+
+
+def _flow_notes_full(flow: Flow, bc_to_row: dict[str, int]) -> list[str]:
+    """全付箋ビュー（`.flow-view-full`）のグリッド要素列。grid-column は 1 から。"""
     note_elements: list[str] = []
     col = 1
     prev_lane: Lane | None = None
-    for li, lane in enumerate(flow.lanes):
+    for lane in flow.lanes:
         row = bc_to_row[lane.bc_name]
         # 前レーンとの非同期遷移
         if prev_lane is not None and prev_lane.notes and prev_lane.notes[-1].is_async:
             prev_row = bc_to_row[prev_lane.bc_name]
-            arrow_dir = "down" if row > prev_row else "up"
-            r1, r2 = (prev_row, row) if row > prev_row else (row, prev_row)
-            if prev_lane.joins_into_next:
-                # N → 1 Join: BPMN シンクバー（黒太線 + Σ N ラベル）
-                note_elements.append(
-                    f'<div class="sync-bar {arrow_dir}" style="grid-row: {r1} / {r2 + 1}; grid-column: {col};">'
-                    f'<span class="async-label">Σ N</span></div>'
+            note_elements.append(
+                _render_v_transition(
+                    prev_row, row, col, join=prev_lane.joins_into_next
                 )
-            else:
-                note_elements.append(
-                    f'<div class="arrow-v {arrow_dir}" style="grid-row: {r1} / {r2 + 1}; grid-column: {col};">'
-                    f'<span class="async-label">⚡ async</span></div>'
-                )
+            )
             col += 1
 
         for ni, note in enumerate(lane.notes):
@@ -744,17 +796,7 @@ def render_flow(flow: Flow) -> str:
                     f'<div class="{arrow_cls}" style="grid-row: {row}; grid-column: {col};"></div>'
                 )
                 col += 1
-            kind_label = KIND_LABEL[note.kind]
-            label_html = esc(note.label).replace("\n", "<br>")
-            note_cls = f"note {note.kind}"
-            if note.is_fanout:
-                note_cls += " fanout"
-            if note.is_pivotal:
-                note_cls += " pivotal"
-            note_elements.append(
-                f'<div class="{note_cls}" style="grid-row: {row}; grid-column: {col};">'
-                f'<span class="kind">{kind_label}</span>{label_html}</div>'
-            )
+            note_elements.append(_render_note(note, row, col))
             col += 1
         prev_lane = lane
 
@@ -763,25 +805,118 @@ def render_flow(flow: Flow) -> str:
     note_elements.append(
         f'<div class="end-spacer" style="grid-row: 1; grid-column: {col};"></div>'
     )
+    return note_elements
 
+
+def _events_only_steps(flow: Flow) -> list[tuple[str, Note, bool, bool]]:
+    """EVT 付箋だけを時系列に平坦化する。
+
+    返り値は `(bc_name, note, gap_async, gap_join)` の列。`gap_*` は「直前の EVT から
+    この EVT に至るまでに非同期境界 / Join 境界を跨いだか」を表す（間に落ちた
+    Actor / Command / Policy / Read Model の情報は捨てるが、TX 境界は保持する）。
+    """
+    steps: list[tuple[str, Note, bool, bool]] = []
+    gap_async = False
+    gap_join = False
+    prev_lane: Lane | None = None
+    for lane in flow.lanes:
+        if prev_lane is not None and prev_lane.notes and prev_lane.notes[-1].is_async:
+            gap_async = True
+            if prev_lane.joins_into_next:
+                gap_join = True
+        for note in lane.notes:
+            if note.kind != "event":
+                continue
+            steps.append((lane.bc_name, note, gap_async, gap_join))
+            gap_async = False
+            gap_join = False
+        prev_lane = lane
+    return steps
+
+
+def _render_flow_body_events(flow: Flow) -> str:
+    """EVT のみビュー（`.flow-view-events`）の `.flow-body` を組み立てる。
+
+    連続 EVT 間の繋ぎは、間に非同期境界を挟むかで矢印を切替える:
+      - レーンを跨ぐ    … `.arrow-v`（Join なら `.sync-bar`）
+      - 同レーンで非同期 … `.arrow-h.async`（⚡ ラベル付き）
+      - 同レーンで同期   … `.arrow-h`
+    """
+    steps = _events_only_steps(flow)
+    if not steps:
+        return (
+            '    <div class="flow-body flow-view-events flow-view-empty">\n'
+            "      イベント付箋なし（EVT 未定義のフロー）\n"
+            "    </div>"
+        )
+
+    unique_bcs, bc_to_row, bc_to_color = _flow_lane_rows([bc for bc, _, _, _ in steps])
+
+    note_elements: list[str] = []
+    col = 1
+    prev_row: int | None = None
+    prev_note: Note | None = None
+    for bc, note, gap_async, gap_join in steps:
+        row = bc_to_row[bc]
+        if prev_row is not None:
+            if row != prev_row:
+                note_elements.append(
+                    _render_v_transition(prev_row, row, col, join=gap_join)
+                )
+            elif gap_async:
+                note_elements.append(
+                    f'<div class="arrow-h async" style="grid-row: {row}; grid-column: {col};">'
+                    f'<span class="async-label">⚡</span></div>'
+                )
+            else:
+                fork = note.is_fanout and prev_note is not None and not prev_note.is_fanout
+                arrow_cls = "arrow-h fork" if fork else "arrow-h"
+                note_elements.append(
+                    f'<div class="{arrow_cls}" style="grid-row: {row}; grid-column: {col};"></div>'
+                )
+            col += 1
+        note_elements.append(_render_note(note, row, col))
+        col += 1
+        prev_row = row
+        prev_note = note
+
+    note_elements.append(
+        f'<div class="end-spacer" style="grid-row: 1; grid-column: {col};"></div>'
+    )
+    return _render_flow_body(
+        unique_bcs, bc_to_row, bc_to_color, note_elements, "flow-view-events"
+    )
+
+
+def _render_flow_body(
+    unique_bcs: list[str],
+    bc_to_row: dict[str, int],
+    bc_to_color: dict[str, str],
+    note_elements: list[str],
+    view_cls: str,
+) -> str:
+    """レーンヘッダ + 横スクロールグリッドの `.flow-body` を組み立てる。"""
+    # === 左カラム: レーンヘッダ(横スクロール対象外) ===
+    lane_header_items = [
+        f'<div class="lane-name {bc_to_color[bc]}" style="grid-row: {bc_to_row[bc]};">'
+        f"{esc(bc)}</div>"
+        for bc in unique_bcs
+    ]
+    lane_header_html = "\n        ".join(lane_header_items)
     notes_html = "\n          ".join(note_elements)
     # .flow-body の grid-template-rows を動的生成。
     # minmax(80px, auto) で各行は最低 80px、内容が大きければ自動拡張。
     # subgrid 設定により .lane-header / .flow-scroll は同じ行高さを共有する。
-    n_rows = len(unique_bcs)
-    rows_template = " ".join(["minmax(80px, auto)"] * n_rows)
+    rows_template = " ".join(["minmax(80px, auto)"] * len(unique_bcs))
     return (
-        f'<div class="flow">\n'
-        f'    <div class="flow-title">{esc(flow.title)}</div>\n'
-        f'    <div class="flow-body" style="grid-template-rows: {rows_template};">\n'
+        f'    <div class="flow-body {view_cls}" style="grid-template-rows: {rows_template};">\n'
         f'      <div class="lane-header">\n'
         f"        {lane_header_html}\n"
         f"      </div>\n"
         f'      <div class="flow-scroll">\n'
         f"        {notes_html}\n"
         f"      </div>\n"
-        f"    </div>\n"
-        f"  </div>"
+        f"    </div>"
     )
 
 
