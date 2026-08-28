@@ -1555,14 +1555,14 @@ def render_qry_cards(qrys: list[dict]) -> str:
         else:
             sources = str(sources_raw)
         formula = q.get("formula") or ""
-        ctx_html = f' <code style="font-size: 12px; color: #607D8B;">{esc(ctx)}</code>' if ctx else ""
+        ctx_html = f' <code style="font-size: 0.75rem; color: #607D8B;">{esc(ctx)}</code>' if ctx else ""
         out.append(
             f'<div class="bc-card" style="border-left: 4px solid #2E7D32;">\n'
             f'    <h3 style="color: #2E7D32;">{esc(name)}{ctx_html}</h3>\n'
-            f'    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>利用者:</strong> {esc(users)}</p>\n'
-            f'    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>目的:</strong> {esc(purpose)}</p>\n'
-            f'    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>ソース:</strong> {esc(sources)}</p>\n'
-            f'    <p style="font-size: 14px; color: #455A64; margin: 4px 0;"><strong>算出:</strong> {esc(formula)}</p>\n'
+            f'    <p style="font-size: 0.875rem; color: #455A64; margin: 4px 0;"><strong>利用者:</strong> {esc(users)}</p>\n'
+            f'    <p style="font-size: 0.875rem; color: #455A64; margin: 4px 0;"><strong>目的:</strong> {esc(purpose)}</p>\n'
+            f'    <p style="font-size: 0.875rem; color: #455A64; margin: 4px 0;"><strong>ソース:</strong> {esc(sources)}</p>\n'
+            f'    <p style="font-size: 0.875rem; color: #455A64; margin: 4px 0;"><strong>算出:</strong> {esc(formula)}</p>\n'
             f"  </div>"
         )
     return "\n  ".join(out)
