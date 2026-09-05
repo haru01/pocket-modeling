@@ -40,7 +40,7 @@ PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/even
 |---------|--------------------------------------|
 | 1. スコープ確認 | `session`（id/domain/goal/status。実書き込みはフェーズ 2 冒頭の `dmlctl init` でまとめて行う — フェーズ 1 では HTML を作らないため） |
 | **2. ストーリー確認** | 初回 `dmlctl init` → **`narratives[]`（`kind: happy` のハッピーパス散文 1 本 + `kind: alt` の代替シナリオ 2〜3 本、prose は粗で可）** → `Bash open <session>.html` 初回起動 |
-| 3. イベント発見 | `scenarios[]` 仮 entries ＋ `contexts[].lang` 新規識別子 ＋ **節目イベント選定（`scenarios[].pivotal: true` 2〜4 個）** |
+| 3. イベント発見 | `scenarios[]` 仮 entries ＋ `contexts[].lang` 新規識別子 ＋ **節目イベント選定（`scenarios[].pivotal: true` 2〜4 個）** → **HTML §2 に「暫定フロー」が自動描画される**（下記） |
 | 4. CMD→EVT→POLICY チェーン | `scenarios[]`（`next`/`brs[].terminal` 付き）／ `policies[]` / `narratives[].entry`（happy + 代替 1〜2）／ `contexts[]` の `up`/`dn`・`description`（BC 散文） |
 | 4.5. BC 境界 | `contexts[].lang` 充実（文脈で意味が変わる言葉を記録）＋ **サブドメイン分類（`domains[].subs[]` の CORE/SUPPORTING/GENERIC ＋ `contexts[].sub` 割り当て）** |
 | **4.6. 目的・背景・制約** | **`aggregates[]` の `name`/`ctx`/`purpose`/`background`/`constraints[]`/`states` ＋ `contexts[].aggs` に AGG 名** |
@@ -49,6 +49,19 @@ PostToolUse hook が `scripts/eventstorming_build.py` を起動して `dist/even
 | 7. 整合性チェック → 出力 | `dmlctl check --all` で全構造観点を一括実行 → 観点別 LLM 評価 → `actions[].done` 更新 → 確定版 `.dml.yaml` |
 
 `.dml.yaml` の編集ごとに HTML は自動再生成されるが、**ブラウザの自動リロードはしない**（必要に応じて手動）。
+
+**§2 Event Walkthrough は途中段階でも描画される（暫定フロー）**: 正式なフロー図は
+`narratives[].entry` ＋ `scenarios[].next` が揃うフェーズ 4 以降に出るが、それを待つと
+フェーズ 3 で 10 件以上のイベントを拾っても §2 が「フロー未定義」のままになり、
+ユーザーが拾ったイベントを図で俯瞰できない。そこでビルダーは、確定フローが 1 本も無いとき
+**`scenarios[]` の DML 記載順をそのまま時系列と見なした暫定フロー 1 本**に自動フォールバック
+する（`select_flows()` → `build_provisional_flow()`）。暫定フローは図の上に ⚠ バッジが付き、
+分岐追跡・policy 自動挿入・非同期境界を持たない（`brs[]` は全 evt を並記するだけ）。
+
+この挙動を前提に **フェーズ 3 の完了テンプレでも `Bash open` で HTML を開いて見せる**
+（フェーズ 2 完了時に続き 2 回目）。あわせて「これは暫定で、フェーズ 4 で連鎖を繋ぐと
+分岐とポリシーを含む正式なフローに置き換わる」と 1 行添える。**scenarios[] を DML に書く順序が
+そのまま暫定フローの時系列になる**ため、フェーズ 3 では業務の流れの順にシナリオを追加する。
 
 ---
 
@@ -100,7 +113,7 @@ HTML 更新・DML 抜粋は出さない。本文末尾は問い 1 つで終わ�
 - **トリガー**: dmlctl 経由の書き込み（`init` / `set` / `add` / `remove` / `update`）→ dmlctl 自身が build + validate を自動実行 → `dist/eventstorming/<session>.html` 再生成
 - **出力先**: `dist/eventstorming/`（`.dml.yaml` は `docs/`、HTML は `dist/`）
 - **手動ビルド/全件/監視**: `python3 scripts/eventstorming_build.py <session>.dml.yaml` ／ `--all` ／ `--watch`
-- **フェーズ2完了時のみ** `Bash open dist/eventstorming/<session>.html`。自動リロードはしない
+- **`Bash open dist/eventstorming/<session>.html` はフェーズ 2 完了時とフェーズ 3 完了時**（§2 が「散文のみ」→「暫定フロー入り」に変わる 2 つの節目）。それ以降は自動リロードしない
 - **Claude Code preview panel への反映** — フェーズ完了テンプレ末尾で `Read dist/eventstorming/<session>.html` を必ず呼ぶ。HTML は数千行になるため **`limit` 付き（例: 冒頭 数十行）で可**。全文をコンテキストに載せる必要はなく、preview panel への反映がトリガーできれば十分
 - **スマホアプリ案内** — HTML 新規/再生成のフェーズ完了テンプレに「📱 HTML をダウンロードしてブラウザで」を必ず添える
 - **描画仕様詳細**（ビルド改修時のみ）: `scripts/RENDER_SPEC.md`、テンプレ: `templates/event-flow.html`

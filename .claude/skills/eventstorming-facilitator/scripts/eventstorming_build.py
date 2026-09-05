@@ -477,6 +477,60 @@ def build_flows_from_dml(model: dict, glossary_index: dict[str, str]) -> list[Fl
     return out
 
 
+PROVISIONAL_FLOW_TITLE = "暫定フロー — DML 記載順（連鎖未定義）"
+
+
+def build_provisional_flow(model: dict, glossary_index: dict[str, str]) -> Flow | None:
+    """`narratives[].entry` が未設定でも `scenarios[]` を並べた暫定フローを組む。
+
+    フェーズ 3（イベント発見）の時点では entry/next がまだ決まっておらず
+    `build_flows_from_dml()` は空を返すため、そのままでは §2 が「フロー未定義」の
+    ままになる。連鎖が確定する前でも拾ったイベントを俯瞰できるよう、
+    **DML の記載順**をそのまま時系列と見なした 1 本のフローを描画する。
+
+    確定フローとの違い（意図的に持たない性質）:
+      - 分岐追跡をしない。`brs[]` は全 evt を並記するだけで、どれが本流かは示さない
+      - policy の自動挿入をしない（`policies[]` はフェーズ 4 の成果物）
+      - 非同期境界（is_async）を立てない。連鎖が未定義なので同期/非同期を判定できない
+
+    描画できる scenario が 1 つも無ければ None を返す（呼び出し側は placeholder を出す）。
+    """
+    scenarios = model.get("scenarios") or []
+    pivotal_evts = _collect_pivotal_evts(model)
+
+    flow = Flow(title=PROVISIONAL_FLOW_TITLE)
+    prev_ctx = None
+    for sc in scenarios:
+        if not isinstance(sc, dict):
+            continue
+        notes = _scenario_steps_to_notes(sc, glossary_index, pivotal_evts=pivotal_evts)
+        if not notes:
+            continue
+        ctx = sc.get("ctx", "")
+        if flow.lanes and ctx == prev_ctx:
+            flow.lanes[-1].notes.extend(notes)
+        else:
+            _append_lane(flow, ctx, notes)
+        prev_ctx = ctx
+
+    return flow if flow.lanes else None
+
+
+def select_flows(model: dict, glossary_index: dict[str, str]) -> tuple[list[Flow], bool]:
+    """§2 に描画するフローと、それが暫定描画かどうかを返す。
+
+    確定フロー（`narratives[].entry` 起点）が 1 本でもあればそれを優先し、
+    1 本も無いときだけ `build_provisional_flow()` にフォールバックする。
+    """
+    flows = build_flows_from_dml(model, glossary_index)
+    if flows:
+        return flows, False
+    provisional = build_provisional_flow(model, glossary_index)
+    if provisional is not None:
+        return [provisional], True
+    return [], False
+
+
 def aggregates_from_dml(model: dict) -> list[dict]:
     """DML から集約情報を導出する公開ヘルパー（下流スキル to-issues も利用）。
 
@@ -658,9 +712,19 @@ def render_narratives(narratives: list[dict]) -> str:
     return "\n  ".join(parts)
 
 
-def render_flows(flows: list[Flow]) -> str:
+def render_flows(flows: list[Flow], provisional: bool = False) -> str:
+    """§2 Event Walkthrough を描画する。
+
+    `provisional=True` は `build_provisional_flow()` 由来の暫定フロー（DML 記載順）で、
+    確定フローと見間違えないよう図の上に警告バッジを出す。
+    """
     if not flows:
-        return '<div class="todo-placeholder">フロー未定義</div>'
+        return (
+            '<div class="todo-placeholder">'
+            "フロー未定義 — フェーズ3でイベント（scenarios）を拾うと、"
+            "ここに DML 記載順の暫定フローが描画されます"
+            "</div>"
+        )
 
     # 凡例 + ビュー切替トグル。トグルは checkbox 1 個で、JS が body に
     # `events-only` class を付け外しするだけ（描画自体は CSS が担当）。
@@ -686,6 +750,14 @@ def render_flows(flows: list[Flow]) -> str:
     )
 
     out_parts = [legend]
+    if provisional:
+        out_parts.append(
+            '<div class="provisional-flow-badge">'
+            "⚠ 暫定 — 連鎖未定義。DML の記載順をそのまま時系列として並べています。"
+            "フェーズ4で <code>narratives[].entry</code> と <code>scenarios[].next</code> を"
+            "繋ぐと、分岐とポリシーを含む正式なフローに置き換わります。"
+            "</div>"
+        )
     for flow in flows:
         out_parts.append(render_flow(flow))
     return "\n  ".join(out_parts)
@@ -1864,8 +1936,8 @@ def build_body_html(
 
     decisions_html = ""
     if doc.model is not None:
-        flows = build_flows_from_dml(doc.model, glossary_index)
-        flows_html = render_flows(flows)
+        flows, flows_provisional = select_flows(doc.model, glossary_index)
+        flows_html = render_flows(flows, provisional=flows_provisional)
         agg_cards_html = render_agg_cards_from_dml(doc.model, glossary_index)
         decisions_html = render_decisions(doc.model, glossary_index)
     else:

@@ -90,6 +90,20 @@ python3 .claude/skills/eventstorming-facilitator/scripts/eventstorming_build.py 
    `pivotal: true` の EVT → `.note.pivotal`（⭐ 節目バッジ）
 6. 同じ BC が複数回出現しても同じ grid-row に統合。横幅超過は `overflow-x: auto`
 
+### 5-0b. 暫定フロー（entry 未設定時のフォールバック）
+
+`select_flows()` は確定フローが 1 本も無いとき `build_provisional_flow()` に切り替える。
+フェーズ 3（イベント発見）では `entry`/`next` がまだ無いため、これが無いと §2 が
+「フロー未定義」のままになり、拾ったイベントを図で確認できないため。
+
+- 起点は `narratives[]` ではなく **`scenarios[]` の DML 記載順**。1 本のフローに全 scenario を並べる
+- レーン併合は確定フローと同じ（連続する同一 `ctx` を 1 レーンに）
+- **持たない性質**（連鎖が未定義で判定できないため）: 分岐追跡（`brs[]` は全 evt を並記）・
+  policy 自動挿入・`is_async` の非同期境界マーク
+- 図の上に `.provisional-flow-badge`（⚠ 警告バッジ）を出し、確定フローと区別する
+- `render_flows(flows, provisional=True)` がバッジ描画を担当。flows が空のときの
+  `.todo-placeholder` 文言はフェーズ 3 での暫定描画を案内する
+
 ### 5-1. レイアウト原則
 
 - **時系列 = 横軸（列）**、**BC = 縦軸（行）**
