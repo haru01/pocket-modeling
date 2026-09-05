@@ -19,6 +19,7 @@ BC 散文（contexts[].description）/ リードモデル（queries）も DML �
 from __future__ import annotations
 
 import argparse
+import html
 import re
 import subprocess
 import sys
@@ -605,9 +606,15 @@ def aggregates_from_dml(model: dict) -> list[dict]:
 
 
 def esc(s: str) -> str:
+    """DML 由来の文字列を HTML へ埋め込む前にエスケープする。
+
+    引用符も含めてエスケープする（`html.escape(quote=True)` 相当）。現状の
+    呼び出し箇所はすべてテキストノードだが、将来 `title="..."` などの属性値へ
+    埋め込まれても DML 側の `"` / `'` で属性を抜け出せないようにしておく。
+    """
     if not isinstance(s, str):
         s = str(s)
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return html.escape(s, quote=True)
 
 
 PHASE_DONE_COUNT = {
@@ -1894,29 +1901,35 @@ def render_html(doc: DMLDocument) -> str:
         flags=re.DOTALL,
     )
 
+    # 置換文字列は DML 由来（バックスラッシュを含みうる）なので、必ず callable で渡す。
+    # 文字列で渡すと `\1` `\g<...>` が後方参照として解釈され、ビルドが
+    # `re.error: invalid group reference` で落ちる／出力が壊れる。
+    def _literal(replacement: str):
+        return lambda _m: replacement
+
     # <title>（<head> 内）のプレースホルダーを差し替える
     html = re.sub(
         r"<title>EventStorming — \{\{ドメイン名\}\}</title>",
-        f"<title>EventStorming — {esc(title)}</title>",
+        _literal(f"<title>EventStorming — {esc(title)}</title>"),
         html,
     )
 
     # ヘッダー（テンプレのプレースホルダーを差し替える）
     html = re.sub(
         r"<h1>EventStorming — \{\{ドメイン名\}\}</h1>",
-        f"<h1>EventStorming — {esc(title)}</h1>",
+        _literal(f"<h1>EventStorming — {esc(title)}</h1>"),
         html,
     )
     html = re.sub(
         r"Session:\s*<code>\{\{eventstorming-YYYYMMDD-HHMM\}\}</code>\s*·\s*\n\s*Goal:\s*\{\{ゴール\}\}",
-        f"Session: <code>{esc(session_id)}</code> · Goal: {esc(goal)}",
+        _literal(f"Session: <code>{esc(session_id)}</code> · Goal: {esc(goal)}"),
         html,
     )
 
     body_html = build_body_html(doc, title, session_id, goal, status, phase)
     html = re.sub(
         r"<body>.*?</body>",
-        f"<body>\n{body_html}\n</body>",
+        _literal(f"<body>\n{body_html}\n</body>"),
         html,
         flags=re.DOTALL,
     )
