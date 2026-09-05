@@ -1,0 +1,1686 @@
+# ⚠ This file is managed by dmlctl (.claude/skills/eventstorming-facilitator/scripts/dmlctl.py).
+# AI agents must use `dmlctl view/init/set/add/remove/update` and MUST NOT edit this file directly
+# (PreToolUse hook blocks direct Read/Edit/Write). Humans may edit outside Claude Code.
+
+# =============================================================================
+# DML テンプレート — 新規 EventStorming セッション
+# =============================================================================
+# `dmlctl init <file> --session-id=... --domain=...` がこのテンプレートから
+# session 入りの空 DML を生成する。以降は dmlctl set/add/update で育てる。
+#
+# 全フィールドは optional。空 YAML（{} のみ）でも valid（進行中セッション許容）。
+# HTML（dist/eventstorming/*.html）は本 YAML のみから自動生成される。
+#
+# 各フィールドの書き方の正典：
+#   - 型・必須・enum      → references/dml.schema.yaml（書く前に `dmlctl hint --path=<a.b.c>`）
+#   - 設計判断・モデリングルール → references/ddd-playbook.md（DDD 概念軸の正典）
+#   - 記入済みのフル例    → examples/sample.dml.yaml
+# =============================================================================
+#
+# トップレベルフィールド一覧（記入順の目安 = フェーズ進行順）：
+#
+#   session:      # セッションメタ（id / domain / phase / status / goal / started_at）
+#                 # phase の前進は `dmlctl advance` を使う（enum 検証つき）
+#
+#   narratives:   # 散文＋フロー起点。kind: happy は 1 本（400〜600 字）、
+#                 # kind: alt は複数可（100〜200 字）。entry 指定で §2 フロー図を駆動
+#
+#   domains:      # サブドメイン分類（subs[].type: CORE/SUPPORTING/GENERIC_SUBDOMAIN）
+#
+#   contexts:     # BC 宣言。name / description（散文）/ lang（英→日辞書：
+#                 # aggs/actors/cmds/evts/pols/qrys/vos）/ up / dn / aggs（AGG 名簿）
+#
+#   aggregates:   # AGG 詳細。name / ctx / purpose / background / constraints /
+#                 # states / transitions / attrs / events
+#                 # 生成 CMD は transitions に書かない（ddd-playbook §8「transitions[] の初期化規約」）
+#
+#   scenarios:    # CMD 実行ユースケース。name（日本語・アクター＋行為）/ ctx / actor /
+#                 # cmd / evt|brs / agg / rules / errs / next（フロー連鎖）
+#
+#   policies:     # EVENTUAL-TX 専用。trg（単一）or trgs（join/OR）/ cmd / evt /
+#                 # bulk（true なら qry 必須）/ within（遅延許容 SLA）
+#
+#   decisions:    # 意思決定ログ。topic / chosen / options[]（name/label/why/why_not）/ affects
+#
+#   questions:    # オープンクエスチョン（status: open|closed、closed は decision_id 必須）
+#   actions:      # 次のアクション（done フラグで進捗管理。`dmlctl action` で更新）
+#   queries:      # リードモデル候補（name / ctx / purpose / users / sources / formula)
+#
+# aggregates / policies / scenarios を足したら、所属 BC の contexts[].lang にも
+# 英→日ラベルを同時登録する（漏れは language_coverage チェックが検出）。
+# =============================================================================
+session:
+  id: eventstorming-20260905-1311
+  domain: ミートアップ開催運営
+  phase: '7'
+  status: 完了（フェーズ7）— 構造チェック19観点 clean、意味チェック6観点の指摘を反映済み。未確認事項 Q1〜Q4 は open のまま
+  goal: 主催者が企画から当日受付まで、開催可否と定員をどう判断・運用するかを明らかにする（参加費は無料のみ、開催後の振り返りはスコープ外）
+  started_at: 2026-09-05T13:11
+  html_link: ../../dist/eventstorming/eventstorming-20260905-1311.html
+narratives:
+  - id: happy
+    kind: happy
+    title: ハッピーパス — 企画から当日受付完了まで
+    entry: 主催者がミートアップを企画する
+    prose: "主催者は次のミートアップを企画するところから始める。テーマと開催日の候補、想定人数を決めて下書きを作り、\n候補日に空いている会場を探して仮押さえする。会場が押さえられたら、その会場の収容人数を上限として定員と\n最少催行人数を決め、募集を公開する。\n\n公開されたミートアップには参加者が申し込む。空席がある限り申込はその場で参加確定となり、参加者には\n参加確定が伝わる。申込が最少催行人数に達したら、主催者は開催を確定する。開催が確定した時点で、\n仮押さえだった会場は本予約に切り替わり、確定済みの参加者全員に開催確定が通知される。ここから先は\n主催者が気軽に日程や会場を変えられない状態になる。\n\n開催日当日、主催者は会場で受付を開始する。参加者は受付を済ませ、出席として記録される。開始時刻を過ぎて\n主催者が受付を締め切ると、受付されなかった参加者は欠席として記録される。最後に主催者がミートアップを\n開催完了として締め、当日の出欠が確定した名簿が残る。\n"
+  - id: alt-waitlist
+    kind: alt
+    title: 代替シナリオ — 満席でキャンセル待ちから繰り上がる
+    entry: 参加者がミートアップに申し込む
+    prose: 定員が埋まったあとに申し込むと、参加確定ではなくキャンセル待ちとして受け付けられる。先に参加確定していた誰かが申込を取り消すと空席が生まれ、キャンセル待ちの先頭の参加者が自動的に繰り上げられて参加確定になる。繰り上がった参加者にはその旨が通知される。受付開始後は繰り上げを行わない。
+  - id: alt-undersubscribed
+    kind: alt
+    title: 代替シナリオ — 最少催行人数に届かず中止する
+    entry: 主催者がミートアップを中止する
+    prose: 募集締切の時点で申込が最少催行人数に届かなかった場合、主催者はミートアップを中止する。中止すると、仮押さえしていた会場は解放され、申込済みの参加者は全員キャンセル扱いになり、中止が通知される。開催確定後の中止も同じ扱いだが、本予約済みの会場を解放するため主催者の負担は大きい。
+  - id: alt-venue-unavailable
+    kind: alt
+    title: 代替シナリオ — 会場が押さえられず日程を組み直す
+    entry: 主催者が会場を仮押さえする
+    prose: 候補日に空いている会場が見つからない、または仮押さえの期限内に会場側の承諾が得られなかった場合、仮押さえは失効する。ミートアップは下書きのまま募集を公開できず、主催者は開催日か会場の候補を変えて仮押さえをやり直す。
+scenarios:
+  - name: 主催者がミートアップを企画する
+    ctx: meetup-hosting
+    actor: Organizer
+    cmd: DraftMeetup
+    evt: MeetupDrafted
+    agg: Meetup
+    next: 主催者が会場を仮押さえする
+  - name: 主催者が会場を仮押さえする
+    ctx: venue-booking
+    actor: Organizer
+    cmd: RequestVenueHold
+    agg: VenueBooking
+    brMode: exclusive
+    brs:
+      - cond: 候補日にその会場が空いている
+        evt: VenueHeld
+        next: 主催者が募集を公開する
+      - cond: 候補日と枠が重なる押さえがすでに存在する
+        evt: VenueHoldRejected
+        terminal: alt-venue-unavailable
+    qry:
+      - VenueAvailability
+    errs:
+      - cond: 候補日と枠が重なる押さえがすでに存在する
+        err: VenueUnavailable
+        when: 人気の会場を他の主催者と取り合ったとき
+    rules:
+      - rule: a meetup must not hold more than one live venue hold
+        why: 同じ回で二つの会場を押さえたままにすると、片方を解放し忘れて他の主催者から会場を奪ったままになる。
+        note: ミートアップ単位でしか判定できない制約（Q4）
+      - rule: a venue hold must carry a deadline
+        why: 期限の無い押さえは、会場側から見れば無期限の空き潰しになる。押さえたまま忘れられることを防ぐ。
+  - name: 主催者が募集を公開する
+    ctx: meetup-hosting
+    actor: Organizer
+    cmd: PublishMeetup
+    evt: MeetupPublished
+    agg: Meetup
+    pivotal: true
+    next: 参加者がミートアップに申し込む
+    rules:
+      - rule: capacity must not exceed the held venue capacity
+        why: 会場に入りきらない人数を受け付けると、当日入れない参加者が出る。会場の収容人数が定員の天井になる。
+      - rule: minimumAttendees must be less than or equal to capacity
+        why: 開催の下限が上限を超えていると、どうやっても開催できない募集になってしまう。
+      - rule: meetup must have a live venue hold before publishing
+        why: 会場が取れていないのに募集をかけると、あとで日程ごと作り直すことになり参加者の予定を二度壊す。
+    errs:
+      - cond: 会場の仮押さえが無い、または失効している
+        err: VenueHoldNotAlive
+        when: 会場探しより先に告知を出そうとしたとき、または仮押さえ期限を過ぎたまま公開しようとしたとき
+      - cond: 定員が会場の収容人数を超えている
+        err: CapacityExceedsVenueCapacity
+        when: 前回より広い会場を想定したまま定員だけ先に決めていたとき
+      - cond: すでに募集中または開催確定である
+        err: MeetupAlreadyPublished
+        when: 公開後に内容を直して再公開しようとしたとき
+  - name: 参加者がミートアップに申し込む
+    ctx: registration
+    actor: Member
+    cmd: ApplyForMeetup
+    agg: Registration
+    brMode: exclusive
+    brs:
+      - cond: 確定済み申込が定員に達していない
+        evt: RegistrationConfirmed
+        next: 主催者がミートアップの開催を確定する
+      - cond: 確定済み申込が定員に達している
+        evt: RegistrationWaitlisted
+        next: 参加者が申込を取り消す
+    qry:
+      - MeetupCapacityStatus
+    rules:
+      - rule: confirmed registrations must never exceed the meetup capacity
+        why: 定員は会場に入れる人数そのものなので、一件でも超えると当日に立ち見か門前払いが発生する。
+        note: 定員という数字は Meetup が持ち、席の配分は Registration が担うため、この不変条件は 2 つの集約にまたがる。守り方は D7 で決めた。
+      - rule: a member must not hold more than one live registration per meetup
+        why: 同じ人が二重に席を取ると、待っている人の順番が不当に後ろへ押しやられる。
+      - rule: applications must not be accepted outside the published period
+        why: 締切後の申込を受けると、主催者が確定した人数の上に後から人が乗ることになり開催の準備がやり直しになる。
+    errs:
+      - cond: ミートアップが募集中でない
+        err: MeetupNotOpenForApplication
+        when: 中止されたミートアップのリンクを SNS 経由で踏んだとき
+      - cond: 同じ参加者の生きた申込がすでにある
+        err: DuplicateRegistration
+        when: 申込完了メールに気づかず二度申し込んだとき
+      - cond: 募集締切を過ぎている
+        err: ApplicationDeadlinePassed
+        when: 締切当日の夜に思い立って申し込もうとしたとき
+  - name: 参加者が申込を取り消す
+    ctx: registration
+    actor: Member
+    cmd: CancelRegistration
+    evt: RegistrationCancelled
+    agg: Registration
+    rules:
+      - rule: cancellations must not be accepted after the cancellation deadline
+        why: 締切を過ぎた取消は繰り上げが間に合わず、席が空いたという記録だけが残って会場には空席ができる。参加者にも「いつまでなら降りられるか」がはっきり伝わる。
+        note: 以前は「受付が始まっていないこと」を条件にしていたが、当日受付という別の文脈の状態に依存してしまうため、ミートアップが持つ時刻で判断する形にした（D8）
+    errs:
+      - cond: 取消締切を過ぎている
+        err: CancellationDeadlinePassed
+        when: 当日の朝に行けなくなったと気づいたとき
+      - cond: 申込がすでに取消済みまたは無効化済み
+        err: RegistrationNotCancellable
+        when: 中止済みのミートアップの申込を取り消そうとしたとき
+  - name: 主催者がミートアップの開催を確定する
+    ctx: meetup-hosting
+    actor: Organizer
+    cmd: ConfirmMeetup
+    agg: Meetup
+    pivotal: true
+    qry:
+      - MeetupCapacityStatus
+    rules:
+      - rule: confirmed registrations must reach minimumAttendees
+        why: 人が集まらないまま開催すると、来てくれた数人にも主催者にも割に合わない会になる。最少催行人数は「やる価値がある」の線引きそのもの。
+      - rule: the venue hold must still be alive at confirmation time
+        why: 仮押さえが失効したまま開催確定を告知すると、会場のない確定という最悪の状態になる。
+    errs:
+      - cond: 確定済み申込が最少催行人数に届かない
+        err: BelowMinimumAttendees
+        when: 締切間際になっても人数が集まらなかったとき
+      - cond: 会場の仮押さえが失効している
+        err: VenueHoldNotAlive
+        when: 人数は集まったが会場側の返事を待つうちに期限を過ぎていたとき
+      - cond: すでに開催確定または中止済み
+        err: MeetupNotConfirmable
+        when: 確定通知が届いたか不安で二度確定操作をしたとき
+    brMode: exclusive
+    brs:
+      - cond: 確定済み申込が最少催行人数に達している
+        evt: MeetupConfirmed
+        next: システムが会場を本予約に切り替える
+      - cond: 募集締切を過ぎても最少催行人数に届かない
+        evt: MinimumAttendeesNotMet
+        next: 主催者がミートアップを中止する
+        note: 開催確定は成立せず、人数が足りないという事実だけが残る。主催者はこれを見て中止を判断する
+  - name: 主催者がミートアップを中止する
+    ctx: meetup-hosting
+    actor: Organizer
+    cmd: CancelMeetup
+    evt: MeetupCancelled
+    agg: Meetup
+    rules:
+      - rule: cancellation must not be applied to a meetup that is already held
+        why: 開催してしまった事実は取り消せない。当日の出欠が残っているミートアップを中止に戻せると、参加した人の記録が宙に浮く。
+        note: 逆に開催確定後でも中止できる道は残す。会場が使えなくなる事情は確定後にも起きるため
+      - rule: cancellation must not be applied twice
+        why: 二度目の中止で参加者に同じ知らせがもう一度届き、別の回まで中止になったのかと混乱させる。
+    errs:
+      - cond: すでに開催完了している
+        err: MeetupAlreadyHeld
+        when: 前回の回と間違えて中止操作をしたとき
+      - cond: すでに中止済み
+        err: MeetupAlreadyCancelled
+        when: 中止を伝えたか不安になって二度操作したとき
+    next: システムが中止に伴い会場を手放す
+  - name: 主催者が当日の受付を開始する
+    ctx: check-in
+    actor: Organizer
+    cmd: OpenCheckIn
+    evt: CheckInOpened
+    agg: AttendanceSheet
+    next: 参加者が会場で受付する
+    rules:
+      - rule: check-in must not be opened for a meetup that is not confirmed
+        why: 開催が確定していないミートアップの受付を開けると、参加者の一覧が確定しないまま出欠を取ることになる。
+      - rule: check-in must not be opened twice
+        why: 開いた時刻が上書きされると、実際に何時から受付を始めたのかが記録から消える。
+    errs:
+      - cond: ミートアップが開催確定でない
+        err: MeetupNotConfirmed
+        when: 中止したミートアップの画面を当日そのまま開いてしまったとき
+      - cond: すでに受付が開始されている
+        err: CheckInAlreadyOpened
+        when: 会場の電波が悪く、開始操作が通ったか分からず二度押したとき
+  - name: 参加者が会場で受付する
+    ctx: check-in
+    actor: Member
+    cmd: CheckInAttendee
+    evt: AttendeeCheckedIn
+    agg: AttendanceSheet
+    next: 主催者が受付を締め切る
+    qry:
+      - NotCheckedInAttendees
+    rules:
+      - rule: only confirmed attendees can be checked in
+        why: キャンセル待ちのまま来た人を受付に通すと、定員を超えた人数が会場に入る。
+      - rule: an attendee cannot be checked in twice
+        why: 出席者数が実際より多く見え、次回の会場選びを誤らせる。
+    errs:
+      - cond: 受付が開始されていない
+        err: CheckInNotOpen
+        when: 開場前に着いた参加者がその場で受付を試したとき
+      - cond: 参加確定者でない
+        err: NotConfirmedAttendee
+        when: キャンセル待ちのまま当日会場に来たとき
+      - cond: すでに受付済み
+        err: AlreadyCheckedIn
+        when: 一度外に出た参加者が戻ってきて再度受付したとき
+  - name: 主催者が受付を締め切る
+    ctx: check-in
+    actor: Organizer
+    cmd: CloseCheckIn
+    evt: CheckInClosed
+    agg: AttendanceSheet
+    next: 主催者がミートアップを開催完了する
+    errs:
+      - cond: 受付が開始されていない
+        err: CheckInNotOpen
+        when: 受付を開く前に締切ボタンに触れてしまったとき
+      - cond: すでに受付が締め切られている
+        err: CheckInAlreadyClosed
+        when: 通信が不安定で締切操作を二度送ってしまったとき
+    rules:
+      - rule: check-in must not be closed twice
+        why: 二度目の締切を許すと、一度確定した出欠の上に「まだ受付中だった」という記録が重なり、名簿がどの時点の事実か分からなくなる。
+  - name: 主催者がミートアップを開催完了する
+    ctx: meetup-hosting
+    actor: Organizer
+    cmd: CloseMeetup
+    evt: MeetupHeld
+    agg: Meetup
+    pivotal: true
+    rules:
+      - rule: a meetup must not be closed before check-in is closed
+        why: 出欠が固まる前に締めると、あとから来た人の記録が残せず名簿が実態と食い違う。
+    errs:
+      - cond: 受付がまだ締め切られていない
+        err: CheckInNotClosed
+        when: 懇親会に流れたまま受付を開いたことを忘れ、翌日まとめて締めようとしたとき
+  - name: システムが仮押さえの期限切れを検知する
+    ctx: venue-booking
+    actor: System
+    cmd: ExpireVenueHold
+    evt: VenueHoldExpired
+    agg: VenueBooking
+    note: Q2 が未決のため仮置き。時刻での自動検知を前提にしている。主催者が気づいた時点で失効させる運用なら actor は Organizer になる。
+    rules:
+      - rule: an expired hold must not be treated as a live hold
+        why: 失効した押さえを生きているものとして扱うと、会場の無いミートアップの募集が続き、参加者が集まるほど傷が深くなる。
+  - name: システムが中止に伴い会場を手放す
+    ctx: venue-booking
+    actor: System
+    cmd: ReleaseVenue
+    agg: VenueBooking
+    brMode: exclusive
+    brs:
+      - cond: まだ仮押さえのままである
+        evt: VenueHoldReleased
+        note: 会場側への連絡は不要か軽い
+      - cond: すでに本予約になっている
+        evt: VenueBookingCancelled
+        note: 会場側にキャンセル連絡が必要で、キャンセル料が発生することもある
+    rules:
+      - rule: a venue must be released whenever its meetup is cancelled
+        why: 会場を握ったまま中止にすると、その枠は誰にも使われないまま消える。会場提供者との信頼にも関わる。
+  - name: システムが会場を本予約に切り替える
+    ctx: venue-booking
+    actor: System
+    cmd: ConfirmVenueBooking
+    agg: VenueBooking
+    brMode: exclusive
+    brs:
+      - cond: 仮押さえが生きていて会場側が本予約を受け付ける
+        evt: VenueBookingConfirmed
+        next: 主催者が当日の受付を開始する
+      - cond: 仮押さえが失効している、または会場側に断られた
+        evt: VenueBookingRejected
+        next: 主催者がミートアップを中止する
+        note: 開催確定済みなのに会場が無いという最も痛い状態。参加者にはまだ確定を伝えていないので、中止に倒して伝え直す
+    rules:
+      - rule: a booking must not be confirmed on an expired or released hold
+        why: 失効した押さえの上に本予約を重ねると、会場側では空いている枠に、こちらだけが予約済みだと思い込む。
+    errs:
+      - cond: 仮押さえがすでに失効している
+        err: VenueHoldNotAlive
+        when: 開催確定が期限ぎりぎりで、切り替えの直前に期限を過ぎたとき
+      - cond: 会場側が本予約を断った
+        err: VenueBookingRefusedByVenue
+        when: 会場の都合が押さえたあとに変わったとき
+  - name: システムがキャンセル待ちを繰り上げる
+    ctx: registration
+    actor: System
+    qry:
+      - WaitlistHead
+    cmd: PromoteWaitlistedRegistration
+    evt: RegistrationPromoted
+    agg: Registration
+    rules:
+      - rule: promotion must not happen after the cancellation deadline
+        why: 締切後に繰り上げても、繰り上がった本人が予定を空けられず結局来られない。空席を埋める効果が無いまま期待だけ持たせることになる。
+      - rule: promotion must follow the waitlist order
+        why: 順番を飛ばすと先着順という約束が崩れ、待っている人が納得できなくなる。
+    errs:
+      - cond: 取消締切を過ぎている
+        err: PromotionDeadlinePassed
+        when: 締切後の中止に伴う無効化が走ったとき
+      - cond: キャンセル待ちが一人もいない
+        err: NoWaitlistedRegistration
+        when: 定員に余裕があるまま誰かが取り消したとき
+  - name: システムが繰り上がった参加者を名簿に載せる
+    ctx: check-in
+    actor: System
+    cmd: EnrollAttendeeOnSheet
+    evt: AttendeeAddedToSheet
+    agg: AttendanceSheet
+    rules:
+      - rule: an attendee must not be enrolled on a sheet that has been closed
+        why: 締め切った名簿に後から人を足すと、その日の出欠という確定した事実が後で書き換わる。
+    errs:
+      - cond: 名簿がまだ用意されていない
+        err: AttendanceSheetNotPrepared
+        when: 開催確定より前に繰り上げが起きたとき
+      - cond: すでに受付が締め切られている
+        err: AttendanceSheetAlreadyClosed
+  - name: システムが取り消した参加者を名簿から外す
+    ctx: check-in
+    actor: System
+    cmd: DropAttendeeFromSheet
+    evt: AttendeeDroppedFromSheet
+    agg: AttendanceSheet
+    rules:
+      - rule: an attendee must not be dropped from a sheet that has been closed
+        why: 締切後に名簿から人を消すと、当日その人が来ていた事実まで消える。
+    errs:
+      - cond: 名簿がまだ用意されていない
+        err: AttendanceSheetNotPrepared
+        when: 開催確定より前に取消が起きたとき（大半の取消はこちら）
+      - cond: すでに受付が締め切られている
+        err: AttendanceSheetAlreadyClosed
+contexts:
+  - name: meetup-hosting
+    label_ja: 開催管理
+    aggs:
+      - Meetup
+    lang:
+      aggs:
+        Meetup: ミートアップ（一回の開催そのもの）
+      actors:
+        Organizer: 主催者
+      cmds:
+        DraftMeetup: ミートアップを企画する
+        PublishMeetup: 募集を公開する
+        ConfirmMeetup: 開催を確定する
+        CancelMeetup: 開催を中止する
+        CloseMeetup: 開催完了として締める
+        SuspendMeetupPublication: 募集を一時停止する
+      evts:
+        MeetupDrafted: ミートアップが下書きされた
+        MeetupPublished: 募集が公開された
+        MeetupConfirmed: 開催が確定した
+        MeetupCancelled: 開催が中止された
+        MeetupHeld: 開催が完了した
+        MinimumAttendeesNotMet: 最少催行人数に届かなかった
+        MeetupPublicationSuspended: 募集が一時停止された
+      vos:
+        Capacity: 定員（会場の収容人数を超えない申込上限）
+        MinimumAttendees: 最少催行人数（これを下回ると開催しない）
+        MeetupSchedule: 開催日時（開始・終了）
+        CancellationDeadline: 取消締切（これを過ぎると参加者は降りられない）
+      states:
+        DRAFT: 下書き（主催者だけが見える）
+        PUBLISHED: 募集中（申込を受け付けている）
+        CONFIRMED: 開催確定（日程・会場を動かさない）
+        CANCELLED: 中止
+        HELD: 開催済み
+        SUSPENDED: 募集停止中（会場を失い、申込を受け付けていない）
+      qrys:
+        MeetupCapacityStatus: 定員に対する申込状況
+      pols:
+        SuspendPublicationOnVenueHoldExpired: 会場を失ったら募集を止める
+    up:
+      - ctx: venue-booking
+        rel: Customer-Supplier
+        roles:
+          - D
+          - C
+        prRoles:
+          - U
+          - S
+        note: 会場が押さえられて初めて定員を決められる。収容人数という制約を会場側から受け取る。
+    dn:
+      - ctx: registration
+        rel: Customer-Supplier
+        roles:
+          - U
+          - S
+        prRoles:
+          - D
+          - C
+        note: 募集中かどうか・定員がいくつかは開催管理が決め、申込側はそれに従う。
+      - ctx: check-in
+        rel: Customer-Supplier
+        roles:
+          - U
+          - S
+        prRoles:
+          - D
+          - C
+      - ctx: notification
+        rel: Customer-Supplier
+        roles:
+          - U
+          - S
+        prRoles:
+          - D
+          - CF
+    description: "**一回の開催そのもの**を扱う。テーマ・日時・定員・最少催行人数を決め、募集を公開し、開催するかどうかを決め、最後に開催完了として締めるまでを持つ。\n\n- **境界の理由**: 「このミートアップを開催するか」という判断は主催者だけのものであり、申込の増減や当日の受付の都合で揺らしたくない。判断の材料は他の文脈から受け取るが、決めるのはここに閉じる。\n- **含むシナリオ**: 企画する / 募集を公開する / 開催を確定する / 中止する / 開催完了する\n- **目的**: 主催者が「開催する・しない」を、根拠を持って一度だけ決められるようにする\n- **制約**: 定員は会場の収容人数を超えられない。開催確定後は日時と会場を変更できない\n"
+    sub: hosting
+    note: MeetupCapacityStatus は registration が持つリードモデルを開催可否の判断材料として参照しているもので、この BC が所有する読み取りモデルではない（D3・D7）。
+  - name: venue-booking
+    label_ja: 会場手配
+    aggs:
+      - VenueBooking
+    lang:
+      aggs:
+        VenueBooking: 会場予約（一つのミートアップに対する一件の押さえ）
+      actors:
+        Organizer: 主催者
+        System: システム
+      cmds:
+        RequestVenueHold: 会場を仮押さえする
+        ConfirmVenueBooking: 会場を本予約に切り替える
+        ExpireVenueHold: 仮押さえを失効させる
+        ReleaseVenue: 会場を手放す（解放またはキャンセル）
+      evts:
+        VenueHeld: 会場が仮押さえされた
+        VenueHoldExpired: 仮押さえが失効した
+        VenueBookingConfirmed: 会場が本予約になった
+        VenueHoldReleased: 会場の押さえが解放された
+        VenueHoldRejected: 会場を押さえられなかった
+        VenueBookingCancelled: 本予約がキャンセルされた
+        VenueBookingRejected: 本予約に切り替えられなかった
+      vos:
+        HoldDeadline: 仮押さえ期限（この日までに本予約しないと失効する）
+        VenueCapacity: 会場の収容人数
+      states:
+        TENTATIVE: 仮押さえ（他の予定に押し出されうる）
+        BOOKED: 本予約（会場が確定した）
+        RELEASED: 解放済み
+        EXPIRED: 失効
+        CANCELLED: 本予約をキャンセル済み
+      pols:
+        BookVenueOnMeetupConfirmed: 開催確定に合わせて本予約に切り替える
+        ReleaseVenueOnMeetupCancelled: 中止に合わせて会場を手放す
+      qrys:
+        VenueAvailability: 候補日ごとの会場の空き状況
+    up: []
+    dn:
+      - ctx: meetup-hosting
+        rel: Customer-Supplier
+        roles:
+          - U
+          - S
+        prRoles:
+          - D
+          - C
+    description: "会場を**押さえる**ことだけを扱う。仮押さえと本予約という二段構えを持ち、押さえた会場の収容人数を開催管理に渡す。\n\n- **境界の理由**: 会場側の都合（期限、他予約との競合）はミートアップの都合とは別のリズムで動く。仮押さえが失効しても、ミートアップ自体は下書きとして生き残る必要がある。\n- **含むシナリオ**: 会場を仮押さえする / 開催確定に合わせて本予約する / 中止に合わせて解放する\n- **目的**: 開催が確定するまで会場を仮に確保しつつ、確定した瞬間に取りこぼさず本予約へ切り替える\n- **制約**: 仮押さえには期限がある。期限を過ぎた仮押さえは自動的に失効する\n"
+    sub: venue-arrangement
+  - name: registration
+    label_ja: 参加申込
+    aggs:
+      - Registration
+    lang:
+      aggs:
+        Registration: 参加申込（参加者一人ぶんの一件）
+      actors:
+        Member: 参加者
+      cmds:
+        ApplyForMeetup: ミートアップに申し込む
+        CancelRegistration: 申込を取り消す
+        PromoteWaitlistedRegistration: キャンセル待ちを繰り上げる
+        RevokeRegistration: 中止に伴って申込を無効にする
+      evts:
+        RegistrationConfirmed: 参加が確定した
+        RegistrationWaitlisted: キャンセル待ちになった
+        RegistrationCancelled: 申込が取り消された
+        RegistrationPromoted: キャンセル待ちから繰り上がった
+        RegistrationRevoked: 中止に伴って申込が無効になった
+      vos:
+        WaitlistPosition: キャンセル待ちの順番
+      states:
+        CONFIRMED: 参加確定
+        WAITLISTED: キャンセル待ち
+        CANCELLED: 参加者の意思で取消
+        REVOKED: 中止に伴い無効
+      pols:
+        PromoteWaitlistOnCancellation: 取消が出たらキャンセル待ちを繰り上げる
+        RevokeRegistrationsOnMeetupCancelled: 中止が決まったら申込を一括で無効にする
+      qrys:
+        WaitlistHead: キャンセル待ちの先頭一件
+        LiveRegistrationsOfMeetup: そのミートアップの生きている申込一覧
+        MeetupCapacityStatus: 定員に対する申込状況
+    up:
+      - ctx: meetup-hosting
+        rel: Customer-Supplier
+        roles:
+          - D
+          - C
+        prRoles:
+          - U
+          - S
+    dn:
+      - ctx: check-in
+        rel: Customer-Supplier
+        roles:
+          - U
+          - S
+        prRoles:
+          - D
+          - C
+        note: 当日の受付名簿は参加確定者の一覧から作られる。
+      - ctx: notification
+        rel: Customer-Supplier
+        roles:
+          - U
+          - S
+        prRoles:
+          - D
+          - CF
+    description: "参加者一人ぶんの**申込**を扱う。定員に対して確定にするかキャンセル待ちにするかを判断し、取消が出たら繰り上げる。\n\n- **境界の理由**: 定員のさばき方（誰が確定で誰が待ちか）は申込の順序という固有の秩序を持つ。開催管理がこの順序まで抱えると、開催可否の判断と席の奪い合いが同じ場所で混ざる。\n- **含むシナリオ**: 申し込む / 取り消す / キャンセル待ちを繰り上げる / 中止に伴って一括で無効にする\n- **目的**: 先着順の公平さを保ったまま、空席をできるだけ埋める\n- **制約**: 確定済み申込は定員を超えない。受付が始まったあとは繰り上げない\n"
+    sub: seat-allocation
+    note: state の CONFIRMED は「参加が確定した」の意味で、meetup-hosting の CONFIRMED（開催が確定した）とは別物。どちらも業務でそう呼ばれている言葉なので統一せず、lang.states のラベルで読み分ける。
+  - name: check-in
+    label_ja: 当日受付
+    aggs:
+      - AttendanceSheet
+    lang:
+      aggs:
+        AttendanceSheet: 出欠簿（当日の受付名簿そのもの）
+      actors:
+        Organizer: 主催者
+        Member: 参加者
+      cmds:
+        OpenCheckIn: 受付を開始する
+        CheckInAttendee: 参加者を受付する
+        CloseCheckIn: 受付を締め切る
+        MarkNoShow: 未受付を欠席として記録する
+        PrepareAttendanceSheet: 受付名簿を用意する
+        EnrollAttendeeOnSheet: 繰り上がった参加者を名簿に載せる
+        DropAttendeeFromSheet: 取り消した参加者を名簿から外す
+      evts:
+        CheckInOpened: 受付が開始された
+        AttendeeCheckedIn: 参加者が受付された
+        CheckInClosed: 受付が締め切られた
+        AttendeeMarkedNoShow: 参加者が欠席として記録された
+        AttendanceSheetPrepared: 受付名簿が用意された
+        AttendeeAddedToSheet: 参加者が名簿に加わった
+        AttendeeDroppedFromSheet: 参加者が名簿から外れた
+      states:
+        PREPARED: 受付前（名簿は用意済み）
+        OPEN: 受付中
+        CLOSED: 締切済み（出欠が確定した）
+      pols:
+        MarkNoShowOnCheckInClosed: 受付締切時に未受付を欠席にする
+        PrepareSheetOnMeetupConfirmed: 開催確定に合わせて受付名簿を起こす
+        AddPromotedAttendeeToSheet: 繰り上げに合わせて名簿に加える
+        DropAttendeeFromSheetOnCancellation: 取消に合わせて名簿から外す
+      qrys:
+        NotCheckedInAttendees: まだ受付していない参加確定者の一覧
+        CheckInProgress: 当日の受付進捗
+    up:
+      - ctx: meetup-hosting
+        rel: Customer-Supplier
+        roles:
+          - D
+          - C
+        prRoles:
+          - U
+          - S
+      - ctx: registration
+        rel: Customer-Supplier
+        roles:
+          - D
+          - C
+        prRoles:
+          - U
+          - S
+    dn: []
+    description: "開催日当日の**出欠**だけを扱う。参加確定者の一覧から受付名簿を作り、受付された人を出席、されなかった人を欠席として記録する。\n\n- **境界の理由**: 当日の受付は開催日という短い時間に集中し、会場の電波状況など運用の制約も他と違う。申込の増減とは切り離して、その日の事実だけを記録したい。\n- **含むシナリオ**: 受付を開始する / 参加者を受付する / 受付を締め切る / 未受付を欠席にする\n- **目的**: 主催者が当日「誰が来たか」を迷わず記録し、締切後に名簿を確定できるようにする\n- **制約**: 受付できるのは参加確定者だけ。締切後は出欠を変更しない\n"
+    sub: attendance
+  - name: notification
+    label_ja: 通知
+    aggs: []
+    lang:
+      actors: {}
+      cmds:
+        SendMeetupNotice: 参加者にミートアップの知らせを送る
+        SendOrganizerAlert: 主催者に至急の知らせを送る
+      evts:
+        MeetupConfirmationNoticeSent: 開催確定の知らせが送られた
+        MeetupCancellationNoticeSent: 中止の知らせが送られた
+        OrganizerAlertSent: 主催者に至急の知らせが送られた
+      vos:
+        NoticeKind: 知らせの種類（開催確定・中止・繰上）
+      pols:
+        NotifyAttendeesOnMeetupConfirmed: 開催確定を参加者に知らせる
+        NotifyAttendeesOnMeetupCancelled: 中止を参加者に知らせる
+        AlertOrganizerOnVenueLost: 会場を失ったら主催者に知らせる
+    up:
+      - ctx: meetup-hosting
+        rel: Conformist
+        roles:
+          - D
+          - CF
+        prRoles:
+          - U
+          - S
+      - ctx: registration
+        rel: Conformist
+        roles:
+          - D
+          - CF
+        prRoles:
+          - U
+          - S
+    dn: []
+    description: "参加者への**お知らせ**を送るだけの文脈。開催確定・中止・繰上といった出来事を受けて、対象の参加者に通知する。\n\n- **境界の理由**: 通知は業務の判断を一切持たない。他の文脈の言葉をそのまま受け取って送るだけなので、独立させて差し替え可能にしておく。\n- **含むシナリオ**: 開催確定を知らせる / 中止を知らせる\n- **目的**: 主催者が個別連絡をしなくても、参加者が予定を判断できる状態にする\n- **制約**: 送信の成否は業務の進行を止めない（届かなくても開催は成立する）\n"
+    sub: messaging
+decisions:
+  - id: D1
+    topic: 参加費を扱うかどうか
+    chosen: free-only
+    options:
+      - name: free-only
+        label: 無料のみ
+        adopted: true
+        why: 今回の関心は主催者側の開催運営（開催するかどうかの判断と定員のさばき方）にある。参加費を入れると「申し込んだ」と「払った」が別々の状態になり、未払いの扱いや返金という別の業務が中心に居座ってしまうため、無料に固定して開催可否と定員の判断に集中させた。
+      - name: paid-supported
+        label: 有料も扱う
+        why_not: 当日受付でも支払済みかどうかを見る必要が出て、受付の話が会計の話に変わる。今回のスコープ（企画〜当日）では主催者の痛みの中心ではない。
+    affects:
+      - Registration
+      - AttendanceSheet
+      - registration
+      - check-in
+    note: 有料化する場合は payment を別 BC として足し、Registration に「支払済み」の状態を持ち込まず参照で解決する方針で再検討する。
+  - id: D2
+    topic: 節目イベントをどこに置くか
+    chosen: publish-confirm-hold
+    options:
+      - name: publish-confirm-hold
+        label: 募集公開／開催確定／開催完了の3つ
+        adopted: true
+        why: この3つの前後で「主催者が何を自由に変えられるか」が変わる。公開前は何でも直せる、公開後は参加者との約束が生まれる、開催確定後は日程と会場を動かせない。関係者の可逆性が変わる点が業務上の節目である。
+      - name: draft-and-held
+        label: 企画と開催完了の2つ
+        why_not: 一番緊張する「開催するかどうかを決める瞬間」が節目として現れず、タイムラインが平坦になる。
+    affects:
+      - Meetup
+      - BookVenueOnMeetupConfirmed
+      - PrepareSheetOnMeetupConfirmed
+      - NotifyAttendeesOnMeetupConfirmed
+      - meetup-hosting
+      - venue-booking
+      - check-in
+      - notification
+  - id: D3
+    topic: 開催管理と参加申込を分けるかどうか
+    chosen: split-hosting-and-registration
+    options:
+      - name: split-hosting-and-registration
+        label: 開催管理と参加申込を別の文脈に分ける
+        adopted: true
+        why: 主催者が「開催するか」を決めるリズムと、参加者の申込が入れ替わるリズムがまるで違う。ひとつにすると、キャンセル待ちの繰り上げのたびにミートアップ本体を触ることになり、開催確定という一度きりの判断が席の出入りに巻き込まれる。
+      - name: single-meetup-aggregate
+        label: ミートアップ一つに申込も抱えさせる
+        why_not: 申込が数百件になると、一人の取消のたびにミートアップ全体を書き換える形になり、同時に申し込む人どうしがぶつかる。定員チェックは楽になるが、その代償が大きい。
+    affects:
+      - Meetup
+      - Registration
+      - meetup-hosting
+      - registration
+    note: 定員超過を防ぐ責任は registration 側に残る。Meetup は定員という数字だけを供給し、席の配分には関与しない。
+  - id: D4
+    topic: キャンセル待ちの繰り上げを自動でやるか主催者の操作にするか
+    chosen: auto-promote
+    options:
+      - name: auto-promote
+        label: 取消が出たら自動で先頭を繰り上げる
+        adopted: true
+        why: 空席が出た瞬間から埋まるまでの時間がそのまま参加機会の損失になる。主催者は日中働いていて即応できないので、待っている人にとっては自動のほうが公平で速い。
+      - name: manual-promote
+        label: 主催者が選んで繰り上げる
+        why_not: 主催者に「誰を入れるか」の裁量が生まれ、先着順という約束が崩れる。運営の手間も増える。
+    affects:
+      - Registration
+      - PromoteWaitlistOnCancellation
+      - AddPromotedAttendeeToSheet
+      - registration
+      - check-in
+    note: 受付開始後は繰り上げない。当日その場にいない人を確定にしても席は埋まらないため。
+  - id: D5
+    topic: 中止に伴う申込の無効化を通常の取消と同じ扱いにするか
+    chosen: separate-revoked-state
+    options:
+      - name: separate-revoked-state
+        label: 中止由来は別の状態（無効）と別のイベントにする
+        adopted: true
+        why: 中止で全件を取り消すと、その取消一件ごとに繰り上げが走り、消えていく席へ次々と人を繰り上げるという無意味な動きが起きる。参加者から見ても「自分で降りた」のか「中止された」のかは別の出来事で、通知の文面も変わる。
+      - name: reuse-cancelled
+        label: 通常の取消と同じイベントで表す
+        why_not: モデルは小さくなるが、繰り上げポリシーに「ミートアップが中止でないとき」という外部の状態を見る条件が必要になり、参加申込の判断が開催管理の状態に依存してしまう。
+    affects:
+      - Registration
+      - PromoteWaitlistOnCancellation
+      - RevokeRegistrationsOnMeetupCancelled
+      - NotifyAttendeesOnMeetupCancelled
+      - registration
+      - notification
+  - id: D6
+    topic: 当日の出欠を申込に持たせるか別の集約にするか
+    chosen: attendance-sheet
+    options:
+      - name: attendance-sheet
+        label: 出欠簿を当日受付の集約として独立させる
+        adopted: true
+        why: 当日の受付は「その日の名簿」という一枚の紙として扱うのが主催者の実感に近い。受付の締切という一度きりの操作で名簿全体を確定でき、締切後に出欠が動かないことを一箇所で守れる。
+      - name: attendance-on-registration
+        label: 申込に出席フラグを持たせる
+        why_not: 受付の締切という「全員まとめて確定する」操作の置き場所がなくなり、未受付を欠席にする処理が申込一件ずつの都合に散らばる。
+    affects:
+      - AttendanceSheet
+      - Registration
+      - PrepareSheetOnMeetupConfirmed
+      - AddPromotedAttendeeToSheet
+      - DropAttendeeFromSheetOnCancellation
+      - check-in
+      - registration
+    note: 出欠簿は参加確定者の一覧から作られるコピーであり、締切後は申込側の変化を追わない。
+  - id: D7
+    topic: 定員を超えないことを、どの集約が守るか
+    chosen: registration-guards-with-supplied-capacity
+    options:
+      - name: registration-guards-with-supplied-capacity
+        label: 定員という数字は Meetup が持ち、超えない責任は参加申込側が負う
+        adopted: true
+        why: 席の出入りは申込側でしか起きないので、超過が起きうる瞬間も申込側にしかない。定員の数字だけを受け取って守る形にすれば、ミートアップ本体は申込の増減に巻き込まれずに済む。
+      - name: meetup-guards-seats
+        label: ミートアップ本体が席の一覧を抱えて守る
+        why_not: 一人が申し込むたびにミートアップ全体を書き換えることになり、同時に申し込む参加者どうしがぶつかる。D3 で分けた意味が失われる。
+    affects:
+      - Meetup
+      - Registration
+      - meetup-hosting
+      - registration
+    note: 参加申込は一人ぶんの粒度なので、この不変条件は申込一件では守れない。ミートアップ単位で申込をまとめて見る仕組みが実装側に要る点は未解決として残す（Q4）。
+  - id: D8
+    topic: 参加者がいつまで取り消せるかを、何を見て判断するか
+    chosen: cancellation-deadline-on-meetup
+    options:
+      - name: cancellation-deadline-on-meetup
+        label: ミートアップが持つ取消締切の時刻で判断する
+        adopted: true
+        why: 参加者に「何時まで降りられるか」を先に伝えられる。繰り上げが間に合う余裕を主催者が回ごとに決められるのも実務に合う。
+      - name: check-in-opened-flag
+        label: 当日の受付が始まったかどうかで判断する
+        why_not: 申込の可否が当日受付という別の文脈の状態に縛られる。主催者が受付を開くのを忘れていれば深夜まで取消を受け付けてしまい、逆に早く開けば予告なく取消が締まる。
+    affects:
+      - Meetup
+      - Registration
+      - PromoteWaitlistOnCancellation
+      - meetup-hosting
+      - registration
+policies:
+  - name: PromoteWaitlistOnCancellation
+    ctx: registration
+    trg: RegistrationCancelled
+    qry: WaitlistHead
+    cmd: PromoteWaitlistedRegistration
+    evt: RegistrationPromoted
+    agg: Registration
+    within: 即時
+    note: 繰り上げが働くのは取消締切までの取消に対してだけ（D8）。中止に伴う一括無効化は RegistrationRevoked という別のイベントにしてあるので、この繰り上げは連鎖しない（D5）。
+  - name: BookVenueOnMeetupConfirmed
+    ctx: venue-booking
+    trg: MeetupConfirmed
+    cmd: ConfirmVenueBooking
+    agg: VenueBooking
+    within: 当日中
+    note: 仮押さえのまま開催確定を告知してしまうと会場を失う恐れがあるため、確定と同時に本予約へ切り替える。
+  - name: ReleaseVenueOnMeetupCancelled
+    ctx: venue-booking
+    trg: MeetupCancelled
+    cmd: ReleaseVenue
+    agg: VenueBooking
+    within: 当日中
+    note: 会場を手放す指示は一つだが、仮押さえのままか本予約済みかで会場側への連絡の重さが変わるため、分岐は scenario 側で表す。
+  - name: RevokeRegistrationsOnMeetupCancelled
+    ctx: registration
+    trg: MeetupCancelled
+    qry: LiveRegistrationsOfMeetup
+    bulk: true
+    cmd: RevokeRegistration
+    evt: RegistrationRevoked
+    agg: Registration
+    within: 即時
+  - name: MarkNoShowOnCheckInClosed
+    ctx: check-in
+    trg: CheckInClosed
+    qry: NotCheckedInAttendees
+    bulk: true
+    cmd: MarkNoShow
+    evt: AttendeeMarkedNoShow
+    agg: AttendanceSheet
+    within: 即時
+  - name: NotifyAttendeesOnMeetupConfirmed
+    ctx: notification
+    trg: VenueBookingConfirmed
+    qry: LiveRegistrationsOfMeetup
+    bulk: true
+    cmd: SendMeetupNotice
+    evt: MeetupConfirmationNoticeSent
+    within: 即時
+    note: 開催確定そのものではなく、会場の本予約が済んだことを引き金にする。本予約に失敗した状態で「開催します」と伝えると、会場のない確定を参加者に約束することになるため。
+  - name: NotifyAttendeesOnMeetupCancelled
+    ctx: notification
+    trg: RegistrationRevoked
+    cmd: SendMeetupNotice
+    evt: MeetupCancellationNoticeSent
+    within: 即時
+    note: 中止イベントを一括で読み直すと、先に申込が無効化されて通知先が空になる恐れがある。無効化された申込一件ずつを引き金にすれば、宛先の取りこぼしが起きない。
+  - name: PrepareSheetOnMeetupConfirmed
+    ctx: check-in
+    trg: MeetupConfirmed
+    qry: LiveRegistrationsOfMeetup
+    cmd: PrepareAttendanceSheet
+    evt: AttendanceSheetPrepared
+    agg: AttendanceSheet
+    within: 当日中
+    note: 開催確定の時点の参加確定者一覧から当日の名簿を起こす。以降の申込の増減は繰り上げ経由で名簿に反映する。
+  - name: AlertOrganizerOnVenueLost
+    ctx: notification
+    trgs:
+      evts:
+        - VenueHoldExpired
+        - VenueBookingRejected
+      mode: any
+    cmd: SendOrganizerAlert
+    evt: OrganizerAlertSent
+    within: 即時
+    note: 会場を失ったことに主催者が気づかないまま募集や開催確定が進むのを防ぐ。
+  - name: AddPromotedAttendeeToSheet
+    ctx: check-in
+    trg: RegistrationPromoted
+    cmd: EnrollAttendeeOnSheet
+    evt: AttendeeAddedToSheet
+    agg: AttendanceSheet
+    within: 即時
+    note: 繰り上がった人が名簿に載らないと、当日その人だけ受付で弾かれる。
+  - name: DropAttendeeFromSheetOnCancellation
+    ctx: check-in
+    trg: RegistrationCancelled
+    cmd: DropAttendeeFromSheet
+    evt: AttendeeDroppedFromSheet
+    agg: AttendanceSheet
+    within: 即時
+    note: 取り消した人を名簿に残すと、締切時に全員が欠席として記録され、当日の実態と食い違う。
+  - name: SuspendPublicationOnVenueHoldExpired
+    ctx: meetup-hosting
+    trg: VenueHoldExpired
+    cmd: SuspendMeetupPublication
+    evt: MeetupPublicationSuspended
+    agg: Meetup
+    within: 即時
+    note: 会場を失ったまま募集を続けると申込が積み上がり、あとで全員を無効にすることになる。まず入口を止める。
+domains:
+  - name: meetup-operation
+    vision: 主催者が、開催するかどうかを迷わず決められ、当日までの席のさばきと出欠の記録に手間を取られない状態をつくる。
+    subs:
+      - name: hosting
+        type: CORE_SUBDOMAIN
+        vision: 開催可否の判断そのもの。最少催行人数・会場・日程という制約を突き合わせて一度だけ決める、このアプリの心臓。
+      - name: seat-allocation
+        type: CORE_SUBDOMAIN
+        vision: 先着順の公平さを保ったまま空席を埋める、定員のさばき方。ミートアップ運営の良し悪しがここに出る。
+      - name: venue-arrangement
+        type: SUPPORTING_SUBDOMAIN
+        vision: 会場の仮押さえと本予約。業務には必須だが、差別化の源泉ではない。
+      - name: attendance
+        type: SUPPORTING_SUBDOMAIN
+        vision: 当日の出欠記録。正確であればよく、工夫の余地は小さい。
+      - name: messaging
+        type: GENERIC_SUBDOMAIN
+        vision: 通知の送信。既製の仕組みで置き換えられる。
+aggregates:
+  - name: Meetup
+    ctx: meetup-hosting
+    purpose: 一回の開催について「本当に開催するか」を一度だけ決め、決めたあとはその決定を動かさない拠り所になる。
+    background: "主催者は、会場が取れるか・人が集まるか・自分の都合がつくかという、揃うタイミングの違う材料を見ながら\nどこかで腹を決めなければならない。決めたあとに日程や会場が動くと参加者の予定を壊し、次回以降の集客にも響く。\nだから「確定した」という状態そのものが、主催者にとっても参加者にとっても意味を持つ。\n"
+    constraints:
+      - 定員は押さえた会場の収容人数を超えてはならない
+      - 最少催行人数は定員以下でなければならない
+      - 募集を公開できるのは、会場が仮押さえ以上になっているミートアップだけ
+      - 開催確定後は開催日時と会場を変更できない
+      - 中止できるのは開催完了より前まで
+    states:
+      - DRAFT
+      - PUBLISHED
+      - SUSPENDED
+      - CONFIRMED
+      - CANCELLED
+      - HELD
+    transitions:
+      - from: NONE
+        to: DRAFT
+        via: DraftMeetup
+        when: 主催者がテーマと候補日を決めたとき
+      - from: DRAFT
+        to: PUBLISHED
+        via: PublishMeetup
+        when: 会場が仮押さえ済みで、定員と最少催行人数が決まっているとき
+      - from: PUBLISHED
+        to: SUSPENDED
+        via: SuspendMeetupPublication
+        when: 会場の仮押さえが失効したとき
+      - from: SUSPENDED
+        to: PUBLISHED
+        via: PublishMeetup
+        when: 会場を押さえ直して募集を再開するとき
+      - from: PUBLISHED
+        to: CONFIRMED
+        via: ConfirmMeetup
+        when: 確定済み申込が最少催行人数に達しているとき
+      - from: PUBLISHED
+        to: CANCELLED
+        via: CancelMeetup
+        when: 募集締切までに最少催行人数に届かなかったとき
+      - from: SUSPENDED
+        to: CANCELLED
+        via: CancelMeetup
+        when: 会場を押さえ直せなかったとき
+      - from: CONFIRMED
+        to: CANCELLED
+        via: CancelMeetup
+        when: 会場が使えなくなるなど、やむを得ない事情が生じたとき
+        note: 参加者への影響が大きいため、主催者の明示的な操作でしか起きない
+      - from: CONFIRMED
+        to: HELD
+        via: CloseMeetup
+        when: 当日の受付が締め切られたあと
+    attrs:
+      - name: meetupId
+        type: MeetupId
+        required: true
+      - name: title
+        type: string
+        required: true
+      - name: description
+        type: string
+        required: false
+        note: 参加者が参加を判断するための説明文
+      - name: schedule
+        type: MeetupSchedule
+        required: true
+        note: 開始・終了日時。確定後は変更不可
+      - name: venueBookingId
+        type: VenueBookingId
+        required: false
+        note: 仮押さえができるまでは空。公開時には必須になる
+      - name: capacity
+        type: Capacity
+        required: false
+        note: 公開時には必須。会場の収容人数以下
+      - name: minimumAttendees
+        type: MinimumAttendees
+        required: false
+        note: 公開時には必須。定員以下
+      - name: applicationDeadline
+        type: datetime
+        required: false
+        note: 開催可否を判断する期限
+      - name: state
+        type: MeetupState
+        required: true
+      - name: cancellationDeadline
+        type: CancellationDeadline
+        required: false
+        note: この時刻を過ぎると参加者は取り消せない。繰り上げが間に合う余裕を見て開始時刻から逆算する
+    events:
+      - name: MeetupDrafted
+        params:
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: title
+            type: string
+            required: true
+          - name: schedule
+            type: MeetupSchedule
+            required: true
+          - name: organizerId
+            type: OrganizerId
+            required: true
+      - name: MeetupPublished
+        params:
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: capacity
+            type: Capacity
+            required: true
+          - name: minimumAttendees
+            type: MinimumAttendees
+            required: true
+          - name: applicationDeadline
+            type: datetime
+            required: true
+          - name: publishedAt
+            type: datetime
+            required: true
+      - name: MeetupConfirmed
+        params:
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: confirmedAt
+            type: datetime
+            required: true
+          - name: confirmedAttendeeCount
+            type: int
+            required: true
+            note: 確定時点の参加確定者数。通知と会場への連絡に使う
+      - name: MeetupCancelled
+        terminal: true
+        params:
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: cancelledAt
+            type: datetime
+            required: true
+          - name: reason
+            type: CancellationReason
+            required: true
+            note: 参加者への通知にそのまま載る
+      - name: MeetupHeld
+        terminal: true
+        params:
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: heldAt
+            type: datetime
+            required: true
+          - name: attendeeCount
+            type: int
+            required: true
+      - name: MinimumAttendeesNotMet
+        params:
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: confirmedCount
+            type: int
+            required: true
+          - name: minimumAttendees
+            type: MinimumAttendees
+            required: true
+          - name: judgedAt
+            type: datetime
+            required: true
+        note: 状態は PUBLISHED のまま変わらない。中止するかどうかは主催者が決めるため、この出来事だけでは中止にしない
+      - name: MeetupPublicationSuspended
+        params:
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: suspendedAt
+            type: datetime
+            required: true
+          - name: reason
+            type: string
+            required: true
+        note: 申込の入口を閉じるだけで、すでに受け付けた申込はそのまま生きている
+  - name: Registration
+    ctx: registration
+    purpose: 参加者一人ぶんの席を、申し込んだ順という秩序のもとで「確定・待ち・取消」のいずれかに保つ。
+    background: "ミートアップは席が有限で、しかも直前まで人が入れ替わる。主催者が手作業で名簿を書き換えると、\n誰が繰り上がったのか本人にも主催者にも分からなくなり、当日「来たのに席がない」「来ると思った人が来ない」が起きる。\n申し込んだ順を機械的に守り、空きが出たら自動で埋めることが、参加者にとっての公平さそのものになる。\n"
+    constraints:
+      - 同じ参加者は同じミートアップに、生きた申込を二件以上持てない
+      - 確定済み申込の件数はミートアップの定員を超えてはならない
+      - キャンセル待ちの順番は申し込んだ時刻の順で、後から入れ替えない
+      - 取消できるのはミートアップの取消締切まで
+      - 繰り上げが起きるのは取消締切までの取消に対してだけ
+    states:
+      - CONFIRMED
+      - WAITLISTED
+      - CANCELLED
+      - REVOKED
+    transitions:
+      - from: NONE
+        to: CONFIRMED
+        via: ApplyForMeetup
+        when: 確定済み申込が定員に達していないとき
+      - from: NONE
+        to: WAITLISTED
+        via: ApplyForMeetup
+        when: 確定済み申込が定員に達しているとき
+      - from: WAITLISTED
+        to: CONFIRMED
+        via: PromoteWaitlistedRegistration
+        when: 確定済みの誰かが取り消して空席が生まれ、まだ受付が始まっていないとき
+      - from: CONFIRMED
+        to: CANCELLED
+        via: CancelRegistration
+        when: 参加者が自分の都合で取り消したとき
+      - from: WAITLISTED
+        to: CANCELLED
+        via: CancelRegistration
+        when: 待っている参加者が自分から降りたとき
+      - from: CONFIRMED
+        to: REVOKED
+        via: RevokeRegistration
+        when: ミートアップが中止されたとき
+        note: 参加者の意思による取消と区別する。繰り上げの引き金にしないため別の状態にしている
+      - from: WAITLISTED
+        to: REVOKED
+        via: RevokeRegistration
+        when: ミートアップが中止されたとき
+    attrs:
+      - name: registrationId
+        type: RegistrationId
+        required: true
+      - name: meetupId
+        type: MeetupId
+        required: true
+      - name: memberId
+        type: MemberId
+        required: true
+      - name: appliedAt
+        type: datetime
+        required: true
+        note: キャンセル待ちの順番はこの時刻で決まる
+      - name: state
+        type: RegistrationState
+        required: true
+      - name: waitlistPosition
+        type: WaitlistPosition
+        required: false
+        note: WAITLISTED のときだけ意味を持つ
+      - name: promotedAt
+        type: datetime
+        required: false
+        note: 繰り上がった参加者に「いつ席が回ってきたか」を示す
+    events:
+      - name: RegistrationConfirmed
+        params:
+          - name: registrationId
+            type: RegistrationId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: memberId
+            type: MemberId
+            required: true
+          - name: appliedAt
+            type: datetime
+            required: true
+      - name: RegistrationWaitlisted
+        params:
+          - name: registrationId
+            type: RegistrationId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: memberId
+            type: MemberId
+            required: true
+          - name: waitlistPosition
+            type: WaitlistPosition
+            required: true
+      - name: RegistrationCancelled
+        params:
+          - name: registrationId
+            type: RegistrationId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: previousState
+            type: RegistrationState
+            required: true
+            note: 確定席が空いたのか、待ちが減っただけなのかを繰り上げ判断に使う
+          - name: cancelledAt
+            type: datetime
+            required: true
+      - name: RegistrationPromoted
+        params:
+          - name: registrationId
+            type: RegistrationId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: memberId
+            type: MemberId
+            required: true
+          - name: promotedAt
+            type: datetime
+            required: true
+      - name: RegistrationRevoked
+        terminal: true
+        params:
+          - name: registrationId
+            type: RegistrationId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: memberId
+            type: MemberId
+            required: true
+          - name: reason
+            type: CancellationReason
+            required: true
+    note: 「確定済み件数が定員を超えない」「同じ参加者の生きた申込は一件だけ」は、いずれもミートアップ単位で申込をまとめて見ないと判定できず、申込一件の中では守れない。担保方式は未決（Q4）。定員という数字は Meetup から供給される（D7）。
+  - name: VenueBooking
+    ctx: venue-booking
+    purpose: 一つのミートアップに対する会場の押さえを、仮押さえから本予約まで一本の線として保つ。
+    background: "会場は先に押さえないと開催の見通しが立たないが、人が集まるかどうかは押さえてみないと分からない。\nこの鶏と卵を、期限つきの仮押さえという形でしのいでいるのが実務の姿である。期限を過ぎた押さえが\n生きているかのように見えてしまうと、主催者は取れていない会場を前提に募集を出してしまう。\n"
+    constraints:
+      - 一つのミートアップに対して生きた押さえは一件だけ
+      - 仮押さえには期限があり、期限を過ぎたら失効する
+      - 本予約に切り替えられるのは仮押さえが生きている間だけ
+    states:
+      - TENTATIVE
+      - BOOKED
+      - RELEASED
+      - CANCELLED
+      - EXPIRED
+    transitions:
+      - from: NONE
+        to: TENTATIVE
+        via: RequestVenueHold
+        when: 候補日にその会場が空いているとき
+      - from: TENTATIVE
+        to: BOOKED
+        via: ConfirmVenueBooking
+        when: ミートアップの開催が確定したとき
+      - from: TENTATIVE
+        to: EXPIRED
+        via: ExpireVenueHold
+        when: 仮押さえ期限を過ぎても本予約に切り替わらなかったとき
+      - from: TENTATIVE
+        to: RELEASED
+        via: ReleaseVenue
+        when: 開催確定前にミートアップが中止されたとき
+      - from: BOOKED
+        to: CANCELLED
+        via: ReleaseVenue
+        when: 開催確定後にミートアップが中止されたとき
+        note: 会場側へのキャンセル連絡を伴う。仮押さえの解放とは重さが違う
+    attrs:
+      - name: venueBookingId
+        type: VenueBookingId
+        required: true
+      - name: meetupId
+        type: MeetupId
+        required: true
+      - name: venueId
+        type: VenueId
+        required: true
+      - name: slot
+        type: MeetupSchedule
+        required: true
+        note: 押さえている日時の枠
+      - name: venueCapacity
+        type: VenueCapacity
+        required: true
+        note: ミートアップの定員の上限になる
+      - name: holdDeadline
+        type: HoldDeadline
+        required: false
+        note: TENTATIVE のときだけ意味を持つ
+      - name: state
+        type: VenueBookingState
+        required: true
+    events:
+      - name: VenueHeld
+        params:
+          - name: venueBookingId
+            type: VenueBookingId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: venueId
+            type: VenueId
+            required: true
+          - name: venueCapacity
+            type: VenueCapacity
+            required: true
+          - name: holdDeadline
+            type: HoldDeadline
+            required: true
+      - name: VenueHoldExpired
+        terminal: true
+        params:
+          - name: venueBookingId
+            type: VenueBookingId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: expiredAt
+            type: datetime
+            required: true
+      - name: VenueBookingConfirmed
+        params:
+          - name: venueBookingId
+            type: VenueBookingId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: bookedAt
+            type: datetime
+            required: true
+      - name: VenueHoldReleased
+        terminal: true
+        params:
+          - name: venueBookingId
+            type: VenueBookingId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: releasedAt
+            type: datetime
+            required: true
+      - name: VenueHoldRejected
+        terminal: true
+        params:
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: venueId
+            type: VenueId
+            required: true
+          - name: slot
+            type: MeetupSchedule
+            required: true
+          - name: rejectedAt
+            type: datetime
+            required: true
+        note: 押さえが成立しなかったので VenueBooking は生まれない。日程か会場の組み直しを促すための出来事
+      - name: VenueBookingCancelled
+        terminal: true
+        params:
+          - name: venueBookingId
+            type: VenueBookingId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: cancelledAt
+            type: datetime
+            required: true
+          - name: reason
+            type: CancellationReason
+            required: true
+      - name: VenueBookingRejected
+        params:
+          - name: venueBookingId
+            type: VenueBookingId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: rejectedAt
+            type: datetime
+            required: true
+          - name: reason
+            type: string
+            required: true
+    note: 収容人数は venueCapacity として Meetup に供給するだけで、定員がそれを超えないことを守るのは Meetup 側の責任（D7）。また「一つのミートアップに一件だけ」はミートアップ単位でしか判定できず、押さえ一件の中では守れない（Q4）。
+  - name: AttendanceSheet
+    ctx: check-in
+    purpose: 開催日当日に「誰が来たか」を、その場で迷わず記録し、締め切った時点で動かない事実として残す。
+    background: "当日の受付は数分に人が集中し、会場の電波も怪しい。主催者は行列を止めずに記録する必要があるので、\n複雑な判断をその場に持ち込めない。判断は前日までに終えておき、当日は「名簿にいる人にチェックを付ける」\nだけにするのが現実的である。締め切ったあとの名簿は、次回の案内や常連の把握の土台になる。\n"
+    constraints:
+      - 受付できるのは、そのミートアップの参加確定者だけ
+      - 同じ参加者を二重に受付しない
+      - 受付を開始できるのは開催が確定しているミートアップだけ
+      - 締切後は出欠を書き換えない
+    states:
+      - PREPARED
+      - OPEN
+      - CLOSED
+    transitions:
+      - from: NONE
+        to: PREPARED
+        via: PrepareAttendanceSheet
+        when: 開催が確定して参加確定者の一覧が固まったとき
+      - from: PREPARED
+        to: OPEN
+        via: OpenCheckIn
+        when: 主催者が当日の受付を始めたとき
+      - from: OPEN
+        to: CLOSED
+        via: CloseCheckIn
+        when: 主催者が受付を締め切ったとき
+    attrs:
+      - name: attendanceSheetId
+        type: AttendanceSheetId
+        required: true
+      - name: meetupId
+        type: MeetupId
+        required: true
+      - name: entries
+        type: array<AttendanceEntry>
+        required: true
+        note: 参加確定者一人につき一行。出席・欠席・未確定のいずれかを持つ
+      - name: openedAt
+        type: datetime
+        required: false
+      - name: closedAt
+        type: datetime
+        required: false
+      - name: state
+        type: AttendanceSheetState
+        required: true
+    events:
+      - name: CheckInOpened
+        params:
+          - name: attendanceSheetId
+            type: AttendanceSheetId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: openedAt
+            type: datetime
+            required: true
+          - name: expectedAttendeeCount
+            type: int
+            required: true
+      - name: AttendeeCheckedIn
+        params:
+          - name: attendanceSheetId
+            type: AttendanceSheetId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: memberId
+            type: MemberId
+            required: true
+          - name: checkedInAt
+            type: datetime
+            required: true
+      - name: CheckInClosed
+        params:
+          - name: attendanceSheetId
+            type: AttendanceSheetId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: closedAt
+            type: datetime
+            required: true
+          - name: checkedInCount
+            type: int
+            required: true
+      - name: AttendeeMarkedNoShow
+        params:
+          - name: attendanceSheetId
+            type: AttendanceSheetId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: memberId
+            type: MemberId
+            required: true
+      - name: AttendanceSheetPrepared
+        params:
+          - name: attendanceSheetId
+            type: AttendanceSheetId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: entryCount
+            type: int
+            required: true
+            note: 開催確定時点の参加確定者数
+      - name: AttendeeAddedToSheet
+        params:
+          - name: attendanceSheetId
+            type: AttendanceSheetId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: memberId
+            type: MemberId
+            required: true
+      - name: AttendeeDroppedFromSheet
+        params:
+          - name: attendanceSheetId
+            type: AttendanceSheetId
+            required: true
+          - name: meetupId
+            type: MeetupId
+            required: true
+          - name: memberId
+            type: MemberId
+            required: true
+queries:
+  - name: MeetupCapacityStatus
+    ctx: registration
+    purpose: 定員に対して今どれだけ埋まっているか、開催に足りているかを一目で示す。主催者の開催可否判断と、参加者の「まだ入れるか」の両方に使う。
+    users: 主催者・参加者
+    sources:
+      - Registration
+      - Meetup
+    formula: 残席 = 定員 − 確定済み申込件数 ／ 開催可否の目安 = 確定済み申込件数 ≥ 最少催行人数
+  - name: WaitlistHead
+    ctx: registration
+    purpose: 空席が生まれたときに次に繰り上げるべき一件を決める。
+    users: 繰り上げポリシー
+    sources:
+      - Registration
+    formula: 状態が WAITLISTED の申込のうち appliedAt が最も早い一件
+  - name: LiveRegistrationsOfMeetup
+    ctx: registration
+    purpose: そのミートアップに対して生きている申込（確定・待ち）の一覧。中止時の一括無効化と、参加者への一斉通知の宛先に使う。
+    users: 中止ポリシー・通知ポリシー
+    sources:
+      - Registration
+    note: 一括処理向けの BULK クエリ
+  - name: NotCheckedInAttendees
+    ctx: check-in
+    purpose: 受付を締め切った時点でまだ受付されていない参加確定者の一覧。欠席として記録する対象になる。
+    users: 欠席記録ポリシー
+    sources:
+      - AttendanceSheet
+    note: 一括処理向けの BULK クエリ
+  - name: CheckInProgress
+    ctx: check-in
+    purpose: 当日、主催者が「あと何人来ていないか」を把握して開始判断や声かけに使う。
+    users: 主催者
+    sources:
+      - AttendanceSheet
+    formula: 受付済み件数 ÷ 参加確定者数
+  - name: VenueAvailability
+    ctx: venue-booking
+    purpose: 候補日ごとに押さえられる会場があるかを示し、仮押さえの判断材料にする。
+    users: 主催者
+    sources:
+      - VenueBooking
+    formula: 候補日と枠が重なる TENTATIVE・BOOKED の押さえが存在しない会場
+  - name: MeetupOperationOverview
+    ctx: meetup-hosting
+    purpose: 主催者が抱えている全ミートアップについて、状態・申込の埋まり具合・会場の押さえ状況・仮押さえ期限を一覧で示す。次に手を打つべきミートアップを見つけるための画面。
+    users: 主催者
+    sources:
+      - Meetup
+      - Registration
+      - VenueBooking
+    formula: 要対応の印 = 仮押さえ期限まで3日以内、または募集締切まで3日以内で最少催行人数に未達
+    note: 3つの BC をまたぐ読み取り専用モデル
+questions:
+  - id: Q1
+    topic: 募集締切と、開催するかどうかを決める締切は同じ日か別か
+    why: 同じなら Meetup が持つ締切は1つでよいが、別なら「申込は締め切ったが開催可否はまだ」という状態が必要になり、公開中の意味が変わる。
+    status: open
+    note: '[有識者相談推奨] 主催者に聞く質問文: 「参加者の申込を締め切る日と、あなたが開催するか決める日は、同じ日ですか？ 別の日ですか？」 — 現在は applicationDeadline 一本で仮置きしている。'
+  - id: Q2
+    topic: 仮押さえの失効を誰が検知するか
+    why: ExpireVenueHold という遷移は置いたが、それを起こす引き金がモデルに無い。時刻で自動失効させるのか、主催者が気づいた時点で失効扱いにするのかで、必要な仕組みが変わる。
+    status: open
+  - id: Q3
+    topic: 直前に繰り上がった参加者へ承諾を求めるか
+    why: 自動で確定にすると、行けなくなっていた人が確定席を持ったまま欠席し、席が二重に無駄になる。承諾を求めると空席が埋まるまで遅くなる。
+    status: open
+  - id: Q4
+    topic: ミートアップ単位でしか守れない制約（定員超過・二重申込・押さえの一意性）を、実装でどう担保するか
+    why: 参加申込も会場予約も一件ぶんの粒度で設計したため、件数や一意性という「まとめて見ないと分からない制約」は集約の中では守れない。楽観ロックか、ミートアップ単位の席台帳か、方式の選択が要る。
+    status: open
+actions:
+  - id: A1
+    text: 募集締切と開催可否を決める締切が同じか別かを主催者に確認する（Q1）。別なら Meetup に締切を2つ持たせる。
+    owner: 主催者ヒアリング
+    done: false
+  - id: A2
+    text: 仮押さえ期限切れを検知する時刻トリガーのポリシーをモデルに追加するか決める（Q2）。
+    done: false
+  - id: A3
+    text: 繰り上がった参加者への承諾確認が要るかを、実際の参加者数名に聞いて決める（Q3）。
+    done: false
+  - id: A4
+    text: 有料開催を扱う場合に備え、payment を別 BC として足す前提で D1 を再検討する。
+    done: false
+  - id: A5
+    text: Q4（ミートアップ単位の制約の担保方式）を設計フェーズの最初の論点として持ち込む。
+    done: false
