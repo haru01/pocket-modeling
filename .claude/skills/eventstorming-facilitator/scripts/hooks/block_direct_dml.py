@@ -15,12 +15,27 @@ dmlctl 自身は本ファイルを編集しないので、本フックの影響�
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 
 # パターンは絶対パス／相対パス両方を許容（リポジトリルートからの相対が一般的）
 DML_PATH_RE = re.compile(r"(^|/)docs/eventstorming/[^/]+\.dml\.yaml$")
-BLOCKED_TOOLS = {"Read", "Edit", "Write"}
+# file_path 系の引数を取り DML を読み書きしうるツールをすべて塞ぐ。
+# Read/Edit/Write だけだと MultiEdit などの派生ツール名で素通りするため列挙する。
+BLOCKED_TOOLS = {"Read", "Edit", "Write", "MultiEdit", "NotebookEdit", "NotebookRead"}
+PATH_KEYS = ("file_path", "notebook_path", "path", "filePath")
+
+
+def _normalize(target: str) -> str:
+    """`./docs/...` `docs//eventstorming/...` `a/../docs/...` を正規形に潰す。
+
+    正規化しないと `docs/eventstorming/./x.dml.yaml` のような等価パスで
+    ガードレールを素通りできてしまう。区切りは posix 形式に揃える。
+    """
+    if not target:
+        return ""
+    return os.path.normpath(target).replace(os.sep, "/")
 
 
 def main() -> int:
@@ -32,7 +47,15 @@ def main() -> int:
 
     tool_name = payload.get("tool_name", "")
     tool_input = payload.get("tool_input") or {}
-    target = tool_input.get("file_path") or ""
+    if not isinstance(tool_input, dict):
+        tool_input = {}
+    raw_target = ""
+    for key in PATH_KEYS:
+        value = tool_input.get(key)
+        if isinstance(value, str) and value:
+            raw_target = value
+            break
+    target = _normalize(raw_target)
 
     if tool_name not in BLOCKED_TOOLS:
         return 0
